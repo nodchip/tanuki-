@@ -9,40 +9,40 @@
 #include "game_record.hpp"
 
 namespace csa {
-  extern const std::tr2::sys::path DEFAULT_INPUT_CSA1_FILE_PATH;
-  extern const std::tr2::sys::path DEFAULT_OUTPUT_SFEN_FILE_PATH;
+  extern const std::filesystem::path DEFAULT_INPUT_CSA1_FILE_PATH;
+  extern const std::filesystem::path DEFAULT_OUTPUT_SFEN_FILE_PATH;
 
   // CSAファイルをsfen形式へ変換する
-  bool toSfen(const std::tr2::sys::path& filepath, std::vector<std::string>& sfen);
+  bool toSfen(const std::filesystem::path& filepath, std::vector<std::string>& sfen);
 
   // CSAファイルが勝負が終わっているかどうかを返す
-  bool isFinished(const std::tr2::sys::path& filepath);
+  bool isFinished(const std::filesystem::path& filepath);
 
   // CSAファイル中でtanuki-が先手かどうかを返す
-  bool isTanukiBlack(const std::tr2::sys::path& filepath);
+  bool isTanukiBlack(const std::filesystem::path& filepath);
 
   // CSAファイル中でどちらが勝ったかを返す
   // 引き分けの場合はColorNumを返す
-  Color getWinner(const std::tr2::sys::path& filepath);
+  Color getWinner(const std::filesystem::path& filepath);
 
   // floodgateのCSAファイルをSFEN形式へ変換する
   bool convertCsaToSfen(
-    const std::tr2::sys::path& inputDirectoryPath,
-    const std::tr2::sys::path& outputFilePath);
+    const std::filesystem::path& inputDirectoryPath,
+    const std::filesystem::path& outputFilePath);
 
   // 2chkifu.csa1をSFEN形式へ変換する
   bool convertCsa1LineToSfen(
-    const std::tr2::sys::path& inputFilePath = DEFAULT_INPUT_CSA1_FILE_PATH,
-    const std::tr2::sys::path& outputFilePath = DEFAULT_OUTPUT_SFEN_FILE_PATH);
+    const std::filesystem::path& inputFilePath = DEFAULT_INPUT_CSA1_FILE_PATH,
+    const std::filesystem::path& outputFilePath = DEFAULT_OUTPUT_SFEN_FILE_PATH);
 
   // CSAファイルを読み込む
-  bool readCsa(const std::tr2::sys::path& filepath, GameRecord& gameRecord);
+  bool readCsa(const std::filesystem::path& filepath, GameRecord& gameRecord);
 
   // サブディレクトリも含めてCSAファイルを読み込む
   // filterがtrueとなるファイルのみ処理する
   bool readCsas(
-    const std::tr2::sys::path& directory,
-    const std::function<bool(const std::tr2::sys::path&)>& pathFilter,
+    const std::filesystem::path& directory,
+    const std::function<bool(const std::filesystem::path&)>& pathFilter,
     const std::function<bool(const GameRecord&)>& gameRecordFilter,
     std::vector<GameRecord>& gameRecords);
 }
