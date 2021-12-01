@@ -7,15 +7,15 @@
 #include "time_util.hpp"
 #include "usi.hpp"
 
-using namespace std::tr2::sys;
+using namespace std::filesystem;
 
 namespace
 {
-  int getNumberOfFiles(const std::tr2::sys::path& directory)
+  int getNumberOfFiles(const std::filesystem::path& directory)
   {
     int numberOfFiles = 0;
-    for (std::tr2::sys::recursive_directory_iterator it(directory);
-    it != std::tr2::sys::recursive_directory_iterator();
+    for (std::filesystem::recursive_directory_iterator it(directory);
+    it != std::filesystem::recursive_directory_iterator();
       ++it)
     {
       if (++numberOfFiles % 100000 == 0) {
@@ -26,10 +26,10 @@ namespace
   }
 }
 
-const std::tr2::sys::path csa::DEFAULT_INPUT_CSA1_FILE_PATH = "../2chkifu_csa/2chkifu.csa1";
-const std::tr2::sys::path csa::DEFAULT_OUTPUT_SFEN_FILE_PATH = "../bin/kifu.sfen";
+const std::filesystem::path csa::DEFAULT_INPUT_CSA1_FILE_PATH = "../2chkifu_csa/2chkifu.csa1";
+const std::filesystem::path csa::DEFAULT_OUTPUT_SFEN_FILE_PATH = "../bin/kifu.sfen";
 
-bool csa::toSfen(const std::tr2::sys::path& filepath, std::vector<std::string>& sfen) {
+bool csa::toSfen(const std::filesystem::path& filepath, std::vector<std::string>& sfen) {
   sfen.clear();
   sfen.push_back("startpos");
   sfen.push_back("moves");
@@ -79,7 +79,7 @@ bool csa::toSfen(const std::tr2::sys::path& filepath, std::vector<std::string>& 
   return true;
 }
 
-bool csa::isFinished(const std::tr2::sys::path& filepath) {
+bool csa::isFinished(const std::filesystem::path& filepath) {
   std::ifstream ifs(filepath);
   if (!ifs.is_open()) {
     std::cout << "!!! Failed to open a CSA file." << std::endl;
@@ -96,7 +96,7 @@ bool csa::isFinished(const std::tr2::sys::path& filepath) {
   return false;
 }
 
-bool csa::isTanukiBlack(const std::tr2::sys::path& filepath) {
+bool csa::isTanukiBlack(const std::filesystem::path& filepath) {
   std::ifstream ifs(filepath);
   if (!ifs.is_open()) {
     std::cout << "!!! Failed to open a CSA file." << std::endl;
@@ -113,7 +113,7 @@ bool csa::isTanukiBlack(const std::tr2::sys::path& filepath) {
   return false;
 }
 
-Color csa::getWinner(const std::tr2::sys::path& filepath) {
+Color csa::getWinner(const std::filesystem::path& filepath) {
   assert(isFinished(filepath));
 
   std::ifstream ifs(filepath);
@@ -151,8 +151,8 @@ static void concat(const std::vector<std::string>& words, std::string& out) {
 }
 
 bool csa::convertCsaToSfen(
-  const std::tr2::sys::path& inputDirectoryPath,
-  const std::tr2::sys::path& outputFilePath) {
+  const std::filesystem::path& inputDirectoryPath,
+  const std::filesystem::path& outputFilePath) {
   if (!is_directory(inputDirectoryPath)) {
     std::cout << "!!! Failed to open the input directory: inputDirectoryPath="
       << inputDirectoryPath
@@ -168,7 +168,7 @@ bool csa::convertCsaToSfen(
     return false;
   }
 
-  int numberOfFiles = distance(
+  int numberOfFiles = std::distance(
     directory_iterator(inputDirectoryPath),
     directory_iterator());
   int fileIndex = 0;
@@ -195,8 +195,8 @@ bool csa::convertCsaToSfen(
 }
 
 bool csa::convertCsa1LineToSfen(
-  const std::tr2::sys::path& inputFilePath,
-  const std::tr2::sys::path& outputFilePath) {
+  const std::filesystem::path& inputFilePath,
+  const std::filesystem::path& outputFilePath) {
   std::ifstream ifs(inputFilePath);
   if (!ifs.is_open()) {
     std::cout << "!!! Failed to open the input file: inputFilePath="
@@ -264,7 +264,7 @@ bool csa::convertCsa1LineToSfen(
   return true;
 }
 
-bool csa::readCsa(const std::tr2::sys::path& filepath, GameRecord& gameRecord)
+bool csa::readCsa(const std::filesystem::path& filepath, GameRecord& gameRecord)
 {
   gameRecord.gameRecordIndex = 0;
   gameRecord.date = "??/??/??";
@@ -338,8 +338,8 @@ bool csa::readCsa(const std::tr2::sys::path& filepath, GameRecord& gameRecord)
 }
 
 bool csa::readCsas(
-  const std::tr2::sys::path& directory,
-  const std::function<bool(const std::tr2::sys::path&)>& pathFilter,
+  const std::filesystem::path& directory,
+  const std::function<bool(const std::filesystem::path&)>& pathFilter,
   const std::function<bool(const GameRecord&)>& gameRecordFilter,
   std::vector<GameRecord>& gameRecords)
 {
@@ -348,8 +348,8 @@ bool csa::readCsas(
 
   double startClockSec = clock() / double(CLOCKS_PER_SEC);
   int fileIndex = 0;
-  for (std::tr2::sys::recursive_directory_iterator it(directory);
-  it != std::tr2::sys::recursive_directory_iterator();
+  for (std::filesystem::recursive_directory_iterator it(directory);
+  it != std::filesystem::recursive_directory_iterator();
     ++it)
   {
     if (++fileIndex % 10000 == 0) {

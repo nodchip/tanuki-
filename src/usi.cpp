@@ -672,36 +672,30 @@ void USI::doUSICommandLoop(int argc, char* argv[]) {
       };
       std::vector<GameRecord> gameRecords;
       csa::readCsas(
-        "C:\\home\\develop\\shogi-kifu",
-        [strongPlayers](const std::tr2::sys::path& p) {
-        std::string str = p.string();
-        for (const auto& strongPlayer : strongPlayers) {
-          if (str.find("+" + strongPlayer + "+") != std::string::npos) {
-            return true;
-          }
-        }
-        return false;
+        "C:\\shogi\\floodgate\\wdoor2021",
+        [strongPlayers](const std::filesystem::path& p) {
+              return true;
       },
         [](const GameRecord& gameRecord) {
         return gameRecord.winner == 1 || gameRecord.winner == 2;
       },
         gameRecords);
-      csa::writeCsa1("C:\\home\\develop\\shogi-kifu\\wdoor.csa1", gameRecords);
+      csa::writeCsa1("C:\\shogi\\floodgate\\wdoor.csa1", gameRecords);
       std::cout << "Finished..." << std::endl;
     }
     else if (token == "merge_csa_files") {
       csa::mergeCsa1s({
-        "C:\\home\\develop\\shogi-kifu\\2chkifu_csa\\2chkifu.csa1",
-        "C:\\home\\develop\\shogi-kifu\\wdoor.csa1" },
-        "C:\\home\\develop\\shogi-kifu\\merged.csa1",
+        "C:\\shogi\\floodgate\\2chkifu_csa\\2chkifu.csa1",
+        "C:\\shogi\\floodgate\\wdoor.csa1" },
+        "C:\\shogi\\floodgate\\merged.csa1",
         pos);
       std::cout << "Finished..." << std::endl;
     }
     else if (token == "extract_tanuki_lose") {
       std::vector<GameRecord> gameRecords;
       csa::readCsas(
-        "C:\\home\\develop\\shogi-kifu",
-        [](const std::tr2::sys::path& p) {
+        "C:\\shogi\\floodgate",
+        [](const std::filesystem::path& p) {
         std::string str = p.string();
         return str.find("tanuki-") != std::string::npos;
       },
@@ -710,13 +704,13 @@ void USI::doUSICommandLoop(int argc, char* argv[]) {
           (gameRecord.whitePlayerName.find("tanuki-") != std::string::npos && gameRecord.winner == 1);
       },
         gameRecords);
-      csa::writeCsa1("C:\\home\\develop\\shogi-kifu\\tanuki-lose.csa1", gameRecords);
+      csa::writeCsa1("C:\\shogi\\floodgate\\tanuki-lose.csa1", gameRecords);
       std::cout << "Finished..." << std::endl;
     }
     else if (token == "convert_to_sfen") {
       std::vector<GameRecord> gameRecords;
-      csa::readCsa1("C:\\home\\develop\\shogi-kifu\\2chkifu_csa\\2chkifu.csa1", pos, gameRecords);
-      std::ofstream ofs("C:\\home\\develop\\shogi-kifu\\2chkifu.sfen");
+      csa::readCsa1("C:\\shogi\\floodgate\\wdoor.csa1", pos, gameRecords);
+      std::ofstream ofs("C:\\shogi\\floodgate\\wdoor.sfen");
       int counter = 0;
       for (const auto& gameRecord : gameRecords) {
         if (++counter % 1000 == 0) {

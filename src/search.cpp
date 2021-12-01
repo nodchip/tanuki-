@@ -45,7 +45,7 @@ namespace {
 
   s8 Reductions[2][64][64]; // [pv][depth][moveNumber]
   template <bool PVNode> inline Depth reduction(const Depth depth, const int moveCount) {
-    return static_cast<Depth>(Reductions[PVNode][std::min(Depth(depth / OnePly), Depth(63))][std::min(moveCount, 63)]);
+    return static_cast<Depth>(Reductions[PVNode][std::min(Depth(static_cast<int>(depth) / static_cast<int>(OnePly)), Depth(63))][std::min(moveCount, 63)]);
   }
 
   // EasyMoveManager struct is used to detect a so called 'easy move'; when PV is
