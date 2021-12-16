@@ -155,7 +155,7 @@ void Denryu2::CalculateMoveMatchRatio(Position& pos, std::istringstream& is)
 
 	const auto& games = GamesForPreliminaryExperiment;
 
-	for (int game_index = 0; game_index < games.size(); ++game_index) {
+	for (int game_index = 0; game_index < static_cast<int>(games.size()); ++game_index) {
 		const auto& game = games[game_index];
 		for (int trial = 0; trial < num_trials_per_game; ++trial) {
 			// 局面を初期化する。
@@ -186,7 +186,7 @@ void Denryu2::CalculateMoveMatchRatio(Position& pos, std::istringstream& is)
 				// 棋譜の指し手が読み筋に含まれているかどうか調べる。
 				bool found = false;
 				const auto& root_moves = Threads.main()->rootMoves;
-				for (int pv_index = 0; !found && pv_index < multi_pv && pv_index < root_moves.size(); ++pv_index) {
+				for (int pv_index = 0; !found && pv_index < multi_pv && pv_index < static_cast<int>(root_moves.size()); ++pv_index) {
 					const auto& pv = root_moves[pv_index].pv;
 					if (pv.empty()) {
 						continue;
@@ -289,7 +289,7 @@ void Denryu2::CalculateMoveMatchRatio2(Position& pos)
 					// 棋譜の指し手が読み筋に含まれているかどうか調べる。
 					bool found = false;
 					const auto& root_moves = Threads.main()->rootMoves;
-					for (int pv_index = 0; !found && pv_index < multi_pv && pv_index < root_moves.size(); ++pv_index) {
+					for (int pv_index = 0; !found && pv_index < multi_pv && pv_index < static_cast<int>(root_moves.size()); ++pv_index) {
 						const auto& pv = root_moves[pv_index].pv;
 						if (pv.empty()) {
 							continue;
