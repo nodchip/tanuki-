@@ -331,7 +331,7 @@ public:
 	Bitboard pieces() const { ASSERT_LV3(is_ok(C)); return byColorBB[C]; }
 
 	// 駒がない升が1になっているBitboardが返る
-	Bitboard empties() const { return pieces() ^ ALL_BB; }
+	Bitboard empties() const { return pieces() ^ Bitboard(1); }
 
 	// 駒に対応するBitboardを得る。
 	// ・引数でcの指定がないものは先後両方の駒が返る。
@@ -386,7 +386,7 @@ public:
 
 	// sqに利きのあるc側の駒を列挙する。cの指定がないものは先後両方の駒が返る。
 	// occが指定されていなければ現在の盤面において。occが指定されていればそれをoccupied bitboardとして。
-	// sq == SQ_NBでの呼び出しは合法。ZERO_BBが返る。
+	// sq == SQ_NBでの呼び出しは合法。Bitboard(ZERO)が返る。
 
 	Bitboard attackers_to(Color c, Square sq) const { return c==BLACK ? attackers_to<BLACK>(sq, pieces()): attackers_to<WHITE>(sq, pieces()); }
 	Bitboard attackers_to(Color c, Square sq, const Bitboard& occ) const { return c==BLACK ? attackers_to<BLACK>(sq, occ): attackers_to<WHITE>(sq, occ); }
@@ -488,11 +488,7 @@ public:
 	bool legal_drop(const Square to) const;
 
 	// 二歩でなく、かつ打ち歩詰めでないならtrueを返す。
-	bool legal_pawn_drop(const Color us, const Square to) const
-	{
-		return !((pieces(us, PAWN) & FILE_BB[file_of(to)])                             // 二歩
-			|| ((pawnEffect(us, to) == Bitboard(king_square(~us)) && !legal_drop(to)))); // 打ち歩詰め
-	}
+	bool legal_pawn_drop(const Color us, const Square to) const;
 
 	// --- StateInfo
 
@@ -551,7 +547,10 @@ public:
 
 	// fromからtoに駒が移動したものと仮定して、pinを得る
 	// ※利きのない1手詰め判定のときに必要。
-	Bitboard pinned_pieces(Color c, Square from, Square to) const { return c == BLACK ? pinned_pieces<BLACK>(from,to) : pinned_pieces<WHITE>(from,to); }
+	Bitboard pinned_pieces(Color c, Square from, Square to) const
+	{
+		return c == BLACK ? pinned_pieces<BLACK>(from,to) : pinned_pieces<WHITE>(from,to);
+	}
 
 	// ↑のtemplate版
 	template<Color C>
@@ -842,7 +841,7 @@ Bitboard Position::pinned_pieces(Square avoid) const
 	while (pinners)
 	{
 		b = between_bb(ksq, pinners.pop()) & pieces() & avoid_bb;
-		if (!more_than_one(b))
+		if (!b.more_than_one())
 			result |= b & pieces<C>();
 	}
 	return result;
@@ -869,7 +868,7 @@ Bitboard Position::pinned_pieces(Square from, Square to) const {
 	while (pinners)
 	{
 		b = between_bb(ksq, pinners.pop()) & new_pieces;
-		if (!more_than_one(b))
+		if (!b.more_than_one())
 			result |= b & pieces(C);
 	}
 	return result;

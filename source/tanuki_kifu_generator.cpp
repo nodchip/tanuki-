@@ -54,7 +54,6 @@ namespace {
 	constexpr const char* kOptionGeneratorMaxMultiPVPlay = "GeneratorMaxMultiPVPlay";
 	constexpr const char* kOptionGeneratorMaxMultiPVMoves = "GeneratorMaxMultiPVMoves";
 	constexpr const char* kOptionGeneratorMaxEvalDiff = "GeneratorMaxEvalDiff";
-	constexpr const char* kOptionGeneratorAdjustNodesLimit = "GeneratorAdjustNodesLimit";
 	constexpr const char* kOptionConvertSfenToLearningDataInputSfenFileName =
 		"ConvertSfenToLearningDataInputSfenFileName";
 	constexpr const char* kOptionConvertSfenToLearningDataSearchDepth =
@@ -149,7 +148,6 @@ void Tanuki::InitializeGenerator(USI::OptionsMap& o) {
 	o[kOptionGeneratorMaxMultiPVPlay] << Option(32, 1, std::numeric_limits<int>::max());
 	o[kOptionGeneratorMaxMultiPVMoves] << Option(16, 0, std::numeric_limits<int>::max());
 	o[kOptionGeneratorMaxEvalDiff] << Option(30, 0, std::numeric_limits<int>::max());
-	o[kOptionGeneratorAdjustNodesLimit] << Option(false);
 }
 
 namespace {
@@ -217,7 +215,6 @@ void Tanuki::GenerateKifu() {
 	int max_multi_pv_play = Options[kOptionGeneratorMaxMultiPVPlay];
 	int max_multi_pv_moves = Options[kOptionGeneratorMaxMultiPVMoves];
 	int max_eval_diff = Options[kOptionGeneratorMaxEvalDiff];
-	bool adjust_nodes_limit = Options[kOptionGeneratorAdjustNodesLimit];
 
 	std::cout << "search_depth=" << search_depth << std::endl;
 	std::cout << "num_positions=" << num_positions << std::endl;
@@ -230,7 +227,6 @@ void Tanuki::GenerateKifu() {
 	std::cout << "max_multi_pv_play=" << max_multi_pv_play << std::endl;
 	std::cout << "max_multi_pv_count=" << max_multi_pv_moves << std::endl;
 	std::cout << "max_eval_diff=" << max_eval_diff << std::endl;
-	std::cout << "adjust_nodes_limit=" << adjust_nodes_limit << std::endl;
 
 	Search::LimitsType limits;
 	// 引き分けの手数付近で引き分けの値が返るのを防ぐため1 << 16にする
@@ -302,7 +298,7 @@ void Tanuki::GenerateKifu() {
 					++num_multi_pv_move;
 				}
 
-				Learner::search(pos, search_depth, multi_pv, optimum_nodes_searched, adjust_nodes_limit);
+				Learner::search(pos, search_depth, multi_pv, optimum_nodes_searched);
 
 				const auto& root_moves = pos.this_thread()->rootMoves;
 				multi_pv = std::min<int>(multi_pv, root_moves.size());

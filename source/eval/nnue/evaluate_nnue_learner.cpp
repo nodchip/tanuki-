@@ -56,11 +56,6 @@ std::shared_ptr<Trainer<Network>> trainer;
 // 学習率のスケール
 double global_learning_rate_scale;
 
-// L2正規化パラメーター
-// 0.0 < l2_regularization_parameter
-// 大きいほど強く働く
-double l2_regularization_parameter;
-
 // 学習率のスケールを取得する
 double GetGlobalLearningRateScale() {
   return global_learning_rate_scale;
@@ -76,15 +71,9 @@ void SendMessages(std::vector<Message> messages) {
 
 }  // namespace
 
-// L2正規化パラメーターを返す
-double GetL2RegularizationParameter() {
-    return l2_regularization_parameter;
-}
-
 // 学習の初期化を行う
 void InitializeTraining(double eta1, u64 eta1_epoch,
-                        double eta2, u64 eta2_epoch, double eta3,
-                        double l2_regularization_parameter) {
+                        double eta2, u64 eta2_epoch, double eta3) {
   std::cout << "Initializing NN training for "
             << GetArchitectureString() << std::endl;
 
@@ -97,7 +86,6 @@ void InitializeTraining(double eta1, u64 eta1_epoch,
   }
 
   global_learning_rate_scale = 1.0;
-  Eval::NNUE::l2_regularization_parameter = l2_regularization_parameter;
   EvalLearningTools::Weight::init_eta(eta1, eta2, eta3, eta1_epoch, eta2_epoch);
 }
 

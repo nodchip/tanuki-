@@ -3952,7 +3952,7 @@ namespace Learner
 	// 　search()から戻ったあと、Threads.stop == trueなら、その探索結果を用いてはならない。
 	// 　あと、呼び出し前は、Threads.stop == falseの状態で呼び出さないと、探索を中断して返ってしまうので注意。
 
-	ValueAndPV search(Position& pos, int depth_, size_t multiPV /* = 1 */, u64 nodesLimit /* = 0 */, bool adjustNodesLimit /* = false */)
+	ValueAndPV search(Position& pos, int depth_, size_t multiPV /* = 1 */, u64 nodesLimit /* = 0 */)
 	{
 		std::vector<Move> pvs;
 
@@ -3993,32 +3993,12 @@ namespace Learner
 		Value delta			 = -VALUE_INFINITE;
 		Value bestValue		 = -VALUE_INFINITE;
 
-		if (th->bestPreviousScoreForLearn == VALUE_INFINITE)
-			for (int i = 0; i < 4; ++i)
-				th->iterValueForLearn[i] = VALUE_ZERO;
-		else
-			for (int i = 0; i < 4; ++i)
-				th->iterValueForLearn[i] = th->bestPreviousScoreForLearn;
-
-		// 反復深化の時に1回ごとのbest valueを保存するための配列へのindex
-		// 0から3までの値をとる。
-		int iterIdx = 0;
-
-		// timeReduction      : 読み筋が安定しているときに時間を短縮するための係数。
-		// Stockfish9までEasyMoveで処理していたものが廃止され、Stockfish10からこれが導入された。
-		// totBestMoveChanges : 直近でbestMoveが変化した回数の統計。読み筋の安定度の目安にする。
-		double timeReduction = 1.0, totBestMoveChanges = 0;;
-
-		// 探索の安定性を評価するために前回のiteration時のbest moveを記録しておく。
-		Move  lastBestMove = MOVE_NONE;
-		Depth lastBestMoveDepth = 0;
-
-		while (++rootDepth <= depth)
+		while (++rootDepth <= depth
+			// node制限を超えた場合もこのループを抜ける
+			// 探索ノード数は、この関数の引数で渡されている。
+			&& !(nodesLimit /*node制限あり*/ && th->nodes.load(std::memory_order_relaxed) >= nodesLimit)
+			)
 		{
-			// bestMoveが変化した回数を記録しているが、反復深化の世代が一つ進むので、
-			// 古い世代の情報として重みを低くしていく。
-			totBestMoveChanges /= 2;
-
 			for (RootMove& rm : rootMoves)
 				rm.previousScore = rm.score;
 
@@ -4081,58 +4061,6 @@ namespace Learner
 			} // multi PV
 
 			completedDepth = rootDepth;
-
-			if (rootMoves[0].pv[0] != lastBestMove) {
-				lastBestMove = rootMoves[0].pv[0];
-				lastBestMoveDepth = rootDepth;
-			}
-
-			if (nodesLimit) {
-				if (adjustNodesLimit) {
-					// 1つしか合法手がない(one reply)であるだとか、利用できる時間を使いきっているだとか、
-
-					double fallingEval = (318 + 6 * (th->bestPreviousScoreForLearn - bestValue)
-						+ 6 * (th->iterValueForLearn[iterIdx] - bestValue)) / 825.0;
-					fallingEval = std::clamp(fallingEval, 0.5, 1.5);
-
-					// If the bestMove is stable over several iterations, reduce time accordingly
-					// もしbestMoveが何度かのiterationにおいて安定しているならば、思考時間もそれに応じて減らす
-
-					timeReduction = lastBestMoveDepth + 9 < completedDepth ? 1.92 : 0.95;
-					double reduction = (1.47 + th->previousTimeReductionForLearn) / (2.32 * timeReduction);
-
-					// Use part of the gained time from a previous stable move for the current move
-					totBestMoveChanges += th->bestMoveChanges;
-					th->bestMoveChanges = 0;
-
-					double bestMoveInstability = 1 + 2 * totBestMoveChanges;
-
-					// 合法手が1手しかないときはtotalTime = 0となり、即指しする計算式。
-					double adjustedNodesLimit = rootMoves.size() == 1 ? 0 :
-						nodesLimit * fallingEval * reduction * bestMoveInstability;
-
-					// bestMoveが何度も変更になっているならunstablePvFactorが大きくなる。
-					// failLowが起きてなかったり、1つ前の反復深化から値がよくなってたりするとimprovingFactorが小さくなる。
-					// Stop the search if we have only one legal move, or if available time elapsed
-
-					if (th->nodes.load(std::memory_order_relaxed) > adjustedNodesLimit)
-					{
-						//sync_cout << pos.game_ply() << " " << completedDepth << " " << th->nodes.load(std::memory_order_relaxed) << " " << rootMoves[0].score << sync_endl;
-						// 停止条件を満たした
-						break;
-					}
-
-					// ここで、反復深化の1回前のスコアをiterValueに保存しておく。
-					// iterIdxは0..3の値をとるようにローテーションする。
-					th->iterValueForLearn[iterIdx] = bestValue;
-					iterIdx = (iterIdx + 1) & 3;
-				}
-				else {
-					if (th->nodes.load(std::memory_order_relaxed) >= nodesLimit) {
-						break;
-					}
-				}
-			}
 		}
 
 		// このPV、途中でNULL_MOVEの可能性があるかも知れないので排除するためにis_ok()を通す。
@@ -4149,12 +4077,6 @@ namespace Learner
 
 		// multiPV時を考慮して、rootMoves[0]のscoreをbestValueとして返す。
 		bestValue = rootMoves[0].score;
-
-		// Learn::search()は連続した局面に対して呼ばれる。
-		// 次に呼ばれたときは相手の手番のため、値を反転しておく。
-		th->bestPreviousScoreForLearn = -bestValue;
-
-		th->previousTimeReductionForLearn = timeReduction;
 
 		return ValueAndPV(bestValue, pvs);
 	}

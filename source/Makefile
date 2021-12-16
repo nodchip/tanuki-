@@ -529,11 +529,6 @@ else ifeq ($(TARGET_CPU),OTHER)
 
 endif
 
-# 相対KPを有効・無効を指定する。
-ifeq ($(HALF_RELATIVE_KP),ON)
-	CPPFLAGS += -DENABLE_HALF_RELATIVE_KP
-endif
-
 # YANEURAOU_EDITION , CPUターゲット名 などのシンボルをコンパイル時に定義してやる。
 CPPFLAGS += -D$(YANEURAOU_EDITION) -DTARGET_CPU=\"$(TARGET_CPU)\" $(EXTRA_CPPFLAGS)
 

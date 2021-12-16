@@ -44,11 +44,6 @@ void Thread::clear()
 			continuationHistory[inCheck][c][SQ_ZERO][NO_PIECE]->fill(Search::CounterMovePruneThreshold - 1);
 		}
 #endif
-
-#if defined(EVAL_LEARN)
-	bestPreviousScoreForLearn = VALUE_INFINITE;
-	previousTimeReductionForLearn = 1.0;
-#endif
 }
 
 // 待機していたスレッドを起こして探索を開始させる
