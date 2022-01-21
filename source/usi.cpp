@@ -112,7 +112,7 @@ namespace Learner
   typedef std::pair<Value, std::vector<Move> > ValueAndPV;
 
   ValueAndPV qsearch(Position& pos);
-  ValueAndPV search(Position& pos, int depth_, size_t multiPV = 1 , u64 nodesLimit = 0, bool adjustNodesLimit = false );
+  ValueAndPV search(Position& pos, int depth_, size_t multiPV = 1 , u64 nodesLimit = 0 );
 
 }
 #endif

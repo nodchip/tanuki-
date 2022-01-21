@@ -13,13 +13,9 @@ namespace Eval {
 
 namespace NNUE {
 
-// L2正規化パラメーターを返す
-double GetL2RegularizationParameter();
-
 // 学習の初期化を行う
 void InitializeTraining(double eta1, u64 eta1_epoch,
-                        double eta2, u64 eta2_epoch, double eta3,
-                        double l2_regularization_parameter);
+                        double eta2, u64 eta2_epoch, double eta3);
 
 // ミニバッチのサンプル数を設定する
 void SetBatchSize(u64 size);

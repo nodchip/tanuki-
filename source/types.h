@@ -250,10 +250,11 @@ enum SquareWithWall: int32_t {
 // 型変換。下位8bit == Square
 constexpr Square sqww_to_sq(SquareWithWall sqww) { return Square(sqww & 0xff); }
 
-extern SquareWithWall sqww_table[SQ_NB_PLUS1];
+// to_sqww()で使うテーブル。直接アクセスしないようにnamespaceに入れてある。
+namespace BB_Table { extern SquareWithWall sqww_table[SQ_NB_PLUS1]; }
 
 // 型変換。Square型から。
-static SquareWithWall to_sqww(Square sq) { return sqww_table[sq]; }
+static SquareWithWall to_sqww(Square sq) { return BB_Table::sqww_table[sq]; }
 
 // 盤内か。壁(盤外)だとfalseになる。
 constexpr bool is_ok(SquareWithWall sqww) { return (sqww & SQWW_BORROW_MASK) == 0; }
@@ -295,6 +296,15 @@ namespace Effect8
 
 	// Directionsに相当するものを引数に渡して1つ方角を取り出す。
 	static Direct pop_directions(Directions& d) { return (Direct)pop_lsb(d); }
+
+	// sq1にとってsq2がどの方角であるかを返す。
+	// sq1がsq2に対して八方向のいずれかであることがわかっている時に用いる。
+	static Direct direct_of(Square sq1, Square sq2)
+	{
+		auto d = directions_of(sq1, sq2);
+		ASSERT_LV3(d != DIRECTIONS_ZERO);
+		return pop_directions(d);
+	}
 
 	// ある方角の反対の方角(180度回転させた方角)を得る。
 	constexpr Direct operator~(Direct d) {
@@ -617,8 +627,6 @@ struct Move16
 	bool operator != (const Move16 rhs) const { return !(*this == rhs); }
 	bool operator == (const Move rhs) const { return move == (u16)rhs; }
 	bool operator != (const Move rhs) const { return !(*this == rhs); }
-	bool operator < (const Move16 rhs) const { return move < rhs.move; }
-	bool operator < (const Move rhs) const { return move < (u16)rhs; }
 
 	// USI形式の文字列にする。
 	std::string to_usi_string() const { return ::to_usi_string(move); }

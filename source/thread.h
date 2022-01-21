@@ -168,17 +168,6 @@ public:
 #if defined(EVAL_LEARN)
 	// 学習用の実行ファイルでは、スレッドごとに置換表を持ちたい。
 	TranspositionTable tt;
-
-	// 前回の探索時のスコア。
-	// 次回の探索のときに何らか使えるかも。
-	Value bestPreviousScoreForLearn;
-
-	// 時間まぎわのときに探索を終了させるかの判定に用いるための、
-	// 反復深化のiteration、前4回分のScore
-	Value iterValueForLearn[4];
-
-	// previousTimeReduction : 反復深化の前回のiteration時のtimeReductionの値。
-	double previousTimeReductionForLearn;
 #endif
 
 };

@@ -118,13 +118,6 @@ class Trainer<Layers::AffineTransform<PreviousLayer, OutputDimensions>> {
                      LearnFloatType learning_rate) {
     const LearnFloatType local_learning_rate =
         learning_rate * learning_rate_scale_;
-
-    // L2正規化
-    // 実際に掛ける値は、1.0 - l2_regularization_parameterに
-    // 学習率の変化を考慮して重みを調整したもの。
-    auto l2_regularization_parameter = static_cast<LearnFloatType>(
-        std::pow(1.0 - GetL2RegularizationParameter(), local_learning_rate));
-
 #if defined(USE_BLAS)
     // backpropagate
     cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
@@ -148,13 +141,6 @@ class Trainer<Layers::AffineTransform<PreviousLayer, OutputDimensions>> {
                 momentum_, weights_diff_, kInputDimensions);
     cblas_saxpy(kOutputDimensions * kInputDimensions, -local_learning_rate,
                 weights_diff_, 1, weights_, 1);
-
-    // L2正規化
-    if (l2_regularization_parameter != 1.0) {
-        cblas_sscal(kOutputDimensions, l2_regularization_parameter, biases_, 1);
-        cblas_sscal(kOutputDimensions * kInputDimensions,
-                    l2_regularization_parameter, weights_, 1);
-    }
 #else
     // backpropagate
     for (IndexType b = 0; b < batch_size_; ++b) {
@@ -195,16 +181,6 @@ class Trainer<Layers::AffineTransform<PreviousLayer, OutputDimensions>> {
     }
     for (IndexType i = 0; i < kOutputDimensions * kInputDimensions; ++i) {
       weights_[i] -= local_learning_rate * weights_diff_[i];
-    }
-
-    // L2正規化
-    if (l2_regularization_parameter != 1.0) {
-        for (IndexType i = 0; i < kOutputDimensions; ++i) {
-            biases_[i] *= l2_regularization_parameter;
-        }
-        for (IndexType i = 0; i < kOutputDimensions * kInputDimensions; ++i) {
-            weights_[i] *= l2_regularization_parameter;
-        }
     }
 #endif
     previous_layer_trainer_->Backpropagate(gradients_.data(), learning_rate);

@@ -5,6 +5,7 @@
 
 #include <iostream>
 using namespace std;
+using namespace BB_Table;
 
 // mlist_startからmlist_endまで(mlist_endは含まない)の指し手がpseudo_legalであるかを
 // 調べて、すべてpseudo_legalならばtrueを返す。
@@ -74,8 +75,8 @@ template <PieceType Pt, Color Us, bool All> struct make_move_target {
 			target2.foreach([&](Square to) { mlist++->move = make_move_promote(from, to , Us , Pt); });
 
 			// 不成で移動する升
-			target &= All ? (Us == BLACK ? ForwardRanksBB[WHITE][RANK_1] : ForwardRanksBB[BLACK][RANK_9]) :
-							(Us == BLACK ? ForwardRanksBB[WHITE][RANK_2] : ForwardRanksBB[BLACK][RANK_8]);
+			target &= All ? (Us == BLACK ? BB_Table::ForwardRanksBB[WHITE][RANK_1] : BB_Table::ForwardRanksBB[BLACK][RANK_9]) :
+							(Us == BLACK ? BB_Table::ForwardRanksBB[WHITE][RANK_2] : BB_Table::ForwardRanksBB[BLACK][RANK_8]);
 
 			target.foreach([&](Square to) { mlist++->move = make_move(from,to , Us , Pt); });
 		}
@@ -193,10 +194,10 @@ template <MOVE_GEN_TYPE GenType, PieceType Pt, Color Us, bool All> struct Genera
 
 			// 移動できる場所 = 利きのある場所
 			auto target2 =
-				Pt == LANCE  ? lanceEffect(Us, from, occ) :
+				Pt == LANCE  ? lanceEffect (Us, from, occ) :
 				Pt == KNIGHT ? knightEffect(Us, from) :
 				Pt == SILVER ? silverEffect(Us, from) :
-				ALL_BB; // error
+				Bitboard(1); // error
 
 			target2 &= target;
 			mlist = make_move_target<Pt, Us, All>()(pos, from, target2, mlist);
@@ -565,7 +566,7 @@ ExtMove* generate_general(const Position& pos, ExtMove* mlist, Square recapSq = 
 		(GenType == CAPTURES_PRO_PLUS)      ?  pos.pieces(Them)   : // 捕獲 + 歩の成る指し手 = 移動先の升は敵駒のある升 + 敵陣(歩のときのみ)
 		(GenType == NON_EVASIONS)           ? ~pos.pieces(Us)     : // すべて = 移動先の升は自駒のない升
 		(GenType == RECAPTURES)             ?  Bitboard(recapSq)  : // リキャプチャー用の升(直前で相手の駒が移動したわけだからここには移動できるはず)
-		ALL_BB; // error
+		Bitboard(1); // error
 
 	// 歩の移動先(↑のtargetと違う部分のみをオーバーライド)
 	const Bitboard targetPawn =
@@ -683,7 +684,7 @@ ExtMove* make_move_check(const Position& pos, Piece pc, Square from, Square ksq,
     if (!(enemy_field(Us) & from))                                     \
       dst &= enemy_field(Us);                                          \
     mlist = make_move_target_pro<X, Us, All, true>(from, dst, mlist);  \
-    if (file_of(from) == file_of(ksq) && !more_than_one(between_bb(from, ksq) & occ)){ \
+    if (file_of(from) == file_of(ksq) && !(between_bb(from, ksq) & occ).more_than_one()){ \
       dst = pos.pieces(~Us) & between_bb(from, ksq) & target;            \
       mlist = make_move_target_pro<X, Us, All, false>(from, dst, mlist); \
     }}
@@ -787,7 +788,8 @@ ExtMove* generate_checks(const Position& pos, ExtMove* mlist)
 	// yと、yを含まないxとに分けて処理する。
 	// すなわち、y と (x | y)^y
 
-	const Square themKing = pos.king_square(~Us);
+	constexpr Color Them = ~Us;
+	const Square themKing = pos.king_square(Them);
 
 	// 以下の方法だとxとして飛(龍)は100%含まれる。角・馬は60%ぐらいの確率で含まれる。事前条件でもう少し省ければ良いのだが…。
 	const Bitboard x =
@@ -799,19 +801,19 @@ ExtMove* generate_checks(const Position& pos, ExtMove* mlist)
 			(pos.pieces(GOLDS)  & check_candidate_bb(Us, GOLD  , themKing)) |
 			(pos.pieces(BISHOP) & check_candidate_bb(Us, BISHOP, themKing)) |
 			(pos.pieces(ROOK_DRAGON)) | // ROOK,DRAGONは無条件全域
-			(pos.pieces(HORSE)  & check_candidate_bb(Us, ROOK  , themKing)) // check_candidate_bbにはROOKと書いてるけど、HORSE
+			(pos.pieces(HORSE)  & check_candidate_bb(Us, ROOK  , themKing)) // check_candidate_bbにはROOKと書いてるけど、HORSEの意味。
 		) & pos.pieces(Us);
 
 	// ここには王を敵玉の8近傍に移動させる指し手も含まれるが、王が近接する形はレアケースなので
 	// 指し手生成の段階では除外しなくても良いと思う。
 
 	// 移動させると(相手側＝非手番側)の玉に対して空き王手となる候補の(手番側)駒のbitboard。
-	const Bitboard y = pos.blockers_for_king(~Us) & pos.pieces(Us);
+	const Bitboard y = pos.blockers_for_king(Them) & pos.pieces(Us);
 
 	const Bitboard target =
-		(GenType == CHECKS || GenType == CHECKS_ALL) ? ~pos.pieces(Us) :                     // 自駒がない場所が移動対象升
-		(GenType == QUIET_CHECKS || GenType == QUIET_CHECKS_ALL) ? pos.empties() :           // 捕獲の指し手を除外するため駒がない場所が移動対象升
-		ALL_BB; // Error!
+		(GenType == CHECKS       || GenType == CHECKS_ALL      ) ? ~pos.pieces<Us>() :           // 自駒がない場所が移動対象升
+		(GenType == QUIET_CHECKS || GenType == QUIET_CHECKS_ALL) ?  pos.empties()    :           // 捕獲の指し手を除外するため駒がない場所が移動対象升
+		Bitboard(1); // Error!
 
 	// yのみ。ただしxかつyである可能性もある。
 	auto src = y;
@@ -824,11 +826,11 @@ ExtMove* generate_checks(const Position& pos, ExtMove* mlist)
 		// いまの敵玉とfromを通る直線上の升と違うところに移動させれば開き王手が確定する。その直線を求める。
 		auto pin_line = line_bb(themKing, from);
 		
-		mlist = make_move_target_general<Us, All>()(pos, pos.piece_on(from), from, target & ~pin_line, mlist);
+		mlist = make_move_target_general<Us, All>()(pos, pos.piece_on(from), from, pin_line.andnot(target) , mlist);
 
 		if (x & from)
 			// 直接王手にもなるので↑で生成した~line_bb以外の升への指し手を生成。
-			mlist = make_move_check<Us, All>(pos, pos.piece_on(from), from, themKing, target & pin_line, mlist);
+			mlist = make_move_check<Us, All>(pos, pos.piece_on(from), from, themKing, pin_line & target, mlist);
 	}
 
 	// yに被覆しないx

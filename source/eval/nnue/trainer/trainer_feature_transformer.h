@@ -161,13 +161,6 @@ class Trainer<FeatureTransformer> {
     // momentumを使用せず、学習率を補正してスケールを合わせる
     const LearnFloatType effective_learning_rate =
         static_cast<LearnFloatType>(local_learning_rate / (1.0 - momentum_));
-
-    // L2正規化を行う
-    // 実際に掛ける値は、1.0 - l2_regularization_parameterに
-    // 学習率の変化を考慮して重みを調整したもの。
-    auto l2_regularization_parameter = static_cast<LearnFloatType>(
-        std::pow(1.0 - GetL2RegularizationParameter(), local_learning_rate));
-
 #if defined(USE_BLAS)
     cblas_sscal(kHalfDimensions, momentum_, biases_diff_, 1);
     for (IndexType b = 0; b < batch_->size(); ++b) {
@@ -209,13 +202,6 @@ class Trainer<FeatureTransformer> {
         }
       }
     }
-
-    // L2正規化を行う
-    if (l2_regularization_parameter != 1.0) {
-        cblas_sscal(kHalfDimensions, l2_regularization_parameter, biases_, 1);
-        cblas_sscal(kHalfDimensions * kInputDimensions,
-                    l2_regularization_parameter, weights_, 1);
-    }
 #else
     for (IndexType i = 0; i < kHalfDimensions; ++i) {
       biases_diff_[i] *= momentum_;
@@ -246,16 +232,6 @@ class Trainer<FeatureTransformer> {
           }
         }
       }
-    }
-
-    // L2正規化を行う
-    if (l2_regularization_parameter != 1.0) {
-        for (IndexType i = 0; i < kHalfDimensions; ++i) {
-            biases_[i] *= l2_regularization_parameter;
-        }
-        for (IndexType i = 0; i < kHalfDimensions * kInputDimensions; ++i) {
-            weights_[i] *= l2_regularization_parameter;
-        }
     }
 #endif
     for (IndexType b = 0; b < batch_->size(); ++b) {

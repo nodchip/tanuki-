@@ -70,7 +70,6 @@
 
 #if defined(EVAL_NNUE)
 #include "../eval/nnue/evaluate_nnue_learner.h"
-#include "../tanuki_progress.h"
 #include <shared_mutex>
 #endif
 
@@ -186,11 +185,7 @@ struct SfenWriter
 	// write_workerスレッドを開始する。
 	void start_file_write_worker()
 	{
-		file_worker_thread = std::thread([&] {
-			// プロセッサーグループが複数ある環境で、負荷が片方のプロセッサーグループに偏るのを防ぐ。
-			WinProcGroup::bindThisThread(0);
-			this->file_write_worker();
-			});
+		file_worker_thread = std::thread([&] { this->file_write_worker(); });
 	}
 
 	// ファイルに書き出すの専用スレッド
@@ -1135,8 +1130,7 @@ double calc_grad(Value deep, Value shallow , const PackedSfenValue& psv)
 
 // 学習時の交差エントロピーの計算
 // elmo式の勝敗項と勝率項との個別の交差エントロピーが引数であるcross_entropy_evalとcross_entropy_winに返る。
-	// 進行度による学習率の調整についても考慮する。
-	void calc_cross_entropy(Value deep, Value shallow, const PackedSfenValue& psv, double weight,
+void calc_cross_entropy(Value deep, Value shallow, const PackedSfenValue& psv,
 	double& cross_entropy_eval, double& cross_entropy_win, double& cross_entropy,
 	double& entropy_eval, double& entropy_win, double& entropy)
 {
@@ -1153,18 +1147,18 @@ double calc_grad(Value deep, Value shallow , const PackedSfenValue& psv)
 	const double m = (1.0 - lambda) * t + lambda * p;
 
 	cross_entropy_eval =
-			(-p * std::log(q + epsilon) - (1.0 - p) * std::log(1.0 - q + epsilon)) * weight;
+		(-p * std::log(q + epsilon) - (1.0 - p) * std::log(1.0 - q + epsilon));
 	cross_entropy_win =
-			(-t * std::log(q + epsilon) - (1.0 - t) * std::log(1.0 - q + epsilon)) * weight;
+		(-t * std::log(q + epsilon) - (1.0 - t) * std::log(1.0 - q + epsilon));
 	entropy_eval =
-			(-p * std::log(p + epsilon) - (1.0 - p) * std::log(1.0 - p + epsilon)) * weight;
+		(-p * std::log(p + epsilon) - (1.0 - p) * std::log(1.0 - p + epsilon));
 	entropy_win =
-			(-t * std::log(t + epsilon) - (1.0 - t) * std::log(1.0 - t + epsilon)) * weight;
+		(-t * std::log(t + epsilon) - (1.0 - t) * std::log(1.0 - t + epsilon));
 
 	cross_entropy =
-			(-m * std::log(q + epsilon) - (1.0 - m) * std::log(1.0 - q + epsilon)) * weight;
+		(-m * std::log(q + epsilon) - (1.0 - m) * std::log(1.0 - q + epsilon));
 	entropy =
-			(-m * std::log(m + epsilon) - (1.0 - m) * std::log(1.0 - m + epsilon)) * weight;
+		(-m * std::log(m + epsilon) - (1.0 - m) * std::log(1.0 - m + epsilon));
 }
 
 #endif
@@ -1237,7 +1231,7 @@ struct SfenReader
 		}
 	}
 
-	void read_validation_set(const string file_name, int eval_limit, bool force_learn_entering_king)
+	void read_validation_set(const string file_name, int eval_limit)
 	{
 		ifstream fs(file_name, ios::binary);
 
@@ -1246,12 +1240,8 @@ struct SfenReader
 			PackedSfenValue p;
 			if (fs.read((char*)&p, sizeof(PackedSfenValue)))
 			{
-				if (eval_limit < abs(p.score) || abs(p.score) == VALUE_SUPERIOR) {
-					// 入玉将棋の棋譜を強制的に学習データ含める。
-					if (!(force_learn_entering_king && p.entering_king)) {
-						continue;
-					}
-				}
+				if (eval_limit < abs(p.score) || abs(p.score) == VALUE_SUPERIOR)
+					continue;
 #if !defined (LEARN_GENSFEN_USE_DRAW_RESULT)
 				if (p.game_result == 0)
 					continue;
@@ -1335,11 +1325,7 @@ struct SfenReader
 	// 局面ファイルをバックグラウンドで読み込むスレッドを起動する。
 	void start_file_read_worker()
 	{
-		file_worker_thread = std::thread([&] {
-			// プロセッサーグループが複数ある環境で、負荷が片方のプロセッサーグループに偏るのを防ぐ。
-			WinProcGroup::bindThisThread(0);
-			this->file_read_worker();
-			});
+		file_worker_thread = std::thread([&] { this->file_read_worker(); });
 	}
 
 	// ファイルの読み込み専用スレッド用
@@ -1533,10 +1519,6 @@ struct LearnerThink: public MultiThink
 		best_loss = std::numeric_limits<double>::infinity();
 		latest_loss_sum = 0.0;
 		latest_loss_count = 0;
-
-		if (!progress.Load()) {
-			std::exit(1);
-		}
 #endif
 	}
 
@@ -1571,9 +1553,6 @@ struct LearnerThink: public MultiThink
 	// 教師局面の深い探索の評価値の絶対値がこの値を超えていたらその教師局面を捨てる。
 	int eval_limit;
 
-	// 入玉将棋の棋譜を強制的に学習データ含める。
-	bool force_learn_entering_king;
-
 	// 評価関数の保存するときに都度フォルダを掘るかのフラグ。
 	// trueだとフォルダを掘らない。
 	bool save_only_once;
@@ -1599,9 +1578,6 @@ struct LearnerThink: public MultiThink
 	double latest_loss_sum;
 	u64 latest_loss_count;
 	std::string best_nn_directory;
-	bool weight_by_progress;
-
-	Tanuki::Progress progress;
 #endif
 
 	u64 eval_save_interval;
@@ -1755,15 +1731,9 @@ void LearnerThink::calc_loss(size_t thread_id, u64 done)
 				// 交差エントロピーを計算して表示させる。
 
 #if defined ( LOSS_FUNCTION_IS_ELMO_METHOD )
-				// 進捗度に応じて学習率を調整する。
-				// WSCOC2020 elmo・水匠2
-				double progress_weight = weight_by_progress
-					? (1.0 - progress.Estimate(pos))
-					: 1.0;
-
 				double test_cross_entropy_eval, test_cross_entropy_win, test_cross_entropy;
 				double test_entropy_eval, test_entropy_win, test_entropy;
-				calc_cross_entropy(deep_value, shallow_value, ps, progress_weight, test_cross_entropy_eval, test_cross_entropy_win, test_cross_entropy, test_entropy_eval, test_entropy_win, test_entropy);
+				calc_cross_entropy(deep_value, shallow_value, ps, test_cross_entropy_eval, test_cross_entropy_win, test_cross_entropy, test_entropy_eval, test_entropy_win, test_entropy);
 				// 交差エントロピーの合計は定義的にabs()をとる必要がない。
 				local_test_sum_cross_entropy_eval += test_cross_entropy_eval;
 				local_test_sum_cross_entropy_win += test_cross_entropy_win;
@@ -1997,12 +1967,8 @@ void LearnerThink::thread_worker(size_t thread_id)
 
 		// 評価値が学習対象の値を超えている。
 		// この局面情報を無視する。
-		if (eval_limit < abs(ps.score) || abs(ps.score) == VALUE_SUPERIOR) {
-			// 入玉将棋の棋譜を強制的に学習データ含める。
-			if (!(force_learn_entering_king && ps.entering_king)) {
-				goto RetryRead;
-			}
-		}
+		if (eval_limit < abs(ps.score) || abs(ps.score) == VALUE_SUPERIOR)
+			goto RetryRead;
 
 #if !defined (LEARN_GENSFEN_USE_DRAW_RESULT)
 		if (ps.game_result == 0)
@@ -2110,16 +2076,10 @@ void LearnerThink::thread_worker(size_t thread_id)
 			Value shallow_value = (rootColor == pos.side_to_move()) ? Eval::evaluate(pos) : -Eval::evaluate(pos);
 
 #if defined ( LOSS_FUNCTION_IS_ELMO_METHOD )
-			// 進捗度に応じて学習率を調整する。
-			// WSCOC2020 elmo・水匠2
-			double progress_weight = weight_by_progress
-				? (1.0 - progress.Estimate(pos))
-				: 1.0;
-
 			// 学習データに対するロスの計算
 			double learn_cross_entropy_eval, learn_cross_entropy_win, learn_cross_entropy;
 			double learn_entropy_eval, learn_entropy_win, learn_entropy;
-				calc_cross_entropy(deep_value, shallow_value, ps, progress_weight, learn_cross_entropy_eval, learn_cross_entropy_win, learn_cross_entropy, learn_entropy_eval, learn_entropy_win, learn_entropy);
+			calc_cross_entropy(deep_value, shallow_value, ps, learn_cross_entropy_eval, learn_cross_entropy_win, learn_cross_entropy, learn_entropy_eval, learn_entropy_win, learn_entropy);
 			learn_sum_cross_entropy_eval += learn_cross_entropy_eval;
 			learn_sum_cross_entropy_win += learn_cross_entropy_win;
 			learn_sum_cross_entropy += learn_cross_entropy;
@@ -2142,13 +2102,8 @@ void LearnerThink::thread_worker(size_t thread_id)
 			// 勾配に基づくupdateはのちほど行なう。
 			Eval::add_grad(pos, rootColor, dj_dw, freeze);
 #else
-			double example_weight =
+			const double example_weight =
 			    (discount_rate != 0 && ply != (int)pv.size()) ? discount_rate : 1.0;
-
-			// 進捗度に応じて学習率を調整する。
-			// WSCOC2020 elmo・水匠2
-			example_weight *= progress_weight;
-
 			Eval::NNUE::AddExample(pos, rootColor, ps, example_weight);
 #endif
 
@@ -2643,9 +2598,6 @@ void learn(Position&, istringstream& is)
 	// 教師局面の深い探索での評価値の絶対値が、この値を超えていたらその局面は捨てる。
 	int eval_limit = 32000;
 
-	// 入玉将棋の棋譜を強制的に学習データ含める。
-	bool force_learn_entering_king = false;
-
 	// 評価関数ファイルの保存は終了間際の1回に限定するかのフラグ。
 	bool save_only_once = false;
 
@@ -2676,8 +2628,6 @@ void learn(Position&, istringstream& is)
 	double newbob_decay = 1.0;
 	int newbob_num_trials = 2;
 	string nn_options;
-	bool weight_by_progress = false;
-	double l2_regularization_parameter = 0.0;
 #endif
 
 	u64 eval_save_interval = LEARN_EVAL_SAVE_INTERVAL;
@@ -2747,7 +2697,6 @@ void learn(Position&, istringstream& is)
 		else if (option == "output_file_name") is >> output_file_name;
 
 		else if (option == "eval_limit") is >> eval_limit;
-		else if (option == "force_learn_entering_king") is >> force_learn_entering_king;
 		else if (option == "save_only_once") save_only_once = true;
 		else if (option == "no_shuffle") no_shuffle = true;
 
@@ -2756,8 +2705,6 @@ void learn(Position&, istringstream& is)
 		else if (option == "newbob_decay") is >> newbob_decay;
 		else if (option == "newbob_num_trials") is >> newbob_num_trials;
 		else if (option == "nn_options") is >> nn_options;
-		else if (option == "weight_by_progress") is >> weight_by_progress;
-		else if (option == "l2_regularization_parameter") is >> l2_regularization_parameter;
 #endif
 		else if (option == "eval_save_interval") is >> eval_save_interval;
 		else if (option == "loss_output_interval") is >> loss_output_interval;
@@ -2842,7 +2789,6 @@ void learn(Position&, istringstream& is)
 
 	cout << "loop              : " << loop << endl;
 	cout << "eval_limit        : " << eval_limit << endl;
-	cout << "force_learn_entering_king : " << force_learn_entering_king << endl;
 	cout << "save_only_once    : " << (save_only_once ? "true" : "false") << endl;
 	cout << "no_shuffle        : " << (no_shuffle ? "true" : "false") << endl;
 
@@ -2860,8 +2806,6 @@ void learn(Position&, istringstream& is)
 #if defined(EVAL_NNUE)
 	cout << "nn_batch_size     : " << nn_batch_size     << endl;
 	cout << "nn_options        : " << nn_options        << endl;
-	cout << "l2_regularization_parameter: " << l2_regularization_parameter << endl;
-	cout << "weight_by_progress: " << weight_by_progress << endl;
 #endif
 	cout << "learning rate     : " << eta1 << " , " << eta2 << " , " << eta3 << endl;
 	cout << "eta_epoch         : " << eta1_epoch << " , " << eta2_epoch << endl;
@@ -2910,7 +2854,7 @@ void learn(Position&, istringstream& is)
 	Eval::init_grad(eta1,eta1_epoch,eta2,eta2_epoch,eta3);
 #else
 	cout << "init_training.." << endl;
-	Eval::NNUE::InitializeTraining(eta1,eta1_epoch,eta2,eta2_epoch,eta3,l2_regularization_parameter);
+	Eval::NNUE::InitializeTraining(eta1,eta1_epoch,eta2,eta2_epoch,eta3);
 	Eval::NNUE::SetBatchSize(nn_batch_size);
 	Eval::NNUE::SetOptions(nn_options);
 	if (newbob_decay != 1.0 && !Options["SkipLoadingEval"]) {
@@ -2935,7 +2879,6 @@ void learn(Position&, istringstream& is)
 	// その他、オプション設定を反映させる。
 	learn_think.discount_rate = discount_rate;
 	learn_think.eval_limit = eval_limit;
-	learn_think.force_learn_entering_king = force_learn_entering_king;
 	learn_think.save_only_once = save_only_once;
 	learn_think.sr.no_shuffle = no_shuffle;
 	learn_think.freeze = freeze;
@@ -2944,7 +2887,6 @@ void learn(Position&, istringstream& is)
 	learn_think.newbob_scale = 1.0;
 	learn_think.newbob_decay = newbob_decay;
 	learn_think.newbob_num_trials = newbob_num_trials;
-	learn_think.weight_by_progress = weight_by_progress;
 #endif
 	learn_think.eval_save_interval = eval_save_interval;
 	learn_think.loss_output_interval = loss_output_interval;
@@ -2962,7 +2904,7 @@ void learn(Position&, istringstream& is)
 	} else {
 		// base_dirの指定を"validation_set_file_name"オプションにも反映させるべきか..
 		//validation_set_file_name = Path::Combine(base_dir, validation_set_file_name);
-		sr.read_validation_set(validation_set_file_name, eval_limit, force_learn_entering_king);
+		sr.read_validation_set(validation_set_file_name, eval_limit);
 	}
 
 	// この時点で一度rmseを計算(0 sfenのタイミング)

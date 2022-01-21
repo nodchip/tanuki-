@@ -34,9 +34,7 @@ class Factorizer<HalfKP<AssociatedKing>> {
     kFeaturesHalfKP,
     kFeaturesHalfK,
     kFeaturesP,
-#ifdef ENABLE_HALF_RELATIVE_KP
     kFeaturesHalfRelativeKP,
-#endif
     kNumTrainingFeatureTypes,
   };
 
@@ -48,10 +46,8 @@ class Factorizer<HalfKP<AssociatedKing>> {
     {true, SQ_NB},
     // kFeaturesP
     {true, Factorizer<P>::GetDimensions()},
-#ifdef ENABLE_HALF_RELATIVE_KP
-	// kFeaturesHalfRelativeKP
+    // kFeaturesHalfRelativeKP
     {true, Factorizer<HalfRelativeKP<AssociatedKing>>::GetDimensions()},
-#endif
   };
   static_assert(GetArrayLength(kProperties) == kNumTrainingFeatureTypes, "");
 
@@ -81,7 +77,6 @@ class Factorizer<HalfKP<AssociatedKing>> {
     // kFeaturesP
     index_offset += InheritFeaturesIfRequired<P>(
         index_offset, kProperties[kFeaturesP], p, training_features);
-#ifdef ENABLE_HALF_RELATIVE_KP
     // kFeaturesHalfRelativeKP
     if (p >= fe_hand_end) {
       index_offset += InheritFeaturesIfRequired<HalfRelativeKP<AssociatedKing>>(
@@ -91,7 +86,7 @@ class Factorizer<HalfKP<AssociatedKing>> {
     } else {
       index_offset += SkipFeatures(kProperties[kFeaturesHalfRelativeKP]);
     }
-#endif
+
     ASSERT_LV5(index_offset == GetDimensions());
   }
 };

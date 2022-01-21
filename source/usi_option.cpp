@@ -3,12 +3,6 @@
 #include "usi.h"
 #include "misc.h"
 
-#include "tanuki_book.h"
-#include "tanuki_kifu_generator.h"
-#include "tanuki_kifu_shuffler.h"
-#include "tanuki_lazy_cluster.h"
-#include "tanuki_progress.h"
-
 using std::string;
 
 // Option設定が格納されたglobal object。
@@ -178,11 +172,7 @@ namespace USI {
 		// (プロセッサグループは64論理コアごとに1つ作られる。上のケースでは、ThreadIdOffset = 0,0,64,64でも同じ意味。)
 		//	※　1つのPCで複数の思考エンジンを同時に起動して対局させる場合はこれを適切に設定すべき。
 
-		o["ThreadIdOffset"] << Option(0, 0, std::thread::hardware_concurrency() - 1,
-			[](const Option& o) {
-				// プロセッサーグループが複数ある環境で、負荷が片方のプロセッサーグループに偏るのを防ぐ。
-				WinProcGroup::bindThisThread(0);
-			});
+		o["ThreadIdOffset"] << Option(0, 0, std::thread::hardware_concurrency() - 1);
 #endif
 
 #if defined(_WIN64)
@@ -192,17 +182,9 @@ namespace USI {
 		o["LargePageEnable"] << Option(true);
 #endif
 
-		o["ForceSilent"] << Option(false);
-
 		// 各エンジンがOptionを追加したいだろうから、コールバックする。
 		USI::extra_option(o);
 
-#ifdef EVAL_LEARN
-		Tanuki::InitializeBook(o);
-		Tanuki::InitializeGenerator(o);
-		Tanuki::InitializeShuffler(o);
-		Tanuki::Progress::Initialize(o);
-#endif
 		// カレントフォルダに"engine_options.txt"があればそれをオプションとしてOptions[]の値をオーバーライドする機能。
 		read_engine_options("engine_options.txt");
 	}
