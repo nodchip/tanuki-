@@ -10,10 +10,12 @@ import urllib.request
 # PATTERN0 = re.compile(r'winning_percentage_for_win=([0-9.]+)')
 # PATTERN0 = re.compile(r'l2_regularization_parameter=([0-9.]+)')
 # PATTERN0 = re.compile(r'nn_batch_size=([0-9]+)')
-PATTERN0 = re.compile(r'DrawValue=([-0-9]+)')
+# PATTERN0 = re.compile(r'DrawValue=([-0-9]+)')
+# PATTERN0 = re.compile(r'([0-9]{3}M)')
+PATTERN0 = re.compile(r'winning_percentage_for_win=([0-9.]+)')
 PATTERN1 = re.compile(
-    r'勝ち\d+\(([0-9.]+)% R[-0-9.]+ \+-[0-9.]+\) 先手勝ち\d+\(([0-9.]+)%\) 後手勝ち\d+\(([0-9.]+)%\)')
-BUILD_NUMBERS = range(124, 134+1)
+    r'勝ち\d+\([0-9.]+% R([-0-9.]+) \+-[0-9.]+\) 先手勝ち\d+\([0-9.]+%\) 後手勝ち\d+\([0-9.]+%\)')
+BUILD_NUMBERS = range(166, 172+1)
 
 
 def main():
@@ -57,7 +59,7 @@ def main():
             matched = m
         if not matched:
             continue
-        print(f'{key}\t{matched.group(1)}\t{matched.group(2)}\t{matched.group(3)}')
+        print(f'{key}\t{matched.group(1)}')
 
 
 if __name__ == '__main__':

@@ -15,22 +15,14 @@ URL = 'url'
 LABEL = 'label'
 HTML = 'html'
 DATA_LIST = [
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2020-05-30/85/consoleText',
-    #     LABEL: 'tanuki-tsec1',
-    # },
     {
-        URL: 'http://hnoda-dt2:8080/job/learn.2021-09-27/75/consoleText',
-        LABEL: 'tanuki-wcsc29-2019-05-06.winning_percentage_for_win=0.990000',
+        URL: 'http://hnoda-dt2:8080/job/learn.2021-12-18/4/consoleText',
+        LABEL: 'tanuki-wcsc29.halfkp_vm_256x2-32-32.suisho-wcsoc2020.depth=9.GeneratorRandomMove=false.startpos',
     },
     {
-        URL: 'http://hnoda-dt2:8080/job/learn.2021-09-27/85/consoleText',
-        LABEL: 'tanuki-wcsc29-2019-05-06.factorizer',
+        URL: 'http://hnoda-dt2:8080/job/learn.2021-12-18/6/consoleText',
+        LABEL: 'suisho5',
     },
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2021-09-27/86/consoleText',
-    #     LABEL: 'tanuki-wcsc29-2019-05-06.factorizer.HALF_RELATIVE_KP=OFF',
-    # },
 ]
 PATTERNS = [
     Pattern('learn_cross_entropy',
@@ -74,8 +66,10 @@ def Show():
                 ys.append(y)
             if not xs:
                 continue
-            plt.plot(xs, ys, label=data[LABEL], linewidth=1.0)
+            plt.plot(xs, ys, label=data[LABEL], linewidth=0.5)
 
+        # plt.ylim(0.195, 0.200)
+        # plt.ylim(0.210, 0.215)
         plt.legend()
         plt.grid()
         plt.title(pattern.label)
