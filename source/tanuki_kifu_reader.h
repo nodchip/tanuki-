@@ -1,4 +1,4 @@
-#ifndef _TANUKI_KIFU_READER_H_
+﻿#ifndef _TANUKI_KIFU_READER_H_
 #define _TANUKI_KIFU_READER_H_
 
 #include "config.h"
@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "learn/learn.h"
+#include "usi.h"
 
 namespace Tanuki {
 	class KifuReader {
@@ -20,6 +21,7 @@ namespace Tanuki {
 		bool Read(Learner::PackedSfenValue& record);
 		bool Read(int num_records, std::vector<Learner::PackedSfenValue>& records);
 		bool Close();
+		static void Initialize(USI::OptionsMap& o);
 
 	private:
 		bool EnsureOpen();

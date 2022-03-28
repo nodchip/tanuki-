@@ -1,4 +1,4 @@
-#include "tanuki_kifu_writer.h"
+﻿#include "tanuki_kifu_writer.h"
 #include "config.h"
 
 #ifdef EVAL_LEARN
@@ -6,7 +6,7 @@
 #include "misc.h"
 
 namespace {
-	constexpr int kBufferSize = 1024 * 1024;
+	static const constexpr char* kKifuWriterBufferSize = "KifuWriterBufferSize";
 }
 
 Tanuki::KifuWriter::KifuWriter(const std::string& output_file_path)
@@ -52,13 +52,18 @@ bool Tanuki::KifuWriter::EnsureOpen() {
 		return false;
 	}
 
-	if (std::setvbuf(file_, nullptr, _IOFBF, kBufferSize)) {
+	int buffer_size = Options[kKifuWriterBufferSize];
+	if (std::setvbuf(file_, nullptr, _IOFBF, buffer_size)) {
 		sync_cout << "info string Failed to set the output buffer: output_file_path_="
 			<< output_file_path_ << sync_endl;
 		return false;
 	}
 
 	return true;
+}
+
+void Tanuki::KifuWriter::Initialize(USI::OptionsMap& o) {
+	o[kKifuWriterBufferSize] << USI::Option(1024 * 1024, 0, std::numeric_limits<int>::max());
 }
 
 #endif
