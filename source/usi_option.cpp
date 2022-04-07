@@ -3,6 +3,7 @@
 #include "usi.h"
 #include "misc.h"
 
+#include "denryu2_investigation.h"
 #include "tanuki_book.h"
 #include "tanuki_kifu_generator.h"
 #include "tanuki_kifu_shuffler.h"
@@ -198,6 +199,7 @@ namespace USI {
 		Tanuki::InitializeShuffler(o);
 		Tanuki::Progress::Initialize(o);
 #endif
+		Denryu2::Initialize(o);
 		// カレントフォルダに"engine_options.txt"があればそれをオプションとしてOptions[]の値をオーバーライドする機能。
 		read_engine_options("engine_options.txt");
 	}

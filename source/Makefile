@@ -304,7 +304,8 @@ ifeq (,)
 		tanuki_progress.cpp                                                    \
 		tanuki_analysis.cpp                                                    \
 		tanuki_filesystem.cpp                                                  \
-		csa.cpp
+		csa.cpp                                                                \
+		denryu2_investigation.cpp
 endif
 
 ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_KPPT)
