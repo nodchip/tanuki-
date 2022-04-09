@@ -16,12 +16,12 @@ LABEL = 'label'
 HTML = 'html'
 DATA_LIST = [
     {
-        URL: 'http://hnoda-dt2:8080/job/learn.2021-12-18/4/consoleText',
-        LABEL: 'tanuki-wcsc29.halfkp_vm_256x2-32-32.suisho-wcsoc2020.depth=9.GeneratorRandomMove=false.startpos',
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-03-15/53/consoleText',
+        LABEL: 'suisho5.40G',
     },
     {
-        URL: 'http://hnoda-dt2:8080/job/learn.2021-12-18/6/consoleText',
-        LABEL: 'suisho5',
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-03-15/54/consoleText',
+        LABEL: 'suisho5.80G',
     },
 ]
 PATTERNS = [
@@ -29,8 +29,8 @@ PATTERNS = [
             r', ([\d]+) sfens, .+ , learn_cross_entropy = ([.\d]+) ,'),
     Pattern('test_cross_entropy',
             r', ([\d]+) sfens, .+ , test_cross_entropy = ([.\d]+) ,'),
-    Pattern('move_accuracy',
-            r', ([\d]+) sfens, .+ , move accuracy = ([.\d]+)% , '),
+    # Pattern('move_accuracy',
+    #         r', ([\d]+) sfens, .+ , move accuracy = ([.\d]+)% , '),
     Pattern('eta', r', ([\d]+) sfens, .+, eta = ([.\d]+),'),
     Pattern('hirate_eval',
             r', ([\d]+) sfens, .+, hirate eval = ([.\d]+) ,'),
@@ -51,7 +51,7 @@ def Show():
 
     for pattern_index, pattern in enumerate(PATTERNS):
         print(pattern.label)
-        plt.figure(figsize=(1920.0/100.0, 1080.0/100.0))
+        plt.figure(figsize=(1600.0/100.0, 1200.0/100.0))
         for data in DATA_LIST:
             xs = list()
             ys = list()
@@ -66,7 +66,7 @@ def Show():
                 ys.append(y)
             if not xs:
                 continue
-            plt.plot(xs, ys, label=data[LABEL], linewidth=0.5)
+            plt.plot(xs, ys, label=data[LABEL])
 
         # plt.ylim(0.195, 0.200)
         # plt.ylim(0.210, 0.215)
