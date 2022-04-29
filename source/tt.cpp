@@ -2,6 +2,7 @@
 #include "misc.h"
 #include "thread.h"
 #include "tt.h"
+#include "extra/key128.h"
 
 TranspositionTable TT; // 置換表をglobalに確保。
 
@@ -12,7 +13,7 @@ TranspositionTable TT; // 置換表をglobalに確保。
 //   gen  : TT.generation()
 // 引数のgenは、Stockfishにはないが、やねうら王では学習時にスレッドごとに別の局面を探索させたいので
 // スレッドごとに異なるgenerationの値を指定したくてこのような作りになっている。
-void TTEntry::save(Key k, Value v, bool pv , Bound b, Depth d, Move m , Value ev)
+void TTEntry::save_(TTEntry::KEY_TYPE key_for_ttentry, Value v, bool pv , Bound b, Depth d, Move m , Value ev)
 {
 	// ASSERT_LV3((-VALUE_INFINITE < v && v < VALUE_INFINITE) || v == VALUE_NONE);
 
@@ -43,8 +44,7 @@ void TTEntry::save(Key k, Value v, bool pv , Bound b, Depth d, Move m , Value ev
 	// これは、このnodeで、TT::probeでhitして、その指し手は試したが、それよりいい手が見つかって、枝刈り等が発生しているような
 	// ケースが考えられる。ゆえに、今回の指し手のほうが、いまの置換表の指し手より価値があると考えられる。
 
-	u16 pos_key = (u16)(k >> 1);
-	if (m || pos_key != key16)
+	if (m || key_for_ttentry != key)
 		move16 = (uint16_t)m;
 
 	// このエントリーの現在の内容のほうが価値があるなら上書きしない。
@@ -53,16 +53,16 @@ void TTEntry::save(Key k, Value v, bool pv , Bound b, Depth d, Move m , Value ev
 	// 　少しの深さのマイナスなら許容)
 	// 3. BOUND_EXACT(これはPVnodeで探索した結果で、とても価値のある情報なので無条件で書き込む)
 	// 1. or 2. or 3.
-	if ( b == BOUND_EXACT
-		|| pos_key != key16
-		|| d - DEPTH_OFFSET > depth8 - 4
-		/*|| g != generation() // probe()において非0のkeyとマッチした場合、その瞬間に世代はrefreshされている。　*/
-		)
+	if (   b == BOUND_EXACT
+		|| key_for_ttentry != key
+		|| d - DEPTH_OFFSET + 2 * pv > depth8 - 4)
+		// ここ、 2 * pv を入れたほうが強いらしい。
+		// https://github.com/official-stockfish/Stockfish/commit/94514199123874c0029afb6e00634f26741d90db
 	{
 		ASSERT_LV3(d > DEPTH_OFFSET);
 		ASSERT_LV3(d < 256 + DEPTH_OFFSET);
 
-		key16     = pos_key;
+		key       = key_for_ttentry;
 		depth8    = (uint8_t)(d - DEPTH_OFFSET); // DEPTH_OFFSETだけ下駄履きさせてある。
 		genBound8 = (uint8_t)(TT.generation8 | uint8_t(pv) << 2 | b);
 		value16   = (int16_t)v;
@@ -110,7 +110,7 @@ void TranspositionTable::resize(size_t mbSize) {
 	// cf. Explicitly zero TT upon resize. : https://github.com/official-stockfish/Stockfish/commit/2ba47416cbdd5db2c7c79257072cd8675b61721f
 
 	// Large Pageを確保する。ランダムメモリアクセスが5%程度速くなる。
-	table = static_cast<Cluster*>(tt_memory.alloc(clusterCount * sizeof(Cluster),32));
+	table = static_cast<Cluster*>(tt_memory.alloc(clusterCount * sizeof(Cluster), sizeof(Cluster) ));
 
 	// clear();
 
@@ -147,7 +147,10 @@ void TranspositionTable::clear()
 #endif
 }
 
-TTEntry* TranspositionTable::probe(const Key key, bool& found) const
+// probe()の内部実装用。
+// key_for_index   : first_entry()で使うためのkey
+// key_for_ttentry : TTEntryに格納するためのkey
+TTEntry* TranspositionTable::probe(const Key key_for_index, const TTEntry::KEY_TYPE key_for_ttentry , bool& found) const
 {
 	ASSERT_LV3(clusterCount != 0);
 
@@ -162,11 +165,7 @@ TTEntry* TranspositionTable::probe(const Key key, bool& found) const
 
 	// 最初のTT_ENTRYのアドレス(このアドレスからTT_ENTRYがClusterSize分だけ連なっている)
 	// keyの下位bitをいくつか使って、このアドレスを求めるので、自ずと下位bitはいくらかは一致していることになる。
-	TTEntry* const tte = first_entry(key);
-
-	// 下位16bit(bit0は除く)が合致するTT_ENTRYを探す
-	// 上位bitは、tteのアドレスの算出に用いているので、だいたい合ってる。
-	const uint16_t key16 = (u16)(key >> 1);
+	TTEntry* const tte = first_entry(key_for_index);
 
 	// クラスターのなかから、keyが合致するTT_ENTRYを探す
 	for (int i = 0; i < ClusterSize; ++i)
@@ -183,7 +182,7 @@ TTEntry* TranspositionTable::probe(const Key key, bool& found) const
 		// Stockfish12からはdepth8 == 0が空のTTEntryを意味するように変わった。
 		// key16は1/65536の確率で0になりうるので…。
 
-		if (tte[i].key16 == key16 || !tte[i].depth8)
+		if (tte[i].key == key_for_ttentry || !tte[i].depth8)
 		{
 			tte[i].genBound8 = uint8_t(generation8 | (tte[i].genBound8 & (GENERATION_DELTA - 1))); // Refresh
 
@@ -223,7 +222,7 @@ TTEntry* TranspositionTable::probe(const Key key, bool& found) const
 }
 
 // read onlyであることが保証されているprobe()
-TTEntry* TranspositionTable::read_probe(const Key key, bool& found) const
+TTEntry* TranspositionTable::read_probe(const Key key_for_index, const TTEntry::KEY_TYPE key_for_ttentry , bool& found) const
 {
 	ASSERT_LV3(clusterCount != 0);
 
@@ -232,16 +231,37 @@ TTEntry* TranspositionTable::read_probe(const Key key, bool& found) const
 		return found = false, first_entry(0);
 #endif
 
-	TTEntry* const tte = first_entry(key);
-	const uint16_t key16 = (u16)(key >> 1);
+	TTEntry* const tte = first_entry(key_for_index);
 
 	for (int i = 0; i < ClusterSize; ++i)
 	{
-		if (tte[i].key16 == key16 || !tte[i].depth8)
-				return found = (bool)tte[i].depth8, &tte[i];
+		if (tte[i].key == key_for_ttentry || !tte[i].depth8)
+			return found = (bool)tte[i].depth8, &tte[i];
 	}
 	return found = false, nullptr;
 }
+
+// やねうら王独自拡張
+//
+// hash keyを64bit,128bit,256bitに自由に変更できる。 →　config.h で HASH_KEY_BITS を設定する。
+// またTTClusterSizeを2または3を選択できる。
+//
+// TTClusterSizeとして2を選択した場合、TTEntryに格納されるhash keyは64bitになる。
+// TTClusterSizeとして3を選択した場合、TTEntryに格納されるhash keyは16bitになる。
+// → config.h で TTClusterSize を設定する。
+
+void TTEntry::save(Key     k, Value v, bool pv , Bound b, Depth d, Move m, Value ev) { save_((TTEntry::KEY_TYPE)(k >> 1)          ,v, pv, b, d, m, ev);}
+void TTEntry::save(Key128& k, Value v, bool pv , Bound b, Depth d, Move m, Value ev) { save_((TTEntry::KEY_TYPE) k.extract64<1>() ,v, pv, b, d, m, ev);}
+void TTEntry::save(Key256& k, Value v, bool pv , Bound b, Depth d, Move m, Value ev) { save_((TTEntry::KEY_TYPE) k.extract64<1>() ,v, pv, b, d, m, ev);}
+TTEntry* TranspositionTable::probe      (const Key     key, bool& found) const { return      probe(key               ,(TTEntry::KEY_TYPE)(key >> 1          ), found); }
+TTEntry* TranspositionTable::probe      (const Key128& key, bool& found) const { return      probe(key.extract64<0>(),(TTEntry::KEY_TYPE)(key.extract64<1>()), found); }
+TTEntry* TranspositionTable::probe      (const Key256& key, bool& found) const { return      probe(key.extract64<0>(),(TTEntry::KEY_TYPE)(key.extract64<1>()), found); }
+TTEntry* TranspositionTable::read_probe (const Key     key, bool& found) const { return read_probe(key               ,(TTEntry::KEY_TYPE)(key >> 1          ), found); }
+TTEntry* TranspositionTable::read_probe (const Key128& key, bool& found) const { return read_probe(key.extract64<0>(),(TTEntry::KEY_TYPE)(key.extract64<1>()), found); }
+TTEntry* TranspositionTable::read_probe (const Key256& key, bool& found) const { return read_probe(key.extract64<0>(),(TTEntry::KEY_TYPE)(key.extract64<1>()), found); }
+TTEntry* TranspositionTable::first_entry(const Key     key) const { return _first_entry(key               ); }
+TTEntry* TranspositionTable::first_entry(const Key128& key) const { return _first_entry(key.extract64<0>()); }
+TTEntry* TranspositionTable::first_entry(const Key256& key) const { return _first_entry(key.extract64<0>()); }
 
 int TranspositionTable::hashfull() const
 {

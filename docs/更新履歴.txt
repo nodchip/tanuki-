@@ -2,6 +2,535 @@
 やねうら王 更新履歴
 
 
+■　2022/04/19
+
+
+- Stockfish 15
+  - https://github.com/official-stockfish/Stockfish/commit/e6e324eb28fd49c1fc44b3b65784f85a773ec61c
+
+  // Stockfish 15相当までは完全に追いついた。
+
+- Decrease LMR at PV nodes with low depth. : https://github.com/official-stockfish/Stockfish/commit/df2f7e75276cc93a8cb8c70057903ab0edbd92bd
+  // V7.01dd
+  →　どうも導入前より悪いのでコメントアウト
+
+engine1 = YaneuraOuNNUE_V701aa_avx2.exe , eval = suishou6_20220114-fv32
+engine2 = YaneuraOuNNUE_V701dd_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,1112 - 112 - 1076(50.82% R5.72[-6.5,17.93]) winrate black , white = 50.32% , 49.68%
+
+
+■　2022/04/16
+- benchコマンドで sync_endl一つ多かったの修正。
+
+
+- V7.01wに対して
+  - capture_or_promotionだけ元(capture)に戻して比較。
+  // V7.01aa
+
+engine1 = YaneuraOuNNUE_V701w_avx2.exe , eval = suishou6_20220114-fv32
+engine2 = YaneuraOuNNUE_V701aa_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,1406 - 133 - 1461(49.04% R-6.67[-17.34,4.01]) winrate black , white = 49.42% , 50.58%
+T2,b2000,1445 - 184 - 1371(51.31% R9.13[-1.64,19.9]) winrate black , white = 51.31% , 48.69%
+T2,b4000,1385 - 226 - 1389(49.93% R-0.5[-11.35,10.35]) winrate black , white = 52.02% , 47.98%
+T2,b8000,909 - 208 - 943(49.08% R-6.38[-19.66,6.9]) winrate black , white = 52.43% , 47.57%
+  // aaのほうが良さげに見えるが誤差かも。
+
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701aa_avx2.exe , eval = Suisho5_211028
+T2,b1000,1346 - 143 - 1511(47.11% R-20.09[-30.8,-9.38]) winrate black , white = 52.19% , 47.81%
+T2,b8000,650 - 140 - 820(44.22% R-40.36[-55.36,-25.36]) winrate black , white = 53.33% , 46.67%
+
+
+- V7.01wに対して
+ - super sort、条件が良さげな時だけ使う。
+  // V7.01z
+
+			// depth大きくて指し手の数も多い時だけsuper sortを使うとどう？
+			if (depth >= 10 && endMoves - cur >= 64)
+				partial_super_sort(cur, endMoves , -3000 * depth);
+			else
+				partial_insertion_sort(cur, endMoves, -3000 * depth);
+
+engine1 = YaneuraOuNNUE_V701w_avx2.exe , eval = suishou6_20220114-fv32
+engine2 = YaneuraOuNNUE_V701z_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,1457 - 145 - 1398(51.03% R7.18[-3.52,17.88]) winrate black , white = 52.78% , 47.22%
+T2,b2000,817 - 124 - 879(48.17% R-12.71[-26.59,1.18]) winrate black , white = 52.06% , 47.94%
+T2,b4000,1392 - 217 - 1391(50.02% R0.12[-10.71,10.96]) winrate black , white = 53.47% , 46.53%
+T2,b8000,1333 - 290 - 1367(49.37% R-4.38[-15.37,6.62]) winrate black , white = 54.63% , 45.37%
+
+// super sortの使う条件、やはりこれでもおかしいのか…。
+// depth条件が悪いのか…。うーむ...
+
+
+- V7.01wに対してmovepicker、歩以外の駒に対する歩の脅威を実装。
+- supersortやめる
+  // V7.01y
+engine1 = YaneuraOuNNUE_V701w_avx2.exe , eval = suishou6_20220114-fv32
+engine2 = YaneuraOuNNUE_V701y_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,617 - 57 - 596(50.87% R6.02[-10.39,22.42]) winrate black , white = 54.49% , 45.51%
+// 良いとは言い難いので、脅威の実装やめる。
+
+
+- supersort使ってみる。
+- V7.01wに対して。
+  // V7.01x
+engine1 = YaneuraOuNNUE_V701w_avx2.exe , eval = suishou6_20220114-fv32
+engine2 = YaneuraOuNNUE_V701x_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,1406 - 128 - 1466(48.96% R-7.26[-17.92,3.4]) winrate black , white = 51.53% , 48.47%
+T2,b8000,460 - 99 - 421(52.21% R15.39[-3.87,34.65]) winrate black , white = 56.41% , 43.59%
+
+// 短い時間では効果があるようなのだが、長い時間で効果がない。なんで？
+
+
+- movepickerのthreatenやめてみる。
+- 探索部のcapture → 全部capture_or_pawn_promotionに変更してみる。
+  // V7.01w
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701w_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,656 - 66 - 748(46.72% R-22.8[-38.08,-7.52]) winrate black , white = 50.36% , 49.64%
+T2,b4000,708 - 118 - 824(46.21% R-26.36[-41.0,-11.72]) winrate black , white = 51.57% , 48.43%
+T2,b8000,666 - 138 - 936(41.57% R-59.12[-73.6,-44.64]) winrate black , white = 53.0% , 47.0%
+// 長い時間でわりと強い。
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701w_avx2.exe , eval = Suisho5_211028
+T2,b1000,1322 - 145 - 1533(46.3% R-25.72[-36.45,-15.0]) winrate black , white = 51.45% , 48.55%
+T2,b8000,807 - 212 - 1001(44.63% R-37.42[-50.94,-23.91]) winrate black , white = 51.44% , 48.56%
+
+
+- movepickerでPRO_PLUS使うのやめてみる。
+- movepickerのthreatenやめてみる。
+  // V7.01v
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701v_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,649 - 33 - 438(59.71% R68.31[50.65,85.97]) winrate black , white = 52.53% , 47.47%
+T2,b8000,111 - 15 - 74(60.0% R70.44[27.66,113.21]) winrate black , white = 46.49% , 53.51%
+
+// これはよくないな…。
+
+
+- movepickerにthreatenedByMinor追加。
+
+- Piece::QUEEN廃止。
+- Bitboard::attacks_bb()追加。
+- Bitboard::pawn_attacks_bb()追加
+- Position::attacks_by() template引数のColorとPieceを逆順に。
+
+- B_QUEEN , W_QUEEN削除。
+  - B_GOLDS , W_GOLDSとして使いたいので。
+    // V7.01u
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701u_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,1350 - 120 - 1430(48.56% R-10.0[-20.84,0.84]) winrate black , white = 51.69% , 48.31%
+T2,b2000,599 - 68 - 773(43.66% R-44.3[-59.85,-28.75]) winrate black , white = 51.82% , 48.18%
+T2,b8000,632 - 117 - 731(46.37% R-25.28[-40.8,-9.76]) winrate black , white = 51.58% , 48.42%
+
+// 短い時間では改善しているが、長い時間で改善しているか怪しい。
+
+
+
+■　2022/04/14
+
+
+- attacks_bb()などのUnitTest追加。
+
+
+- やねうら王V7.10
+  - Stockfish最新[2022/04/14]に追いついたが、ほとんど強くなってない😇
+
+
+- In movepicker increase priority for moves that evade a capture
+  - https://github.com/official-stockfish/Stockfish/commit/08e0f52b77edb929989c68c49e954b9bc5d7d67e
+- MovePickerのQUIETのscoringにthreatened導入。
+- Bitboard::attacks_bb()実装
+- Position::attacks_by()実装
+  // V701t
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701t_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,1120 - 94 - 1136(49.65% R-2.46[-14.49,9.57]) winrate black , white = 52.53% , 47.47%
+T2,b2000,1069 - 142 - 1159(47.98% R-14.04[-26.16,-1.93]) winrate black , white = 52.42% , 47.58%
+T2,b4000,1054 - 176 - 1180(47.18% R-19.62[-31.72,-7.51]) winrate black , white = 52.24% , 47.76%
+T2,b8000,377 - 83 - 480(43.99% R-41.96[-61.61,-22.31]) winrate black , white = 54.03% , 45.97%
+// 長い時間ではそこまで悪くはなさげ？
+
+
+- bestThreadの選出、よく見直す。
+→　問題なさそう。
+- MovePickerのCAPTURE、pro_plus除外するか。
+→　問題なさそう。
+
+
+		const Color us = pos.side_to_move();
+		// squares threatened by pawns
+		threatenedByPawn = ~us == BLACK ? pos.attacks_by<PAWN,BLACK>() : pos.attacks_by<PAWN,WHITE>();
+
+		// squares threatened by minors or pawns
+		//threatenedByMinor = pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatenedByPawn;
+		// →　将棋では小駒を入れていいと思う。
+		threatenedByMinor = ~us == BLACK ?
+				pos.attacks_by<LANCE, BLACK>() | pos.attacks_by<KNIGHT, BLACK>() | pos.attacks_by<SILVER, BLACK>() | pos.attacks_by<GOLD, BLACK>() | threatenedByPawn
+			:   pos.attacks_by<LANCE, WHITE>() | pos.attacks_by<KNIGHT, WHITE>() | pos.attacks_by<SILVER, WHITE>() | pos.attacks_by<GOLD, WHITE>() | threatenedByPawn;
+
+		// squares threatened by rooks, minors or pawns
+		threatenedByRook = ~us == BLACK ?
+			  pos.attacks_by<ROOK, BLACK>() | threatenedByMinor
+			: pos.attacks_by<ROOK, WHITE>() | threatenedByMinor;
+
+		// pieces threatened by pieces of lesser material value
+		threatened = (pos.pieces(us, QUEEN) & threatenedByRook)
+			| (pos.pieces(us, ROOK) & threatenedByMinor)
+			| (pos.pieces(us, KNIGHT, BISHOP) & threatenedByPawn);
+
+
+- Adjust singular extension depth restriction
+  - https://github.com/official-stockfish/Stockfish/commit/8e8234593190804babd36b8a8862e2bb1fc65bb7
+  // V701s
+
+// r→sでなんか弱なっとる。
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701s_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,1379 - 111 - 1510(47.73% R-15.77[-26.41,-5.12]) winrate black , white = 52.41% , 47.59%
+
+
+
+- Tweak history initialization : https://github.com/official-stockfish/Stockfish/commit/7d44b43b3ceb2eebc756709432a0e291f885a1d2
+  - continuation historyを少し負の値(-71)で初期化する。
+
+  // ほとんどの履歴エントリがいずれにせよ後で負になるため、
+  // 開始値を「正しい」方向に少しシフトさせるため、-71で埋めている。
+  // この効果は、深度が深くなるほど薄れるので、長時間思考させる時には
+  // あまり意味がないが、無駄ではないらしい。
+  // Tweak history initialization : https://github.com/official-stockfish/Stockfish/commit/7d44b43b3ceb2eebc756709432a0e291f885a1d2
+
+  // V701r
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701r_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,1319 - 124 - 1557(45.86% R-28.82[-39.51,-18.13]) winrate black , white = 52.16% , 47.84%
+T2,b2000,744 - 103 - 913(44.9% R-35.56[-49.67,-21.45]) winrate black , white = 51.84% , 48.16%
+T2,b4000,248 - 44 - 288(46.27% R-25.98[-50.71,-1.24]) winrate black , white = 52.05% , 47.95%
+// 長い時間で言うほどつよない
+
+
+- Reintroduce check extension
+  // V701q
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701q_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,1327 - 138 - 1535(46.37% R-25.29[-36.0,-14.59]) winrate black , white = 52.48% , 47.52%
+
+
+- Reintroduce futility pruning for captures : https://github.com/official-stockfish/Stockfish/commit/fb7d3ab32ebd7a6514bded459b4aa442276f6cda
+  - CapturePieceValueEg()追加。
+- Correctly reset bestMoveChanges : https://github.com/official-stockfish/Stockfish/commit/c1f9a359e8e319d832ee5a55277dab996dd29d25
+- Tweak time management : https://github.com/official-stockfish/Stockfish/commit/18f2b12cd019212b9c7103cc63e3bf64a5be7c3c
+  // V701p
+
+  engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+  engine2 = YaneuraOuNNUE_V701p_avx2.exe , eval = suishou6_20220114-fv32
+  T2,b1000,455 - 41 - 514(46.96% R-21.18[-39.56,-2.8]) winrate black , white = 49.54% , 50.46%
+
+
+- Introduce movecount pruning for quiet check evasions in qsearch
+  - https://github.com/official-stockfish/Stockfish/commit/95d7369e54f20715345cf5408040f3c7d1ec8415
+
+- Introduce Optimism : https://github.com/official-stockfish/Stockfish/commit/a5a89b27c8e3225fb453d603bc4515d32bb351c3
+  →　これ、trendとかと絡むので導入せず。
+
+  このパッチでは、実際にスケーリングを行う前に、Stockfishの評価に小さな「楽観」値を追加することで、この2つの戦略の間の転換点をわずかに相殺します。
+  その効果は、SFがもう少しリスキーなプレイをし、防衛しているときはもう少し緊張を保とうとし、優位にあるときはボード上にさらに多くの材料を維持することである。
+
+  このパッチは、昔あった「軽蔑」の考えと精神的に似ていることに注目します。
+  しかし、この実装は次の2つの点で異なっている。
+
+    a) マスターに対するEloゲイナーとしてテストされている。
+    b) 検索によって出力される値は、この実装によって平均的に変化しない。(つまり、楽観値によってテンション・交換戦略は変わるが 1.0ポーンという表示値は、パッチの前後で同じ意味を持つ)。
+
+→　興味深いのは、nnueのevaluate()のスコアをスケーリングする時に、その係数は固定ではなく、序中盤と終盤とでは、この係数を変化させているということ。
+// もし序盤の優劣で大きなスコアがつかないから 0 付近の解像度をあげようとするとき、たとえば nnueの出力の絶対値が 300未満なら 係数を大きくする、みたいなことは意味がありそう。
+
+- Simplify limiting extensions. : https://github.com/official-stockfish/Stockfish/commit/9083050be692b2d9a4f281e78b967755e00cfc39
+  // V701o
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701o_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,346 - 39 - 395(46.69% R-23.01[-44.04,-1.98]) winrate black , white = 49.93% , 50.07%
+
+
+■　2022/04/13
+
+
+- Scale child node futility pruning with previous move history. : https://github.com/official-stockfish/Stockfish/commit/8b4afcf8f7a38ee3060f39d563aad5956fe723d7
+- Less futility pruning. : https://github.com/official-stockfish/Stockfish/commit/092b27a6d0174f619fff9a53099ac9fdc5c2cb4e
+  // V701n
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701n_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,574 - 60 - 616(48.24% R-12.27[-28.84,4.3]) winrate black , white = 53.03% , 46.97%
+
+
+- Reintroduce razoring
+  - Reintroduce razoring : https://github.com/official-stockfish/Stockfish/commit/4d3950c6eb80c932af00f6495668d5c5adf3701b
+  - Tune search at very long time control : https://github.com/official-stockfish/Stockfish/commit/84b1940fcae95bb0a641dda9e85cb96f8c21cd22
+
+  Razoringは何年か前に簡略化されましたが、このパッチでは少し違った形で再導入されています。
+  現在では、eval が alpha よりもずっと下にある場合、qsearch が alpha よりも上に押し上げることができるかどうかをチェックし、もしできなければ fail low を返します。
+
+- Don't direct prune a move if it's a retake : https://github.com/official-stockfish/Stockfish/commit/93b14a17d168e87e7f05fc09e3ba93e737b0757e
+  // V701m
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701m_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,633 - 53 - 654(49.18% R-5.67[-21.6,10.26]) winrate black , white = 52.06% , 47.94%
+
+
+- Introduce post-lmr extensions :
+  - https://github.com/official-stockfish/Stockfish/commit/c228f3196ae9965250f317c8784012c2485228c4
+  // V701l
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701l_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,535 - 41 - 534(50.05% R0.33[-17.15,17.8]) winrate black , white = 54.35% , 45.65%
+
+
+- lmr調整
+  - Tune search at very long time control : https://github.com/official-stockfish/Stockfish/commit/84b1940fcae95bb0a641dda9e85cb96f8c21cd22
+
+- Use complexity in search : https://github.com/official-stockfish/Stockfish/commit/7678d63cf2323e51c01e60cdff4ac3d685313790
+  →　これ、psq_scoreが必要だが、その計算してないから導入できない。
+
+  // V701k
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701k_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,274 - 22 - 274(50.0% R-0.0[-24.39,24.39]) winrate black , white = 51.46% , 48.54%
+
+
+- tuning LMR
+  // V701j
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701j_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,337 - 23 - 290(53.75% R26.09[3.22,48.96]) winrate black , white = 50.08% , 49.92%
+
+
+- tuning pruning parameters
+  // V701i
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701i_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,359 - 30 - 301(54.39% R30.61[8.3,52.93]) winrate black , white = 54.24% , 45.76%
+
+
+- tuning reduction parameters
+  // V701h
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701h_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,805 - 89 - 806(49.97% R-0.22[-14.45,14.02]) winrate black , white = 53.69% , 46.31%
+
+
+- remove singularQuietLMR
+  - https://github.com/official-stockfish/Stockfish/commit/0889210262ab5a14bc6fcd261125b919120637a0
+- remove Range reductions
+- remove ss->ttPv = ss->ttPv && (ss + 1)->ttPv;
+- clean up double extension
+  // V701g
+- tuning reduction parameters
+  // V701h
+
+
+				// Range reductions (~3 Elo)
+				//
+				// staticEvalとchildのeval(value)の差が一貫して低い時にreduction量を増やす。
+				if (ss->staticEval - value < 30 && depth > 7)
+					rangeReduction++;
+
+		// Otherwise, a counter move has been found and if the position is the last leaf
+		// in the search tree, remove the position from the search tree.
+
+		// それ以外の場合は、カウンターの手が見つかり、その局面が探索木のleafであれば、
+		// その局面を探索木から削除する。
+		// (ttPvをfalseに変更してTTEntryに保存する)
+
+		else if (depth > 3)
+			ss->ttPv = ss->ttPv && (ss + 1)->ttPv;
+
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701g_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,733 - 83 - 794(48.0% R-13.89[-28.52,0.75]) winrate black , white = 51.93% , 48.07%
+
+
+- Improve transposition table remplacement strategy
+  - https://github.com/official-stockfish/Stockfish/commit/94514199123874c0029afb6e00634f26741d90db
+  // V701f
+
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701f_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,165 - 13 - 142(53.75% R26.08[-6.58,58.74]) winrate black , white = 47.56% , 52.44%
+  // 間違えてupdateしたほう
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701f2_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,820 - 83 - 807(50.4% R2.78[-11.39,16.94]) winrate black , white = 53.35% , 46.65%
+
+
+- suisho5 embedded_nnue resource #228
+  - Mizarさん、たややんさんからのプルリク。
+
+
+- update comments
+  - 探索部のコメントを更新。
+  - 指し手に影響はない。
+
+
+- ExplosionState削除
+- doubleExtensionAverage削除
+  // V701e
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701e_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,557 - 61 - 602(48.06% R-13.5[-30.29,3.3]) winrate black , white = 52.29% , 47.71%
+
+- capture_or_pawn_promotion() →　すべて capture()に変更 // V701d
+  - 変数名、前のままだったところ修正。
+
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701d_avx2.exe , eval = suishou6_20220114-fv32
+T2,b2000,485 - 61 - 454(51.65% R11.47[-7.18,30.13]) winrate black , white = 52.29% , 47.71%
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701d_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,1456 - 142 - 1402(50.94% R6.57[-4.12,17.26]) winrate black , white = 50.03% , 49.97%
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028
+engine2 = YaneuraOuNNUE_V701c_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,1451 - 141 - 1408(50.75% R5.23[-5.46,15.91]) winrate black , white = 49.63% , 50.37%
+
+
+- capture_or_pawn_promotion() →　すべて capture()に変更 // V701c
+  - 計測誤差程度にしか変わらないので、Stockfishに倣い、capture()で統一する。
+  - 変数名、前のままだったところ修正。
+
+  探索で、capture(駒を捕獲する指し手)を別扱いする時に、capture() , capture_or_promotion() ,
+  capture_or_pawn_promotion()の3択で、将棋ではcapture_or_pawn_promotion()の方が良いのではと
+  長らく言われていたのだが(Aperyなど他のソフトがそういう工夫がなされていた)、どうやら
+  最新のStockfishではcapture()で統一されたようで、計測してみたら将棋でもcapture()で良さそう
+  (capture_or_pawn_promotionとは誤差程度にしか変わらない)。これは事件である。🤯 
+
+engine1 = YaneuraOuNNUE_V701b_avx2.exe , eval = suishou6_20220114-fv32
+engine2 = YaneuraOuNNUE_V701c_avx2.exe , eval = suishou6_20220114-fv32
+T2,b1000,564 - 61 - 505(52.76% R19.2[1.7,36.69]) winrate black , white = 50.8% , 49.2%
+
+
+
+■　2022/04/12
+
+
+- lowPlyHistory削除 // V701b
+  - これ削除しても強さほぼ変わらなかった。
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028          , FV_SCALE = 24
+engine2 = YaneuraOuNNUE_V701b_avx2.exe , eval = suishou6_20220114-fv32 , FV_SCALE = 32
+T2,b1000,652 - 46 - 602(51.99% R13.86[-2.28,30.01]) winrate black , white = 52.47% , 47.53%
+
+engine1 = YaneuraOuNNUE_V701a_avx2.exe , eval = suishou6_20220114 , FV_SCALE = 24
+engine2 = YaneuraOuNNUE_V701b_avx2.exe , eval = suishou6_20220114 , FV_SCALE = 24
+T2,b1000,457 - 54 - 449(50.44% R3.07[-15.91,22.05]) winrate black , white = 49.34% , 50.66%
+
+engine1 = YaneuraOuNNUE_V701a_avx2.exe , eval = suishou6_20220114 , FV_SCALE = 32
+engine2 = YaneuraOuNNUE_V701b_avx2.exe , eval = suishou6_20220114 , FV_SCALE = 32 lowPlyHistory削除
+T2,b1000,1443 - 171 - 1386(51.01% R7.0[-3.74,17.75]) winrate black , white = 52.6% , 47.4%
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028     , FV_SCALE = 24
+engine2 = YaneuraOuNNUE_V701a_avx2.exe , eval = suishou6_20220114 , FV_SCALE = 32
+T2,b1000,1487 - 146 - 1367(52.1% R14.62[3.91,25.32]) winrate black , white = 51.33% , 48.67%
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028     , FV_SCALE = 24
+engine2 = YaneuraOuNNUE_V701a_avx2.exe , eval = suishou6_20220114 , FV_SCALE = 24
+T2,b1000,547 - 47 - 446(55.09% R35.46[17.24,53.68]) winrate black , white = 52.67% , 47.33%
+// 水匠6では、FV_SCALE = 32のほうが強いっぽいな…。
+
+engine1 = YaneuraOuNNUE_V700beta4.exe , eval = Suisho5_211028     , FV_SCALE = 24
+engine2 = YaneuraOuNNUE_V701a_avx2.exe , eval = suishou6_20220114 , FV_SCALE = 16
+
+T2,b1000,212 - 13 - 105(66.88% R122.06[88.01,156.1]) winrate black , white = 46.06% , 53.94%
+// FV_SCALE=16、マジでクソ。
+
+
+
+■　2022/04/11
+
+
+- remove -lcublas #227
+	- Mizarさんからのプルリク。
+
+- virturlenv: windows-2022 (#226)
+	- Mizarさんからのプルリク。
+
+
+- Visual Studio 2022の最新版に対応
+	- 使用するPlatformToolset が v142 → v143 に
+- Visual Studioのプロジェクトウィンドウで、bench.pyがscriptフォルダに入っていなかったの修正。
+
+
+- Bitboard256::byte_reverse()、AVX2がない時の実装、AVX2用と互換性がなかった。
+	- dlshogiの山岡さんからの指摘
+	// 利きは正しく求まっているので気づかなかった。
+- Bitboard256::byte_reverse()をUnitTestに追加。
+
+
+■　2021/12/23 V7.00
+
+
+- やねうら王V7.00
+	- 探索部、最新のStockfishに追随し、かつ探索パラメーターを調整した。(V6.00から+R40程度up)
+	- 水匠5(NNUE)の評価関数内蔵型の実行ファイル追加。
+	- 定跡ファイル2GB以上のものも取り扱えるようにした。
+	- Qugiyのアルゴリズムを用いた飛び利きの高速化。(nps+5%程度up)
+	- リンク時最適化。(nps+2%程度up)
+	- FV_SCALE調整できるようにした。(これと合わせ、水匠5では前バージョンから+R100程度up)
+	- スーパーテラショック定跡生成コマンド追加。
+	- fコマンド追加。
+	- Graviton2をARM NEON SIMD対応
+	- ベンチマークの実行時間を一定にする改良
+	- 学習時のテストロスの計算のスレッド並列処理をApery方式に変更し、高速化した
+	- エンジンオプションのEvalDirで指定されたフォルタにある"eval_options.txt"でエンジン設定を読み込めるように。
+	- eval_options.txtはdlshogiの設定ファイルと同じ形式で書けるようにした。
+	- 定跡DB上に非合法手があると、その手を選択した場合、定跡にhitしなかった扱いになっていたのを修正。
+
+
+■　2021/12/18
+
+
+- 32bit などの時に ftello64(), fseeko64() を使わない。 #221
+	- Mizarさんのプルリク : https://github.com/yaneurao/YaneuraOu/pull/221
+
+
+- スーパーテラショック定跡化コマンド、循環をうまく取り扱うように修正。
+- Position::is_reptitionに何手目前からの循環であるかを返す引数を用意。
+- ftell64(),fseek64()追加。
+	- 定跡ファイル、on the flyの時に32bit環境で2GB以上のファイルが扱えないのは仕様ということで。
+
+
+
+■　2021/12/16
+
+
+- make clean $extra #220 (Mizarさんのプルリク)
+
+EVAL_EMBEDDING=ON のような、ソースファイルの構成が変化する追加オプションを指定した場合、ビルド用スクリプトファイルから make clean を呼び出す時にその指定が欠けていたため、前のビルドで使われたオブジェクトファイルが掃除し切れていないケースがありました。（自動ビルド以外のケースにおいて）
+例えば、EVAL_EMBEDDING=ON 付きでコンパイラ g++ , clang++ の両方でビルドする際、前のビルドで作られた embedded_nnue.o が残っていたためにリンカエラーを起こす事がありました。（ソースファイルのコンパイル時、オブジェクトファイルに付与されるLTOのヒント情報が g++, clang++ の間で互換性がないため。）
+
+
 ■  2021/12/11 Bitboard大改造計画その2 V7.00beta4
 
 

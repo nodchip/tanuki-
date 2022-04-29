@@ -38,6 +38,9 @@ namespace YaneuraouTheCluster
 //    1行目は、リカバリー用のエンジンなので、途中で切断されないようにすること。(切断されると、本エンジン自体が終了してしまう)
 //	  上のファイルに記述するエンジンの実行pathは、"engines/"相対path。例えば、"engine1/YaneuraOuNNUE.exe"と書いた場合、
 //	  "engines/engine1/YaneuraOuNNUE.exe"を見に行く。
+//	  また、エンジンとして、 .bat も書ける。
+//    あと、sshコマンド自体も書ける。
+//    例) ssh -i "yaneen-wcsc32.pem" ubuntu@xx.xxx.xxx.xx ./YaneuraOu-by-gcc
 // 
 // 思考エンジンの用意)
 //    ローカルPCに配置するなら普通に思考エンジンの実行pathを書けば良い。
@@ -64,6 +67,9 @@ namespace YaneuraouTheCluster
 #include <thread>
 #include <variant>
 #include "../../position.h"
+#include "../../thread.h"
+#include "../../usi.h"
+#include "../dlshogi-engine/dlshogi_min.h"
 
 #include <Windows.h>
 
@@ -108,16 +114,19 @@ namespace YaneuraouTheCluster
 
 	// 子プロセスを実行して、子プロセスの標準入出力をリダイレクトするのをお手伝いするクラス。
 	// 1つの子プロセスのつき、1つのProcessNegotiatorの instance が必要。
+	// 
+	// 親プロセス(このプログラム)の終了時に、子プロセスを自動的に終了させたいが、それは簡単ではない。
+	// アプリケーションが終了するときに、子プロセスを自動的に終了させる方法 : https://qiita.com/kenichiuda/items/3079ab93dae564dd5d17
+	// 親プロセスは必ず quit コマンドか何かで正常に終了させるものとする。
 	struct ProcessNegotiator
 	{
 		// 子プロセスの実行
-		// app_path_  : エンジンの実行ファイルのpath (.batファイルでも可)
-		void connect(const string& app_path_)
+		// workingDirectory : エンジンを実行する時の作業ディレクトリ 
+		// app_path         : エンジンの実行ファイルのpath (.batファイルでも可) 絶対pathで。
+		void connect(const string& workingDirectory , const string& app_path)
 		{
 			disconnect();
 			terminated = false;
-			
-			wstring app_path = to_wstring(app_path_);
 
 			ZeroMemory(&pi, sizeof(pi));
 			ZeroMemory(&si, sizeof(si));
@@ -129,31 +138,24 @@ namespace YaneuraouTheCluster
 
 			// Create the child process
 
-			// カレントフォルダを実行ファイルの存在しているフォルダにして起動する。
-			// current directoryは、ドライブレターから始まるpath文字列である必要があるのでそれを生成する。
-			auto folder_path = Path::GetDirectoryName(Path::Combine(CommandLine::workingDirectory ,app_path_));
-			// これ、wstringに変換する時に、workingDirectoryに日本語混じってると死ぬような気がしなくもないが…。
+			DebugMessageCommon("workingDirectory = " + workingDirectory + " , " + app_path);
 
 			bool success = ::CreateProcess(
-				NULL, // ApplicationName
-				(LPWSTR)app_path.c_str(),  // CmdLine
-				NULL, // security attributes
-				NULL, // primary thread security attributes
-				TRUE, // handles are inherited
-				0,    // creation flags
-				NULL, // use parent's environment
-
-				(LPWSTR)to_wstring(folder_path).c_str(),
-				//NULL, // use parent's current directory
-					  // ここにカレントディレクトリを指定する。
-				
-				&si,  // STARTUPINFO pointer
-				&pi   // receives PROCESS_INFOMATION
+				NULL,                                         // ApplicationName
+				(LPWSTR)to_wstring(app_path).c_str(),         // CmdLine
+				NULL,                                         // security attributes
+				NULL,                                         // primary thread security attributes
+				TRUE,                                         // handles are inherited
+				CREATE_NO_WINDOW,                             // creation flags
+				NULL,                                         // use parent's environment
+				(LPWSTR)to_wstring(workingDirectory).c_str(), // ここに作業ディレクトリを指定する。(NULLなら親プロセスと同じ)
+				&si,                                          // STARTUPINFO pointer
+				&pi                                           // receives PROCESS_INFOMATION
 			);
 
 			if (success)
 			{
-				engine_path = app_path_;
+				engine_path = app_path;
 
 			} else {
 				terminated = true;
@@ -389,94 +391,107 @@ namespace YaneuraouTheCluster
 	};
 
 	// ---------------------------------------
+	//          Message System
+	// ---------------------------------------
+
+	// Message定数
+	// ※　ここに追加したら、to_string(USI_Message usi)のほうを修正すること。
+	enum class USI_Message
+	{
+		// 何もない(無効な)メッセージ
+		NONE,
+
+		USI,
+		ISREADY,
+		SETOPTION,
+		USINEWGAME,
+		GAMEOVER,
+		POSITION,
+		GO,
+		GO_PONDER,
+		PONDERHIT,
+
+		QUIT,
+	};
+
+	string to_string(USI_Message usi)
+	{
+		const string s[] = {
+			"NONE",
+			"USI","ISREADY","SETOPTION",
+			"USINEWGAME","GAMEOVER",
+			"POSITION","GO","GO_PONDER","PONDERHIT",
+			"QUIT"
+		};
+
+		return s[(int)usi];
+	}
+
+	// Supervisorに対して通信スレッドから送信するメッセージ。
+	// SupervisorからObserverに対して送信するメッセージもこのメッセージを用いる。
+	// 
+	// エンジン側からresultを返したいことは無いと思うので完了を待つ futureパターンを実装する必要はない。
+	// 単に完了が待てれば良い。また完了は逐次実行なので何番目のMessageまで実行したかをカウントしておけば良いので
+	// この構造体に終了フラグを持たせる必要がない。(そういう設計にしてしまうと書くのがとても難しくなる)
+	//
+	struct Message
+	{
+		Message(USI_Message message_)
+			: message(message_) , param()         {}
+		Message(USI_Message message_, const string& param_)
+			: message(message_) , param(param_)   {}
+
+		// メッセージ本体。
+		const USI_Message message;
+
+		// パラメーター。
+		const string param;
+
+		// このクラスのメンバーを文字列化する
+		string to_string() const
+		{
+			if (param.empty())
+				return "Message[" + YaneuraouTheCluster::to_string(message) + "]";
+
+			return "Message[" + YaneuraouTheCluster::to_string(message) + " : " + param + "]";
+		}
+	};
+
+	// ---------------------------------------
 	//          EngineNegotiator
 	// ---------------------------------------
 
 	// Engineに対して現在何をやっている状態なのかを表現するenum
 	// ただしこれはEngineNegotiatorの内部状態だから、この状態をEngineNegotiatorの外部から参照してはならない。
 	// (勝手にこれを見て状態遷移をされると困るため)
-	enum EngineNegotiatorState
+	enum class EngineState
 	{
 		DISCONNECTED,      // 切断状態
 		CONNECTED,         // 接続直後の状態
-		WAIT_USIOK,        // "usiok"がをエンジンに送信待ち(connect直後)
-		RECEIVED_USIOK,    // "usiok"コマンドがエンジンから返ってきた直後の状態。
-		WAIT_READYOK,      // "readyok"待ち。"readyok"が返ってきたらIDLE_IN_GAMEになる。
+		WAIT_USIOK,        // エンジンからの"usiok"待ち。エンジンから"usiok"が返ってきたら、WAIT_ISREADYになる。
+		WAIT_ISREADY,      // "usiok"コマンドがエンジンから返ってきた直後の状態。あるいは、GUIからの"isready"待ち。"gameover"直後もこれ。
+		WAIT_READYOK,      // エンジンからの"readyok"待ち。エンジンから"readyok"が返ってきたらIN_GAMEになる。
 
 		IDLE_IN_GAME,      // エンジンが対局中の状態。"position"コマンドなど受信できる状態
 
-		PONDERING,         // "go ponder"中。ponderhitかstopが来ると状態はWAIT_BESTMOVEに。
-		WAIT_BESTMOVE,	   // 思考が終了するのを待っている。("go"コマンドであり、"go ponder"ではない。
+		GO,                // エンジンが"go"で思考中。 GUI側から"ponderhit"か"stop"が来ると状態はWAIT_BESTMOVEに。
+		GO_PONDER,         // エンジンが"go ponder"中。GUI側から"ponderhit"か"stop"が来ると状態はWAIT_BESTMOVEに。
+		WAIT_BESTMOVE,	   // エンジンが思考が終了するのを待っている。("go"コマンドであり、"go ponder"ではない。
 						   // 自動的にbestmoveが返ってくるはず。この間にくる"stop"は思考エンジンにそのまま送れば良い)
+		QUIT,              // "quit"コマンド送信後。
 	};
 
 	// EngineNegotiatorStateを文字列化する。
-	string to_string(EngineNegotiatorState state)
+	string to_string(EngineState state)
 	{
-		const string s[] = { "DISCONNECTED", "CONNECTED", "WAIT_USI", "RECEIVED_USIOK", "WAIT_READYOK", "IDLE_IN_GAME",};
-		return s[state];
+		const string s[] = {
+			"DISCONNECTED", "CONNECTED",
+			"WAIT_USI", "WAIT_ISREADY", "WAIT_READYOK",
+			"IDLE_IN_GAME", "GO", "PONDERING", "WAIT_BESTMOVE",
+			"QUIT"
+		};
+		return s[(int)state];
 	}
-
-	// Engineに対して、Observerから送られてくるメッセージ
-	enum EngineCommand
-	{
-		SEND_MESSAGE,   // "setoption"などいつでも実行できるコマンドだから何も考えずに送れ
-
-		SEND_USI,       // "usi"を送れ
-
-		SEND_ISREADY,   // "isready"を送れ
-		SEND_POSITION,  // "position"コマンドを送れ。
-
-		SEND_GO_PONDER, // "go ponder"コマンドを送れ。(ここは思考には流さないがponderhitした時はいままでのlogもGUIに流す) , param : message = 局面
-		SEND_PONDERHIT, // "ponderhit"コマンドを送れ。ここ以降は、GUIに流す。また、ここまでのlogもGUIに流す。
-
-		SEND_GO,        // "go"コマンドを送れ。(これは思考をGUIに流さないといけない) , param : message = 局面
-	};
-
-	// 汎用型
-	struct Variant
-	{
-		Variant() {}
-		Variant(string s) : content(s) {}
-		Variant(s64 n) : content(n) {}
-
-		// 文字列が格納されているとわかっている時にそれを取り出す
-		string get_string() const { return std::get<0>(content); }
-
-		// s64が格納されているとわかっている時にそれを取り出す
-		s64 get_int() const { return std::get<1>(content); }
-
-	private:
-		std::variant<string, s64> content;
-	};
-
-	// Engineに対して、Observerから送られてくるメッセージ
-	// これをConcurrentQueueで送信する。
-	struct EngineCommandInfo
-	{
-		EngineCommandInfo(EngineCommand command_)
-		{
-			command = command_;
-		}
-
-		EngineCommandInfo(EngineCommand command_, string message_)
-		{
-			command = command_;
-			message = Variant(message_);
-		}
-
-		// 文字列が格納されているとわかっている時にそれを取り出す
-		string get_string() const { return message.get_string(); }
-
-		// s64が格納されているとわかっている時にそれを取り出す
-		s64 get_int() const { return message.get_int(); }
-
-		// メッセージ種別
-		EngineCommand command;
-
-		// メッセージ内容
-		Variant message;
-	};
 
 	// エンジンとやりとりするためのクラス
 	// 状態遷移を指示するメソッドだけをpublicにしてあるので、
@@ -488,15 +503,52 @@ namespace YaneuraouTheCluster
 	{
 	public:
 
+		// -------------------------------------------------------
+		//    constructor/destructor
+		// -------------------------------------------------------
+
+		EngineNegotiator()
+		{
+			state = EngineState::DISCONNECTED;
+		}
+
+		// copy constuctor
+		EngineNegotiator(EngineNegotiator& other)
+			: neg(std::move(other.neg)), state(other.state), engine_id(other.engine_id)
+		{}
+
+		// move constuctor
+		EngineNegotiator(EngineNegotiator&& other)
+			: neg(std::move(other.neg)), state(other.state), engine_id(other.engine_id)
+		{}
+
+		// -------------------------------------------------------
+		//    Methods
+		// -------------------------------------------------------
+
 		// [main thread]
 		// エンジンを起動する。
 		// このメソッドは起動直後に、最初に一度だけmain threadから呼び出す。
 		// (これとdisconnect以外のメソッドは observer が生成したスレッドから呼び出される)
-		// path : エンジンの実行ファイルpath
-		void connect(const string& path,size_t engine_id_)
+		// path : エンジンの実行ファイルpath ("engines/" 相対)
+		void connect(const string& path, size_t engine_id_)
 		{
 			engine_id = engine_id_;
-			neg.connect(path);
+
+			// エンジンの作業ディレクトリ。これはエンジンを実行するフォルダにしておいてやる。
+			string working_directory = Path::GetDirectoryName(Path::Combine(CommandLine::workingDirectory , "engines/" + path));
+
+			// エンジンのファイル名。
+			string engine_path = Path::Combine("engines/", path);
+
+			// 特殊なコマンドを実行したいなら"engines/"とかつけたら駄目。
+			if (StringExtension::StartsWith(path,"ssh"))
+			{
+				working_directory = Path::GetDirectoryName(Path::Combine(CommandLine::workingDirectory , "engines"));
+				engine_path = path;
+			}
+
+			neg.connect(working_directory, engine_path);
 
 			if (is_terminated())
 				// 起動に失敗したくさい。
@@ -508,31 +560,94 @@ namespace YaneuraouTheCluster
 
 				// 起動直後でまだメッセージの受信スレッドが起動していないので例外的にmain threadからchange_state()を
 				// 呼び出しても大丈夫。
-				change_state(EngineNegotiatorState::CONNECTED);
+				change_state(EngineState::CONNECTED);
 			}
 		}
 
-		// [main thread]
-		// エンジンと切断する。(これはmain threadから呼び出すことを想定)
-		void disconnect()
+		// [SYNC] Messageを解釈してエンジンに送信する。
+		// 結果はすぐに返る。
+		void send(Message message)
 		{
-			neg.disconnect();
+			// エンジンがすでに終了していたらコマンド送信も何もあったものではない。
+			if (is_terminated())
+				return ;
+
+			switch(message.message)
+			{
+			case USI_Message::USI:
+				state = EngineState::WAIT_USIOK;
+				send_to_engine("usi");
+				break;
+
+			case USI_Message::SETOPTION:
+				// 一応、警告だしとく。
+				// "usiok"が返ってきて、ゲーム対局前("usinewgame"が来る前)の状態。
+				if (state != EngineState::WAIT_ISREADY)
+					EngineError("'setoption' should be sent before 'isready'.");
+
+				// そのまま転送すれば良い。
+				send_to_engine(message.param);
+				break;
+
+			case USI_Message::ISREADY:
+				state = EngineState::WAIT_READYOK;
+				send_to_engine("isready");
+				break;
+
+			case USI_Message::USINEWGAME:
+				// 一応警告出しておく。
+				if (state != EngineState::IDLE_IN_GAME)
+					EngineError("'usinewgame' should be sent after 'isready'.");
+				send_to_engine("usinewgame");
+				break;
+
+			case USI_Message::GO:
+				// TODO : エンジン側からbestmove来るまで次のgo送れないのでは…。
+				if (state != EngineState::IDLE_IN_GAME)
+					EngineError("'go' should be sent when state is 'IDLE_IN_GAME'.");
+				searching_sfen = message.param;
+				send_to_engine("go ponder " + searching_sfen);
+				state = EngineState::GO;
+				break;
+
+			case USI_Message::GO_PONDER:
+				// TODO : エンジン側からbestmove来るまで次のgo ponder送れないのでは…。
+				if (state != EngineState::IDLE_IN_GAME)
+					EngineError("'go ponder' should be sent when state is 'IDLE_IN_GAME'.");
+				searching_sfen = message.param;
+				send_to_engine("go ponder " + searching_sfen);
+				state = EngineState::GO_PONDER;
+				break;
+
+			case USI_Message::GAMEOVER:
+				// 一応警告出しておく。
+				if (state != EngineState::IDLE_IN_GAME)
+					EngineError("'gameover' should be sent after 'isready'.");
+				state = EngineState::WAIT_ISREADY;
+				send_to_engine("gameover");
+				break;
+
+			case USI_Message::QUIT:
+				state = EngineState::QUIT;
+				send_to_engine("quit");
+				break;
+			}
 		}
 
-		// [receive thread]
+		// [SYNC]
 		// エンジンからメッセージを受信する(これは受信用スレッドから定期的に呼び出される
 		// メッセージを一つでも受信したならtrueを返す。
-		bool negotiate_engine()
+		bool receive()
 		{
-			if (is_terminated() && state != DISCONNECTED)
+			if (is_terminated() && state != EngineState::DISCONNECTED)
 			{
 				// 初回切断時にメッセージを出力。
 				DebugMessage(": Error : process terminated , path = " + neg.get_engine_path());
 
-				state = DISCONNECTED;
+				state = EngineState::DISCONNECTED;
 			}
 
-			if (state == DISCONNECTED)
+			if (state == EngineState::DISCONNECTED)
 				return false;
 
 			// stateはchange_state()でしか変更されないが、
@@ -555,6 +670,7 @@ namespace YaneuraouTheCluster
 				dispatch_message(message);
 			}
 
+#if 0
 			// コマンドがあるか
 			while (commands.size() > 0)
 			{
@@ -571,9 +687,11 @@ namespace YaneuraouTheCluster
 					break;
 				}
 			}
+#endif
 
 			return received;
 		}
+
 
 		// -------------------------------------------------------
 		//    Property
@@ -589,43 +707,20 @@ namespace YaneuraouTheCluster
 
 		// [main thread][receive thread]
 		// エンジンが対局中のモードに入っているのか？
-		bool is_gamemode() const { return state == IDLE_IN_GAME; }
+		bool is_idle_in_game()       const { return state == EngineState::IDLE_IN_GAME; }
 
 		// [main thread][receive thread]
-		// 現在のstateがRECEIVED_USIOK("usiok"を受信したの)か？
-		bool is_received_usiok() const { return state == RECEIVED_USIOK; }
-
-		// [main thread][receive thread]
-		// エンジンの実行path
-		string get_engine_path() const { return neg.get_engine_path(); }
-
-		// -------------------------------------------------------
-		//    USI message handler
-		// -------------------------------------------------------
-
-		// [main thread]
-		// receive threadにメッセージを送信する。
-		// 必ずこのメソッドを経由して行う。
-		void send_command(const EngineCommandInfo& message)
-		{
-			commands.push(message);
-		}
-
-		// -------------------------------------------------------
-		//    constructor/destructor
-		// -------------------------------------------------------
-
-		EngineNegotiator()
-		{
-			state = EngineNegotiatorState::DISCONNECTED;
-		}
-
-		// move constuctor
-		EngineNegotiator(EngineNegotiator&& other)
-			: neg(std::move(other.neg)), state(other.state), engine_id(other.engine_id)
-		{}
+		// 現在のstateが"isready"の送信待ちの状態か？
+		bool does_wait_isready() const { return state == EngineState::WAIT_ISREADY; }
 
 	private:
+		// メッセージをエンジン側に送信する。
+		void send_to_engine(const string& message)
+		{
+			DebugMessage("< " + message);
+
+			neg.send(message);
+		}
 
 		// [main thread][receive thread]
 		// ProcessID(engine_id)を先頭に付与してDebugMessage()を呼び出す。
@@ -635,11 +730,17 @@ namespace YaneuraouTheCluster
 			DebugMessageCommon("[" + std::to_string(engine_id) + "]" + message);
 		}
 
+		// エンジン番号を付与して、GUIに送信する。
+		void EngineError(const string& message)
+		{
+			send_to_gui("info string [" +  std::to_string(engine_id) + "] Error! : " + message);
+		}
+
 		// [receive thread]
 		// エンジンに対する状態を変更する。
 		// ただしこれは内部状態なので外部からstateを直接変更したり参照したりしないこと。
 		// 変更は、receive threadにおいてのみなされるので、mutexは必要ない。
-		void change_state(EngineNegotiatorState new_state)
+		void change_state(EngineState new_state)
 		{
 			DebugMessage(": change_state " + to_string(state) + " -> " + to_string(new_state));
 			state = new_state;
@@ -649,7 +750,7 @@ namespace YaneuraouTheCluster
 		// エンジン側から送られてきたメッセージを配る(解読して適切な配達先に渡す)
 		void dispatch_message(const string& message)
 		{
-			ASSERT_LV3(state != DISCONNECTED);
+			ASSERT_LV3(state != EngineState::DISCONNECTED);
 
 			// 受信したメッセージをログ出力しておく。
 			DebugMessage("> " + message);
@@ -658,22 +759,35 @@ namespace YaneuraouTheCluster
 			string token;
 			is >> token;
 
+			if (token == "info")
+			{
+				// "Error"という文字列が含まれていたなら(おそらく"info string Error : "みたいな形)、
+				// 何も考えずにGUIにそれを投げる。
+				// "info string [engine id] : xxx"の形にしたほうがいいかな？
+				if (StringExtension::Contains(message, "Error"))
+				{
+					send_to_gui("info string [" + std::to_string(engine_id) + "]> " + message);
+					return ;
+				}
+			}
+
 			switch (state)
 			{
-			case WAIT_USIOK:
+			case EngineState::WAIT_USIOK:
 				// この間に送られてくるエンジン0のメッセージはguiに出力してやる。
 				// ただしusiokは送ってはダメ
 				if (token == "usiok")
-					change_state(RECEIVED_USIOK);
+					change_state(EngineState::WAIT_ISREADY);
 				else if (get_engine_id() == 0)
 					send_to_gui(message);
 				return;
 
-			case WAIT_READYOK:
+			case EngineState::WAIT_READYOK:
 				// この間に送られてくるエンジン0のメッセージはguiに出力してやる。
 				// ただしreadyokは送ってはダメ
+				// → readyokは全部のスレッドが IDLE_IN_GAMEになった時に親クラス(Observer)が送る。
 				if (token == "readyok")
-					change_state(IDLE_IN_GAME);
+					change_state(EngineState::IDLE_IN_GAME);
 				else if (get_engine_id() == 0)
 					send_to_gui(message);
 				return;
@@ -687,54 +801,8 @@ namespace YaneuraouTheCluster
 				DebugMessage(": Warning! : Illegal Message , state = " + to_string(state)
 					+ " , message = " + message);
 			}
-		}
 
-		// [receive thread]
-		// コマンドを配信する。
-		// 処理できたらtrue。できなかったらfalseを返す。
-		bool dispatch_command(const EngineCommandInfo& info)
-		{
-			ASSERT_LV3(state != DISCONNECTED);
 
-			switch (info.command)
-			{
-			case SEND_USI:
-				if (state == CONNECTED || state == RECEIVED_USIOK || state == IDLE_IN_GAME)
-				{
-					change_state(WAIT_USIOK);
-					send("usi");
-					return true;
-				}
-				break;
-
-			case SEND_ISREADY:
-				if (state == CONNECTED || state == RECEIVED_USIOK || state == IDLE_IN_GAME)
-				{
-					change_state(WAIT_READYOK);
-					send("isready");
-					return true;
-				}
-				break;
-
-			case SEND_MESSAGE:
-				// 思考中以外ならいつでも実行できる系のコマンド。
-				if (state == CONNECTED || state == RECEIVED_USIOK || state == IDLE_IN_GAME)
-				{
-					send(info.get_string());
-					return true;
-				}
-			}
-
-			// メッセージを処理できなかった。
-			return false;
-		}
-
-		// メッセージをエンジン側に送信する。
-		void send(const string& message)
-		{
-			DebugMessage("< " + message);
-
-			neg.send(message);
 		}
 
 		// -------------------------------------------------------
@@ -748,113 +816,60 @@ namespace YaneuraouTheCluster
 		size_t engine_id;
 
 		// エンジンに対して何をやっている状態であるのか。
-		EngineNegotiatorState state;
+		EngineState state;
 
-		// Observerから送られてきたメッセージ
-		Concurrent::ConcurrentQueue<EngineCommandInfo> commands;
-	};
+		// Supervisorから送られてくるMessageのqueue
+		Concurrent::ConcurrentQueue<Message> queue;
 
-	// ---------------------------------------
-	//          cluster thinker
-	// ---------------------------------------
+		// Messageを処理した個数
+		atomic<u64> done_counter = 0;
 
-	// エンジンの思考している状態
-	struct ThinkingInfo
-	{
-		// 思考中の局面(思考してなければ empty)
-		string thinking_pos;
+		// Messageをsendした回数
+		atomic<u64> send_counter = 0;
 
-		// ponderでの思考か？
-		bool is_ponder;
-
-		// これがいま読み筋を返しているメインのエンジンであり、
-		// こいつの返すbestmoveはGUIにそのまま返さなければならない。
-		bool is_main;
-
-		// エンジン
-		EngineNegotiator* engine;
-
-		ThinkingInfo()
-		{
-			is_ponder = false;
-			is_main = false;
-		}
-	};
-
-
-	// 局面をどのエンジンに割り振るかなどを管理してくれるやつ。
-	class ClusterThinker
-	{
-	public:
-
-		// エンジンを設定する。
-		// これはconnectの時に行われる。
-		void set_engines(vector<EngineNegotiator>& engines)
-		{
-			think_engines.clear();
-			think_engines.resize(engines.size());
-			for (size_t i = 0; i < engines.size(); ++i)
-				think_engines[i].engine = &engines[i];
-		}
-
-		void position_handler(istringstream& is)
-		{
-			// "position"までは解析が終わっているはず。これはis.tellg()で取れるから…。
-			pos_string = is.str().substr((size_t)is.tellg() + 1);
-		}
-
-		void go_handler(istringstream& is)
-		{
-			// "go"までは解析が終わっているはず。これはis.tellg()で取れるから…。
-			string pos_string = is.str().substr((size_t)is.tellg() + 1);
-
-			// この局面についてすでに思考しているか
-			const auto it = std::find_if(think_engines.begin(), think_engines.end(), [&](const ThinkingInfo& info) { return info.thinking_pos == pos_string; });
-			if (it != think_engines.end())
-			{
-				if (it->is_ponder)
-				{
-					// このエンジンにponderhitを送信する。
-
-				}
-				else {
-					// ponderしてない。ありえないはず？
-					send_to_gui("already thinking sfen = " + pos_string);
-					return;
-				}
-			}
-			else {
-
-			}
-
-
-		}
-
-	private:
-
-		// 最後に送られてきた"position"コマンドの"position"以降の文字列
-		string pos_string;
-
-		// 最後に送られてきた"go"コマンドの"go"以降の文字列
-		string go_string;
-
-		vector<ThinkingInfo> think_engines;
+		// 探索中の局面
+		// state == GO or GO_PONDER において探索中の局面。
+		string searching_sfen;
 	};
 
 	// ---------------------------------------
 	//          cluster observer
 	// ---------------------------------------
 
+	// クラスタリング時のオプション設定
+	struct ClusterOptions
+	{
+		// すべてのエンジンが起動するのを待つかどうかのフラグ。(1つでも起動しなければ、終了する)
+		//bool wait_all_engines_wakeup = true;
+		// →　これ今回はデフォルトでtrueでないとclusterの処理が煩雑になるので
+		//    前提としてすべて起動していて、すべて生きている、切断されないことをその条件とする。
+
+		// go ponderする局面を決める時にふかうら王で探索するノード数
+		// 3万npsだとしたら、1000で1/30秒。GPUによって調整すべし。
+		u64  nodes_limit = 1000;
+	};
+
 	class ClusterObserver
 	{
 	public:
+		ClusterObserver(const ClusterOptions& options_)
+		{
+			// スレッドを開始する。
+			worker_thread = std::thread([&](){ worker(); });
+			options       = options_; 
+		}
+
+		~ClusterObserver()
+		{
+			send_wait(USI_Message::QUIT);
+			worker_thread.join();
+		}
+
 		// [main thread]
 		// 起動後に一度だけ呼び出すべし。
-		// すべてのエンジンが起動され、"usi","isready"が自動的に送信される。
 		void connect() {
 
 			engines.clear();
-			stop = false;
 
 			vector<string> lines;
 
@@ -874,7 +889,7 @@ namespace YaneuraouTheCluster
 					continue;
 
 				// engineの実行path。engines/配下にあるものとする。
-				string engine_path = Path::Combine("engines/", line);
+				string engine_path = line;
 
 				// エンジンを起動する。
 				size_t engine_id = engines.size();
@@ -883,268 +898,465 @@ namespace YaneuraouTheCluster
 				engine.connect(engine_path , engine_id);
 			}
 
-			// 思考すべきエンジンを選ぶやつの初期化。
-			thinker.set_engines(engines);
-
-			neg_thread = std::thread([&](){ neg_thread_func(); });
+			// すべてのエンジンの起動完了を待つ設定なら起動を待機する。
+			// →　現状、強制的にこのモードで良いと思う。
+			if (/* options.wait_all_engines_wakeup */ true)
+				wait_all_engines_wakeup();
 		}
 
-		// [main thread]
-		// 全エンジンを停止させ、監視スレッドを終了する
-		void disconnect()
+		// [ASYNC] 通信スレッドで受け取ったメッセージをこのSupervisorに伝える。
+		//    waitとついているほうのメソッドは送信し、処理の完了を待機する。
+		void send(USI_Message usi                     )       { send(Message(usi            )); }
+		void send(USI_Message usi, const string& param)       { send(Message(usi, param     )); }
+		void send_wait(USI_Message& usi)                      { send_wait(Message(usi       )); }
+		void send_wait(USI_Message& usi, const string& param) { send_wait(Message(usi, param)); }
+
+		// [ASYNC] Messageを解釈してエンジンに送信する。
+		void send(Message message)
 		{
-			// quitはすでにbroadcastしているのでいずれ自動的に切断される。
+			DebugMessageCommon("Observer send : " + message.to_string());
 
-			for (auto& engine : engines)
-				engine.disconnect();
-
-			stop = true;
-			neg_thread.join();
+			queue.push(message);
+			send_counter++;
 		}
 
-		// [main thread][receive thread]
-		// 生きているengineの数を返す。
-		size_t live_workers_num() const {
-			size_t c = 0;
-			for (auto& engine : engines)
-				c += engine.is_terminated() ? 0 : 1;
-			return c;
-		}
-
-		// [main thread][receive thread]
-		// すべてのWorkerがterminateしている。
-		bool all_terminated() const {
-			return live_workers_num() == 0;
-		}
-
-		// [main thread][receive thread]
-		// engine 0 が生きているのか。
-		bool is_engine0_alive() const
+		// [ASNYC] 通信スレッドで受け取ったメッセージをこのSupervisorに伝える。
+		//   また、そのあとメッセージの処理の完了を待つ。
+		void send_wait(Message message)
 		{
-			return engines.size() > 0 && !engines[0].is_terminated();
-		}
+			send(message);
 
-		// -------------------------------------------------------
-		//    USI message handler
-		// -------------------------------------------------------
-
-		// [main thread]
-		// "setoption","getoption"などの、思考中以外ならいつでも実行できるコマンドをエンジンに送信する。
-		void broadcast(const string& message)
-		{
-			EngineCommandInfo command(SEND_MESSAGE, message);
-
-			for (auto& engine : engines)
-				engine.send_command(command);
-		}
-
-		// [main thread]
-		// "usi"コマンドを処理する。
-		void usi_handler()
-		{
-			EngineCommandInfo command(SEND_USI);
-
-			for (auto& engine : engines)
-				engine.send_command(command);
-
-			// 全エンジンがUSI_OKを返したか(終了したエンジンは除く)
-			while (true)
-			{
-				bool all = true;
-				for (auto& engine : engines)
-					all &= engine.is_terminated() || engine.is_received_usiok();
-
-				if (all)
-					break;
-
-				Tools::sleep(1);
-			}
-
-			// 全エンジン、"usiok"を返した。
-			send_to_gui("usiok");
-		}
-
-		// [main thread]
-		// "isready"コマンドを処理する。
-		void isready_handler()
-		{
-			EngineCommandInfo command(SEND_ISREADY);
-
-			// 全エンジンにまず"isready"を送信する。
-			for (auto& engine : engines)
-				engine.send_command(command);
-			
-			// 全エンジンがUSI_OKを返したか(終了したエンジンは除く)
-			while (true)
-			{
-				bool all = true;
-				for (auto& engine : engines)
-					all &= engine.is_terminated() || engine.is_gamemode();
-
-				if (all)
-					break;
-
-				Tools::sleep(1);
-
-				// これ待ち時間にタイムアウトになると嫌だな…。定期的に改行とか送信すべきかも。
-			}
-
-			// 生きているエンジンの数と、生きているエンジンの番号の内訳を出力。
-			// エンジンの番号は 0から連番。
-
-			string lived_enigne;
-			for (auto& engine : engines)
-				if (!engine.is_terminated())
-					lived_enigne += " " + std::to_string(engine.get_engine_id());
-
-			send_to_gui("info string Number of live engines = " + std::to_string(live_workers_num()) + ",{" + lived_enigne +" }");
-
-			send_to_gui("readyok");
-		}
-
-		// [main thread]
-		// "position"コマンドを処理する。
-		void position_handler(istringstream& position_string)
-		{
-			// とりあえず預かっておく。
-			// どのエンジンがどう思考するかはこのあと考える。
-			thinker.position_handler(position_string);
-		}
-
-		// [main thread]
-		// "go"コマンドを処理する。
-		void go_handler(istringstream& iss)
-		{
-			thinker.go_handler(iss);
-		}
-
-		// =============================================
-		//             GUIに対する応答
-		// =============================================
-
-		// 先頭に"[H]"と付与してDebugMessageを出力する。
-		// "[H]"はhost側の意味。
-		void DebugMessage(const string& message)
-		{
-			DebugMessageCommon("[H]" + message);
+			// この積んだメッセージの処理がなされるまでwait。
+			while (done_counter < send_counter)
+				Tools::sleep(0);
 		}
 
 	private:
-
-		// 各エンジンに対してメッセージを受信する。
-		// これは受信専用スレッド。全エンジン共通。
-		void neg_thread_func()
+		// worker thread
+		void worker()
 		{
-			while (!stop)
+			bool quit = false;
+			while (!quit)
 			{
 				bool received = false;
+
+				// --------------------------------------------
+				// 親クラスからの受信
+				// --------------------------------------------
+
+				if (queue.size() && usi == USI_Message::NONE)
+				{
+					received = true;
+					auto message = queue.pop();
+
+					// messageのdispatch
+					switch(message.message)
+					{
+					case USI_Message::SETOPTION: // ←　これは状態関係なしに送れるコマンドのはずなので送ってしまう。
+						broadcast(message);
+						break;
+
+					case USI_Message::USI:
+					case USI_Message::ISREADY:
+						usi = message.message; // ← この変数の状態変化まではエンジンの次のメッセージを処理しない。
+						broadcast(message);
+						break;
+
+					case USI_Message::USINEWGAME:
+						// まず各エンジンに通知は必要。(各エンジンがこのタイミングで何かをする可能性はあるので)
+						broadcast(message);
+
+						// ゲームが開始した。いま以降、エンジンに対して"go ponder"とかしてOk. むしろ積極的にすべき。
+						usi = USI_Message::USINEWGAME;
+
+						// 現在、相手が初期局面("startpos")について思考しているものとする。
+						searching_sfen = "startpos";
+						our_searching = false;
+						
+						// 各エンジンのponderの開始
+						start_pondering();
+
+						break;
+
+					case USI_Message::GAMEOVER:
+						usi = USI_Message::GAMEOVER;
+						// 各エンジンへの通知は思考を停止させてからの話なので、いますぐは何も送らない。
+						// エンジンが思考中なら停止させるような命令がいくので、停止してから"gameover"を送信すれば良いという考え。
+
+						break;
+
+					case USI_Message::QUIT:
+						broadcast(message);
+
+						// エンジン停止させて、それを待機する必要はある。
+						quit = true;
+						break;
+					}
+
+					done_counter++;
+				}
+
+				// --------------------------------------------
+				// 子クラス(EngineNegotiator)のメッセージの受信
+				// --------------------------------------------
+
 				for (auto& engine : engines)
-					received |= engine.negotiate_engine();
+					received |= engine.receive();
 
 				// 一つもメッセージを受信していないならsleepを入れて休ませておく。
 				if (!received)
 					Tools::sleep(1);
+
+				// --------------------------------------------
+				// 何かの状態変化を待っていたなら..
+				// --------------------------------------------
+
+				if (usi != USI_Message::NONE)
+				{
+					bool allOk = true;
+					switch (usi)
+					{
+					case USI_Message::USI:
+						// "usiok"をそれぞれのエンジンから受信するのを待機していた。
+						for(auto& engine : engines)
+							// 終了しているエンジンは無視してカウントしないと
+							// いつまでもusiokが出せない状態でhangする。
+							allOk &= engine.does_wait_isready() || engine.is_terminated();
+						if (allOk)
+						{
+							send_to_gui("usiok");
+							usi = USI_Message::NONE;
+							output_number_of_live_engines();
+						}
+						break;
+
+					case USI_Message::ISREADY:
+						// "readyok"をそれぞれのエンジンから受信するのを待機していた。
+						for(auto& engine : engines)
+							allOk &= engine.is_idle_in_game() || engine.is_terminated();
+						if (allOk)
+						{
+							send_to_gui("readyok");
+							usi = USI_Message::NONE;
+							output_number_of_live_engines();
+						}
+						break;
+
+					case USI_Message::USINEWGAME:
+						// 対局は開始しているので各エンジンに思考させたりする必要がある。
+						break;
+
+					case USI_Message::GAMEOVER:
+						// 対局は終了しているので、探索中のエンジンは停止させる必要がある。
+						break;
+					}
+				}
+
+				// エンジンの死活監視
+				engine_check();
+			}
+
+			// engine止める必要がある。
+		}
+
+		// 生きているエンジンの数を返す。
+		size_t get_number_of_live_engines()
+		{
+			size_t num = 0;
+			for(auto& engine: engines)
+				if (!engine.is_terminated())
+					num ++;
+			return num;
+		}
+
+		// 生きているエンジンが 0 なら終了する。
+		// 実際は、最初に起動させたエンジンの数と一致しないなら、終了すべきだと思うが…。
+		// ※　エンジンが1つでも生存していればなんとか頑張って凌ぐようなプログラムを書きたいところである。
+		void engine_check()
+		{
+			size_t num = get_number_of_live_engines();
+			if (num == 0)
+			{
+				send_to_gui("info string All engines are terminated.");
+				Tools::exit();
 			}
 		}
+
+		// 生きているエンジンの数を出力する。
+		void output_number_of_live_engines()
+		{
+			size_t num = get_number_of_live_engines();
+			send_to_gui("info string The number of live engines = " + std::to_string(num));
+		}
+
+		// すべてのエンジンが起動するのを待つ。(1つでも起動しなければ、exitを呼び出して終了する)
+		void wait_all_engines_wakeup()
+		{
+			Tools::sleep(3000); // 3秒待つ(この間にtimeoutになるやつとかおるかも)
+			for(auto& engine: engines)
+				if (engine.is_terminated())
+				{
+					size_t num = get_number_of_live_engines();
+					send_to_gui("info string The number of live engines = " + std::to_string(num));
+					send_to_gui("info string Some engines are failing to start.");
+					
+					Tools::exit();
+				}
+		}
+
+		// 全エンジンに同じメッセージを送信する。
+		void broadcast(Message message)
+		{
+			for(auto& engine: engines)
+				engine.send(message);
+		}
+
+
+		// 各エンジンのponderを開始する。
+		void start_pondering()
+		{
+			// 探索中の局面は定まっているか？
+			if (searching_sfen.empty())
+				return ; // ない
+
+			// 我々が探索中の局面があるなら、その2手、4手、のように偶数手先の局面について局面を選出し、ponderする。
+			// さもなくば現在相手が思考中の局面に対して、1手、3手のように奇数手先の局面について選出し、ponderする。
+
+			search_for_ponder(searching_sfen, our_searching);
+
+			// デバッグ用に逆側も出力してみる。
+			DebugMessageCommon("---");
+			search_for_ponder(searching_sfen, !our_searching);
+		}
+
+		// ponderする局面の選出。
+		// search_sfen : この局面から探索してくれる。
+		// same_color  : search_sfenと同じ手番の局面をponderで思考するのか？
+		void search_for_ponder(string search_sfen,  bool same_color)
+		{
+			dlshogi::SfenNodeList snlist;
+
+			// エンジンの数だけ選出する。
+			size_t num = engines.size();
+
+			// ただし、自分の手番であるなら、エンジンのうち一つはsearch_sfenを探索しているので、
+			// 1つ数を減らす。
+			if (our_searching)
+				--num;
+
+			dl_search(num, snlist, search_sfen, same_color);
+
+			// debug用に出力してみる。
+			for(auto& sn : snlist)
+				DebugMessageCommon("sfen for pondering :" + sn.sfen + "(" + std::to_string(sn.nodes) + ")");
+
+			// 局面が求まったので各エンジンに対して"go ponder"で思考させる。
+
+			size_t i = 0;
+			bool is_startpos = search_sfen == "startpos";
+			for(auto& engine : engines)
+			{
+				// "startpos"に連結するなら"moves"を付与。
+				string sfen = search_sfen + (is_startpos ? " moves" : "") + snlist[i].sfen;
+				engine.send(Message(USI_Message::GO_PONDER, sfen));
+				++i;
+			}
+		}
+
+		// ノード数固定でふかうら王で探索させる。
+		// 訪問回数の上位 n個のノードのsfenが返る。
+		// n           : 上位n個
+		// snlist      : 訪問回数上位のsfen配列
+		// search_sfen : この局面から探索してくれる。
+		// same_color  : search_sfenと同じ手番の局面をponderで思考するのか？
+		void dl_search(size_t n, dlshogi::SfenNodeList& snlist, string search_sfen, bool same_color)
+		{
+			// ================================
+			//        Limitsの設定
+			// ================================
+
+			Search::LimitsType limits = Search::Limits;
+
+			// ノード数制限
+			limits.nodes = options.nodes_limit;
+
+			// 探索中にPVの出力を行わない。
+			limits.silent = true;
+
+			// ================================
+			//           思考開始
+			// ================================
+
+			// SetupStatesは破壊したくないのでローカルに確保
+			StateListPtr states(new StateList(1));
+
+			// sfen文字列、Positionコマンドのparserで解釈させる。
+			istringstream is(search_sfen);
+
+			Position pos;
+			position_cmd(pos, is, states);
+
+			// 思考部にUSIのgoコマンドが来たと錯覚させて思考させる。
+			Threads.start_thinking(pos, states , limits);
+			Threads.main()->wait_for_search_finished();
+			
+			// ================================
+			//        探索結果の取得
+			// ================================
+
+			dlshogi::GetTopVisitedNodes(n, snlist, same_color);
+		}
+
+		// --- private members ---
+
+		ClusterOptions options;
 
 		// すべての思考エンジンを表現する。
 		vector<EngineNegotiator> engines;
 
-		// Engineからのメッセージをpumpするスレッドの停止信号
-		atomic<bool> stop;
+		// Supervisorから送られてくるMessageのqueue
+		Concurrent::ConcurrentQueue<Message> queue;
 
-		// Engineに対してメッセージを送受信するスレッド
-		std::thread neg_thread;
+		// 現在エンジンに対して行っているコマンド
+		// これがNONEになるまで次のメッセージは送信できない。
+		USI_Message usi = USI_Message::NONE;
 
-		// どの局面を思考すべきかを管理しているclass。
-		ClusterThinker thinker;
+		// workerスレッド
+		std::thread worker_thread;
+
+		// Messageを処理した個数
+		atomic<u64> done_counter = 0;
+
+		// Messageをsendした回数
+		atomic<u64> send_counter = 0;
+
+		// 現在思考している局面のsfen。(startpos moves XX XX..の形式)
+		// ponderする時は、この局面を中心として行う。
+		string searching_sfen;  // 自分か相手がこの局面について思考しているものとする。(ponderする時の中心となる局面)
+		bool our_searching;     // search_sfenを探索しているのは自分ならばtrue。相手ならばfalse。
 	};
 
 	// ---------------------------------------
 	//        main loop for cluster
 	// ---------------------------------------
 
-
-	// cluster時のUSIメッセージの処理ループ
-	void cluster_usi_loop(Position& pos, std::istringstream& is)
+	// クラスター本体
+	class Cluster
 	{
-		// USIメッセージの処理を開始している。いま何か出力してはまずい。
-
-		// USI拡張コマンドの"cluster"コマンドに付随できるオプション
-		// 例)
-		// cluster debug
-		//
-		string token;
-		while (is >> token)
+	public:
+		// cluster時のUSIメッセージの処理ループ
+		// これがUSIの通信スレッドであり、main thread。
+		void message_loop(Position& pos, std::istringstream& is)
 		{
-			// debug mode
-			if (token == "debug")
-				debug_mode = true;
-		}
+			// ふかうら王のエンジン初期化(評価関数の読み込みなど)
+			is_ready();
 
-		// クラスターの子を生成してくれるやつ。
-		ClusterObserver observer;
-		observer.connect();
+			// clusterのオプション設定
+			ClusterOptions options;
 
-		// エンジン0 が 起動していなかったなら終了。
-		if (!observer.is_engine0_alive())
-		{
-			send_to_gui("info string Error! Engine[0] is not alive.");
+			// "cluster"コマンドのパラメーター解析
+			parse_cluster_param(is, options);
+
+			// GUIとの通信を行うmain threadのmessage loop
+			message_loop_main(pos, is, options);
+
+			// quitコマンドは受け取っているはず。
+			// ここで終了させないと、cluster engineが単体のengineのように見えない。
+
 			Tools::exit();
 		}
 
-		string cmd;
-		while (std::getline(cin, cmd))
+	private:
+		// "cluster"コマンドのパラメーターを解析して処理する。
+		// 
+		// 指定できるオプション一覧)
+		// 
+		//   debug   : debug用に通信のやりとりをすべて標準出力に出力する。
+		//   nodes   : go ponderする局面を選ぶために探索するノード数(ふかうら王で探索する)
+		//
+		void parse_cluster_param(std::istringstream& is, ClusterOptions& options)
 		{
-			// GUI側から受け取ったメッセージをログに記録しておく。
-			observer.DebugMessage("< " + cmd);
+			// USIメッセージの処理を開始している。いま何か出力してはまずい。
 
-			istringstream iss(cmd);
-			iss >> token;
+			// USI拡張コマンドの"cluster"コマンドに付随できるオプション
+			// 例)
+			// cluster debug waitall
+			{
+				string token;
+				while (is >> token)
+				{
+					// debug mode
+					if (token == "debug")
+						debug_mode = true;
 
-			if (token.empty())
-				continue;
-
-			if (token == "usi")
-			{
-				observer.usi_handler();
+					else if (token == "nodes")
+						is >> options.nodes_limit;
+				}
 			}
-			else if (token == "isready")
-			{
-				observer.isready_handler();
-			}
-			// "setoption"などはそのまま全エンジンに流してやる。
-			// setoptionは全workerに同じメッセージが流される。この仕様まずいか？
-			// 対称性のあるWorker(同じスペックのPC、同じエンジンを想定しているからいいか..)
-			else if (token == "setoption" || token == "getoption" || token == "gameover" || token == "usinewgame" || token=="quit")
-			{
-				observer.broadcast(cmd);
-			}
-			else if (token == "position")
-			{
-				// 局面はObserverにとりあえず預けておいて、goコマンドが来たときに考えればいいか。
-				observer.position_handler(iss);
-			}
-			else if (token == "go")
-			{
-				observer.go_handler(iss);
-			}
-			else {
-				// 知らないコマンドなのでデバッグのためにエラー出力しておく。
-				// 利便性からすると何も考えずにエンジンに送ったほうがいいかも？
-				send_to_gui("Error! : Unknown Command : " + token);
-			}
-
-			if (token == "quit")
-				break;
-
 		}
 
-		// 全エンジンの終了
-		observer.disconnect();
+		// "cluster"のメインループ
+		// wait_all : "waitall"(エンジンすべての起動を待つ)が指定されていたか。
+		void message_loop_main(Position& pos, std::istringstream& is, const ClusterOptions& options)
+		{
+			// Clusterの監視者
+			ClusterObserver observer(options);
 
-		// 本プログラムの終了
-		Tools::exit();
+			// 全エンジンの起動。
+			observer.connect();
+
+			while (true)
+			{
+				string cmd = std_input.input();
+
+				// GUI側から受け取ったメッセージをログに記録しておく。
+				// (ロギングしている時は、標準入力からの入力なのでファイルに書き出されているはず)
+				DebugMessageCommon("[H]< " + cmd);
+
+				istringstream iss(cmd);
+				string token;
+				iss >> token;
+
+				if (token.empty())
+					continue;
+
+				if (token == "usi")
+					observer.send_wait(USI_Message::USI);
+				else if (token == "isready")
+					observer.send_wait(USI_Message::ISREADY);
+				else if (token == "setoption")
+					// setoption は普通 isreadyの直前にしか送られてこないので
+					// 何も考えずに エンジンにそのまま投げて問題ない。
+					observer.send(USI_Message::SETOPTION, cmd);
+				else if (token == "usinewgame")
+					observer.send(USI_Message::USINEWGAME);
+				else if (token == "gameover")
+					observer.send(USI_Message::GAMEOVER);
+				else if (token == "quit")
+					break;
+				// 拡張コマンド。途中でdebug出力がしたい時に用いる。
+				else if (token == "debug")
+					debug_mode = true;
+				// 拡張コマンド。途中でdebug出力をやめたい時に用いる。
+				else if (token == "nodebug")
+					debug_mode = false;
+				else {
+					// 知らないコマンドなのでデバッグのためにエラー出力しておく。
+					// 利便性からすると何も考えずにエンジンに送ったほうがいいかも？
+					send_to_gui("Error! : Unknown Command : " + token);
+				}
+			}
+			
+			// ClusterObserverがスコープアウトする時に自動的にQUITコマンドは送信されるはず。
+		}
+	};
+
+	// cluster時のUSIメッセージの処理ループ
+	// これがUSIの通信スレッドであり、main thread。
+	void cluster_usi_loop(Position& pos, std::istringstream& is)
+	{
+		Cluster theCluster;
+		theCluster.message_loop(pos, is);
 	}
 
 } // namespace YaneuraouTheCluster

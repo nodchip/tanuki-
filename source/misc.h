@@ -24,6 +24,9 @@ const std::string engine_info();
 // 使用したコンパイラについての文字列を返す。
 const std::string compiler_info();
 
+// config.hで設定した値などについて出力する。
+const std::string config_info();
+
 // --------------------
 //    prefetch命令
 // --------------------
@@ -105,7 +108,7 @@ void dbg_print();
 
 // RunningAverage : a class to calculate a running average of a series of values.
 // For efficiency, all computations are done with integers.
-// 
+//
 // 置換表のhit率などを集計するためのクラス。
 // ttHitAverageとして、Threadクラスが持っている。
 //
@@ -115,9 +118,6 @@ void dbg_print();
 class RunningAverage {
 public:
 
-	// Constructor
-	RunningAverage() {}
-
 	// Reset the running average to rational value p / q
 	void set(int64_t p, int64_t q)
 	{
@@ -125,7 +125,7 @@ public:
 	}
 
 	// Update average with value v
-	// 
+	//
 	// これは、ttHit(置換表にhitしたかのフラグ)の実行時の平均を近似するために用いられる。
 	// 移動平均を算出している。
 	void update(int64_t v)
@@ -136,7 +136,12 @@ public:
 	// Test if average is strictly greater than rational a / b
 	bool is_greater(int64_t a, int64_t b)
 	{
-		return b * average > a * PERIOD * RESOLUTION;
+		return b * average > a * (PERIOD * RESOLUTION);
+	}
+
+	int64_t value() const
+	{
+		return average / (PERIOD * RESOLUTION);
 	}
 
 private:
@@ -144,6 +149,36 @@ private:
 	static constexpr int64_t RESOLUTION = 1024;
 	int64_t average;
 };
+
+//
+// 探索でtrendと楽観値の計算で用いるsigmoid関数。
+// →　やねうら王では使っていない。
+//
+/// sigmoid(t, x0, y0, C, P, Q) implements a sigmoid-like function using only integers,
+/// with the following properties:
+///
+///  -  sigmoid is centered in (x0, y0)
+///  -  sigmoid has amplitude [-P/Q , P/Q] instead of [-1 , +1]
+///  -  limit is (y0 - P/Q) when t tends to -infinity
+///  -  limit is (y0 + P/Q) when t tends to +infinity
+///  -  the slope can be adjusted using C > 0, smaller C giving a steeper sigmoid
+///  -  the slope of the sigmoid when t = x0 is P/(Q*C)
+///  -  sigmoid is increasing with t when P > 0 and Q > 0
+///  -  to get a decreasing sigmoid, change sign of P
+///  -  mean value of the sigmoid is y0
+///
+/// Use <https://www.desmos.com/calculator/jhh83sqq92> to draw the sigmoid
+
+inline int64_t sigmoid(int64_t t, int64_t x0,
+	int64_t y0,
+	int64_t  C,
+	int64_t  P,
+	int64_t  Q)
+{
+	ASSERT_LV3(C > 0);
+	ASSERT_LV3(Q != 0);
+	return y0 + P * (t - x0) / (Q * (std::abs(t - x0) + C));
+}
 
 // --------------------
 //  Time[ms] wrapper
@@ -310,8 +345,13 @@ struct Timer
 	// このシンボルが定義されていると、今回の思考時間を計算する機能が有効になる。
 #if defined(USE_TIME_MANAGEMENT)
 
-  // 今回の思考時間を計算して、optimum(),maximum()が値をきちんと返せるようにする。
+	// 今回の思考時間を計算して、optimum(),maximum()が値をきちんと返せるようにする。
+	// ※　ここで渡しているlimitsは、今回の探索の終わりまでなくならないものとする。
+	//    "ponderhit"でreinit()でこの変数を参照することがあるため。
 	void init(const Search::LimitsType& limits, Color us, int ply);
+
+	// ponderhitの時に残り時間が付与されている時(USI拡張)、再度思考時間を調整するために↑のinit()相当のことを行う。
+	void reinit() { init_(*lastcall_Limits, lastcall_Us, lastcall_Ply);}
 
 	TimePoint minimum() const { return minimumTime; }
 	TimePoint optimum() const { return optimumTime; }
@@ -336,6 +376,14 @@ private:
 
 	// 今回の残り時間 - Options["NetworkDelay2"]
 	TimePoint remain_time;
+
+	// init()の内部実装用。
+	void init_(const Search::LimitsType& limits, Color us, int ply);
+
+	// init()が最後に呼び出された時に各引数。これを保存しておき、reinit()の時にはこれを渡す。
+	Search::LimitsType* lastcall_Limits; // どこかに確保しっぱなしにするだろうからポインタでいいや…
+	Color lastcall_Us;
+	int lastcall_Ply;
 
 #endif
 
@@ -531,6 +579,7 @@ namespace SystemIO
 
 	// msys2、Windows Subsystem for Linuxなどのgcc/clangでコンパイルした場合、
 	// C++のstd::ifstreamで::read()は、一発で2GB以上のファイルの読み書きが出来ないのでそのためのwrapperである。
+	// 	※　注意　どのみち32bit環境ではsize_tが4バイトなので2(4?)GB以上のファイルは書き出せない。
 	//
 	// read_file_to_memory()の引数のcallback_funcは、ファイルがオープン出来た時点でそのファイルサイズを引数として
 	// callbackされるので、バッファを確保して、その先頭ポインタを返す関数を渡すと、そこに読み込んでくれる。
@@ -540,6 +589,11 @@ namespace SystemIO
 
 	extern Tools::Result ReadFileToMemory(const std::string& filename, std::function<void* (size_t)> callback_func);
 	extern Tools::Result WriteMemoryToFile(const std::string& filename, void* ptr, size_t size);
+
+	// 通常のftell/fseekは2GBまでしか対応していないので特別なバージョンが必要である。
+
+	extern size_t ftell64(FILE* f);
+	extern int fseek64(FILE* f, size_t offset, int origin);
 
 	// C#のTextReaderみたいなもの。
 	// C++のifstreamが遅すぎるので、高速化されたテキストファイル読み込み器
@@ -582,7 +636,7 @@ namespace SystemIO
 
 		// 現在のファイルポジションを取得する。
 		// 先読みしているのでReadLineしている場所よりは先まで進んでいる。
-		size_t GetFilePos() { return ftell(fp); }
+		size_t GetFilePos() { return ftell64(fp); }
 
 		// 現在の行数を返す。(次のReadLine()で返すのがテキストファイルの何行目であるかを返す) 0 origin。
 		// またここで返す数値は空行で読み飛ばした時も、その空行を1行としてカウントしている。
@@ -707,6 +761,7 @@ namespace SystemIO
 		// ファイルの末尾に超えて読み込もうとしなかった場合、Okが返る。
 		// 引数で渡されたバイト数読み込むことができなかった場合、FileReadErrorが返る。
 		// size_of_read_bytesがnullptrでない場合、実際に読み込まれたバイト数が代入される。
+		// ※　sizeは2GB制限があるので気をつけて。
 		Tools::Result Read(void* ptr , size_t size, size_t* size_of_read_bytes = nullptr);
 	};
 
@@ -718,6 +773,7 @@ namespace SystemIO
 		Tools::Result Open(const std::string& filename);
 
 		// ptrの指すメモリからsize[byte]だけファイルに書き込む。
+		// ※　sizeは2GB制限があるので気をつけて。
 		Tools::Result Write(void* ptr, size_t size);
 	};
 };
@@ -735,7 +791,7 @@ namespace Path
 	// folder名のほうは空文字列でないときに、末尾に'/'か'\\'がなければそれを付与する。
 	// 与えられたfilenameが絶対Pathである場合、folderを連結せずに単にfilenameをそのまま返す。
 	// 与えられたfilenameが絶対Pathであるかの判定は、内部的にはPath::IsAbsolute()を用いて行う。
-	// 
+	//
 	// 実際の連結のされ方については、UnitTestに例があるので、それも参考にすること。
 	extern std::string Combine(const std::string& folder, const std::string& filename);
 
@@ -875,7 +931,7 @@ namespace Parser
 	// istringstream isを食わせて、そのうしろを解析させて、所定の変数にその値を格納する。
 	// 使い方)
 	//  isに"min 10 max 80"のような文字列が入っているとする。
-	// 
+	//
 	//   ArgumentParser parser;
 	//   int min=0,max=100;
 	//   parser.add_argument("min",min);
@@ -992,11 +1048,17 @@ namespace StringExtension
 	// 文字列valueが、文字列endingで終了していればtrueを返す。
 	extern bool EndsWith(std::string const& value, std::string const& ending);
 
+	// 文字列sのなかに文字列tが含まれるかを判定する。含まれていればtrueを返す。
+	extern bool Contains(const std::string& s, const std::string& t);
+
 	// 文字列valueに対して文字xを文字yに置換した新しい文字列を返す。
 	extern std::string Replace(std::string const& value, char x, char y);
 
 	// 文字列を大文字にして返す。
 	extern std::string ToUpper(std::string const& value);
+
+	// sを文字列spで分割した文字列集合を返す。
+	extern std::vector<std::string> Split(const std::string& s , const std::string& sep);
 
 };
 
@@ -1126,6 +1188,33 @@ namespace Concurrent
 		std::mutex mutex_;
 	};
 }
+
+// --------------------
+// StandardInputWrapper
+// --------------------
+
+// 標準入力のwrapper
+// 事前にコマンドを積んだりできる。
+class StandardInput
+{
+public:
+	// 標準入力から1行もらう。Ctrl+Zが来れば"quit"が来たものとする。
+	// また先行入力でqueueに積んでおくことができる。(次のinput()で取り出される)
+	std::string input();
+
+	// 先行入力としてqueueに積む。(次のinput()で取り出される)
+	void push(const std::string& s);
+
+	// main()に引数として渡されたパラメーターを解釈してqueueに積む。
+	void parse_args(int argc, char* argv[]);
+
+private:
+	// 先行入力されたものを積んでおくqueue。
+	// これが尽きれば標準入力から入力する。
+	std::queue<std::string> cmds;
+};
+
+extern StandardInput std_input;
 
 // --------------------
 //     UnitTest

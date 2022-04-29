@@ -361,6 +361,9 @@
     <ClInclude Include="denryu2_investigation.h">
       <Filter>リソース ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="engine\dlshogi-engine\dlshogi_min.h">
+      <Filter>リソース ファイル\engine\dlshogi-engine</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="movegen.cpp">
@@ -652,7 +655,8 @@
     <None Include="..\.gitattributes" />
     <None Include="..\.gitignore" />
     <None Include="..\README.md" />
-    <None Include="..\script\bench.py" />
-    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime.dll" />
+    <None Include="..\script\bench.py">
+      <Filter>script</Filter>
+    </None>
   </ItemGroup>
 </Project>

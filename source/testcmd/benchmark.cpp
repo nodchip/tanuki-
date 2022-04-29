@@ -6,14 +6,16 @@
 #include "../thread.h"
 #include "../usi.h"
 
+#if defined(YANEURAOU_ENGINE_DEEP)
+// dlshogiではnodeのカウントの仕方が異なるので、nodes_searched()を別途用意する。
+#include "../engine/dlshogi-engine/dlshogi_min.h"
+#endif
+
 using namespace std;
 
 // ----------------------------------
 //  USI拡張コマンド "bench"(ベンチマーク)
 // ----------------------------------
-
-// positionコマンドのparserをbenchmarkコマンドから呼び出したい。
-extern void position_cmd(Position & pos, istringstream & is, StateListPtr & states);
 
 // benchmark用デフォルトの局面集
 const vector<string> BenchSfen =
@@ -48,13 +50,6 @@ void bench_cmd(Position& current, istringstream& is)
 	std::string ttSize = "1024", threads  ="1", limit ="15" , fenFile ="default", limitType = "time";
 
 	string* positional_args[] = { &ttSize, &threads, &limit, &fenFile, &limitType };
-
-#if defined(YANEURAOU_ENGINE_DEEP)
-	// ふかうら王は、depth指定に対応していない。
-	// defaultでnodes limitに変更しておく。
-	limitType = "nodes";
-	limit = "200000";
-#endif
 
 	// "benchmark hash 1024 threads 4 limit 3000 type nodes file sfen.txt"のようにも書きたい。
 
@@ -143,10 +138,15 @@ void bench_cmd(Position& current, istringstream& is)
 	// → is_ready()のなかでsearch::clear()が呼び出されて、そのなかでTT.clear()しているのでこの初期化は不要。
 
 	// トータルの探索したノード数
-	int64_t nodes = 0;
-
+#if !defined(YANEURAOU_ENGINE_DEEP)
+	int64_t nodes_searched = 0;
 	// main threadが探索したノード数
-	int64_t nodes_main = 0;
+	int64_t nodes_searched_main = 0;
+#else
+	int64_t nodes_visited = 0;
+	//int64_t nodes_visited_main = 0;
+	// →　ふかうら王、main threadだけ分けて集計していない。
+#endif
 
 	// ベンチの計測用タイマー
 	Timer time;
@@ -175,25 +175,41 @@ void bench_cmd(Position& current, istringstream& is)
 		Time.reset();
 
 		Threads.start_thinking(pos, states , limits);
+
 		Threads.main()->wait_for_search_finished(); // 探索の終了を待つ。
 
-		nodes += Threads.nodes_searched();
-		nodes_main += Threads.main()->nodes.load(std::memory_order_relaxed);
+#if !defined(YANEURAOU_ENGINE_DEEP)
+		nodes_searched      += Threads.nodes_searched();
+		nodes_searched_main += Threads.main()->nodes.load(std::memory_order_relaxed);
+#else
+		// ふかうら王の時は、訪問ノード数を集計する。
+		nodes_visited      += dlshogi::nodes_visited();
+#endif
 	}
 
 	auto elapsed = time.elapsed() + 1; // 0除算の回避のため
 
 	sync_cout << "\n==========================="
 		<< "\nTotal time (ms) : " << elapsed
-		<< "\nNodes searched  : " << nodes
-		<< "\nNodes/second    : " << 1000 * nodes / elapsed;
+#if !defined(YANEURAOU_ENGINE_DEEP)
+		<< "\nNodes searched  : " << nodes_searched
+		<< "\nNodes_searched/second    : " << 1000 * nodes_searched / elapsed
+#else
+		<< "\nNodes visited  : " << nodes_visited
+		<< "\nNodes_visited/second     : " << 1000 * nodes_visited  / elapsed
+#endif
+		;
 
+#if !defined(YANEURAOU_ENGINE_DEEP)
 	if (stoi(threads) > 1)
 		cout
-		<< "\nNodes searched(main thread) : " << nodes_main
-		<< "\nNodes/second  (main thread) : " << 1000 * nodes_main / elapsed;
+		<< "\nNodes searched       (main thread) : " << nodes_searched_main
+		<< "\nNodes searched/second(main thread) : " << 1000 * nodes_searched_main / elapsed;
+#endif
 
-	cout << sync_endl;
+	// 終了したことを出力しないと他のスクリプトから呼び出した時に終了判定にこまる。
+	cout << "\n==========================="
+		 << "\nThe bench command has completed." << sync_endl;
 
 	// Optionsを書き換えたので復元。
 	// 値を代入しないとハンドラが起動しないのでこうやって復元する。

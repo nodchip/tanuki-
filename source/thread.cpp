@@ -29,7 +29,6 @@ void Thread::clear()
 #if defined(USE_MOVE_PICKER)
 	counterMoves.fill(MOVE_NONE);
 	mainHistory.fill(0);
-	lowPlyHistory.fill(0);
 	captureHistory.fill(0);
 
 	// ここは、未初期化のときに[SQ_ZERO][NO_PIECE]を指すので、ここを-1で初期化しておくことによって、
@@ -38,9 +37,16 @@ void Thread::clear()
 	for (bool inCheck : { false, true })
 		for (StatsType c : { NoCaptures, Captures })
 		{
+			// ほとんどの履歴エントリがいずれにせよ後で負になるため、
+			// 開始値を「正しい」方向に少しシフトさせるため、-71で埋めている。
+			// この効果は、深度が深くなるほど薄れるので、長時間思考させる時には
+			// あまり意味がないが、無駄ではないらしい。
+			// Tweak history initialization : https://github.com/official-stockfish/Stockfish/commit/7d44b43b3ceb2eebc756709432a0e291f885a1d2
+
 			for (auto& to : continuationHistory[inCheck][c])
 				for (auto& h : to)
-					h->fill(0);
+					h->fill(-71);
+
 			continuationHistory[inCheck][c][SQ_ZERO][NO_PIECE]->fill(Search::CounterMovePruneThreshold - 1);
 		}
 #endif
@@ -140,8 +146,9 @@ void ThreadPool::clear() {
 		th->clear();
 
 	main()->callsCnt = 0;
-	main()->bestPreviousScore = VALUE_INFINITE;
-	main()->previousTimeReduction = 1.0;
+	main()->bestPreviousScore        = VALUE_INFINITE;
+	main()->bestPreviousAverageScore = VALUE_INFINITE;
+	main()->previousTimeReduction    = 1.0;
 }
 
 // ilde_loop()で待機しているmain threadを起こして即座にreturnする。
@@ -263,9 +270,9 @@ Thread* ThreadPool::get_best_thread() const {
 			if (th->rootMoves[0].score > bestThread->rootMoves[0].score)
 				bestThread = th;
 		}
-		else if (th->rootMoves[0].score >= VALUE_TB_WIN_IN_MAX_PLY
-			|| (th->rootMoves[0].score > VALUE_TB_LOSS_IN_MAX_PLY
-				&& votes[th->rootMoves[0].pv[0]] > votes[bestThread->rootMoves[0].pv[0]]))
+		else if (   th->rootMoves[0].score >= VALUE_TB_WIN_IN_MAX_PLY
+				 || (   th->rootMoves[0].score > VALUE_TB_LOSS_IN_MAX_PLY
+					 && votes[th->rootMoves[0].pv[0]] > votes[bestThread->rootMoves[0].pv[0]]))
 			bestThread = th;
 	}
 

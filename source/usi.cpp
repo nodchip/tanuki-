@@ -4,6 +4,7 @@
 #include "search.h"
 #include "thread.h"
 #include "tt.h"
+#include "misc.h"
 #include "testcmd/unit_test.h"
 
 #include <filesystem>
@@ -55,7 +56,7 @@ namespace Test
 		if (mate_test_cmd(pos,is,token))
 			return;
 
-		sync_cout << "Error! : unknown command = " << token << sync_endl;
+		sync_cout << "info string Error! : unknown command = " << token << sync_endl;
 	}
 }
 
@@ -256,7 +257,7 @@ namespace USI
 						// ただし置換表を破壊されるとbenchコマンドの時にシングルスレッドなのに探索内容の同一性が保証されなくて
 						// 困るのでread_probe()を用いる。
 						bool found;
-						auto* tte = TT.read_probe(pos.state()->key(), found);
+						auto* tte = TT.read_probe(pos.state()->hash_key(), found);
 
 						// 置換表になかった
 						if (!found)
@@ -424,7 +425,7 @@ void is_ready(bool skipCorruptCheck)
 		// メモリが破壊されていないかを調べるためにチェックサムを毎回調べる。
 		// 時間が少しもったいない気もするが.. 0.1秒ぐらいのことなので良しとする。
 		if (!skipCorruptCheck && eval_sum != Eval::calc_check_sum())
-			sync_cout << "Error! : EVAL memory is corrupted" << sync_endl;
+			sync_cout << "info string Error! : EVAL memory is corrupted" << sync_endl;
 	}
 #endif
 
@@ -535,7 +536,7 @@ void setoption_cmd(istringstream& is)
 		Options[name] = value;
 	else
 		// この名前のoptionは存在しなかった
-		sync_cout << "Error! : No such option: " << name << sync_endl;
+		sync_cout << "info string Error! : No such option: " << name << sync_endl;
 
 }
 
@@ -573,7 +574,7 @@ void go_cmd(const Position& pos, istringstream& is , StateListPtr& states , bool
 	// "isready"コマンド受信前に"go"コマンドが呼び出されている。
 	if (!USI::load_eval_finished)
 	{
-		sync_cout << "Error! go cmd before isready cmd." << sync_endl;
+		sync_cout << "info string Error! go cmd before isready cmd." << sync_endl;
 		return;
 	}
 
@@ -725,6 +726,48 @@ void go_cmd(const Position& pos, istringstream& is , StateListPtr& states , bool
 	Threads.start_thinking(pos, states , limits , ponderMode);
 }
 
+// "ponderhit"に"go"で使うようなwtime,btime,winc,binc,byoyomiが書けるような拡張。(やねうら王独自拡張。USI拡張プロトコル)
+// 何かトークンを処理したらこの関数はtrueを返す。
+bool parse_ponderhit(istringstream& is)
+{
+	// 現在のSearch::Limitsに上書きしてしまう。
+	auto& limits = Search::Limits;
+	string token;
+	bool token_processed = false;
+
+	while (is >> token)
+	{
+		// 何かトークンを処理したらこの関数はtrueを返す。
+		token_processed = true;
+
+		// 先手、後手の残り時間。[ms]
+		     if (token == "wtime")     is >> limits.time[WHITE];
+		else if (token == "btime")     is >> limits.time[BLACK];
+
+		// フィッシャールール時における時間
+		else if (token == "winc")      is >> limits.inc[WHITE];
+		else if (token == "binc")      is >> limits.inc[BLACK];
+
+		// "go rtime 100"だと100～300[ms]思考する。
+		else if (token == "rtime")     is >> limits.rtime;
+
+		// 秒読み設定。
+		else if (token == "byoyomi") {
+			TimePoint t = 0;
+			is >> t;
+
+			// USIプロトコルで送られてきた秒読み時間より少なめに思考する設定
+			// ※　通信ラグがあるときに、ここで少なめに思考しないとタイムアップになる可能性があるので。
+
+			// t = std::max(t - Options["ByoyomiMinus"], Time::point(0));
+
+			// USIプロトコルでは、これが先手後手同じ値だと解釈する。
+			limits.byoyomi[BLACK] = limits.byoyomi[WHITE] = t;
+		}
+	}
+	return token_processed;
+}
+
 // --------------------
 // テスト用にqsearch(),search()を直接呼ぶ
 // --------------------
@@ -779,62 +822,11 @@ void USI::loop(int argc, char* argv[])
 	// 局面を遡るためのStateInfoのlist。
 	StateListPtr states(new StateList(1));
 
-	// 先行入力されているコマンド
-	// コマンドは前から取り出すのでqueueを用いる。
-	queue<string> cmds;
-
-	// ファイルからコマンドの指定
-	if (argc >= 3 && string(argv[1]) == "file")
-	{
-		vector<string> cmds0;
-		SystemIO::ReadAllLines(argv[2], cmds0);
-
-		// queueに変換する。
-		for (auto c : cmds0)
-			cmds.push(c);
-
-	} else {
-
-		// 引数として指定されたものを一つのコマンドとして実行する機能
-		// ただし、','が使われていれば、そこでコマンドが区切れているものとして解釈する。
-
-		for (int i = 1; i < argc; ++i)
-		{
-			string s = argv[i];
-
-			// sから前後のスペースを除去しないといけない。
-			while (*s.rbegin() == ' ') s.pop_back();
-			while (*s.begin() == ' ') s = s.substr(1, s.size() - 1);
-
-			if (s != ",")
-				cmd += s + " ";
-			else
-			{
-				cmds.push(cmd);
-				cmd = "";
-			}
-		}
-		if (cmd.size() != 0)
-			cmds.push(cmd);
-	}
+	std_input.parse_args(argc,argv);
 
 	do
 	{
-		if (cmds.size() == 0)
-		{
-			if (!std::getline(cin, cmd)) // 入力が来るかEOFがくるまでここで待機する。
-				cmd = "quit";
-		} else {
-			// 積んであるコマンドがあるならそれを実行する。
-			// 尽きれば"quit"だと解釈してdoループを抜ける仕様にすることはできるが、
-			// そうしてしまうとgoコマンド(これはノンブロッキングなので)の最中にquitが送られてしまう。
-			// ただ、
-			// YaneuraOu-mid.exe bench,quit
-			// のようなことは出来るのでPGOの役には立ちそうである。
-			cmd = cmds.front();
-			cmds.pop();
-		}
-
+		cmd = std_input.input();
 		istringstream is(cmd);
 
 		token.clear(); // getlineが空を返したときのためのクリア
@@ -880,8 +872,17 @@ void USI::loop(int argc, char* argv[])
 				go_cmd(pos, iss, states, true);
 			}
 			else {
+				// ponderhitに追加パラメーターがあるか？(USI拡張プロトコル)
+
+#if defined(USE_TIME_MANAGEMENT)
+				bool token_processed = parse_ponderhit(is);
+				// 追加パラメーターを処理したなら今回の思考時間を再計算する。
+				if (token_processed)
+					Time.reinit();
+#endif
+
 				// 通常のponder
-				Time.reset_for_ponderhit(); // ponderhitから計測しなおすべきである。
+				Time.reset_for_ponderhit();     // ponderhitから計測しなおすべきである。
 				Threads.main()->ponder = false; // 通常探索に切り替える。
 			}
 		}
@@ -895,7 +896,7 @@ void USI::loop(int argc, char* argv[])
 
 		// 与えられた局面について思考するコマンド
 		else if (token == "go") {
-			Threads.main()->last_go_cmd_string = cmd;       // 保存しておく。
+			Threads.main()->last_go_cmd_string = cmd;       // Stochastic_Ponderで使うので保存しておく。
 			go_cmd(pos, is, states);
 		}
 
@@ -942,7 +943,7 @@ void USI::loop(int argc, char* argv[])
 				vector<string> lines;
 				SystemIO::ReadAllLines(filename, lines);
 				for (auto& line : lines)
-					cmds.push(line);
+					std_input.push(line);
 			}
 		}
 
@@ -954,6 +955,9 @@ void USI::loop(int argc, char* argv[])
 		else if (token == "compiler") sync_cout << compiler_info() << sync_endl;
 
 		// -- 以下、やねうら王独自拡張のカスタムコマンド
+
+		// config.hで設定した値などについて出力する。
+		else if (token == "config") sync_cout << config_info() << sync_endl;
 
 		// オプションを取得する(USI独自拡張)
 		else if (token == "getoption") getoption_cmd(is);

@@ -7,12 +7,11 @@
 #include <functional>	// function
 
 #include "types.h"
+#include "position.h"
 
 // --------------------
 //     USI関連
 // --------------------
-
-class Position;
 
 namespace USI
 {
@@ -163,6 +162,11 @@ namespace USI
 	extern EnteringKingRule to_entering_king_rule(const std::string& rule);
 #endif
 
+	// エンジンオプションをコンパイル時に設定する機能
+	// "ENGINE_OPTIONS"で指定した内容を設定する。
+	// 例) #define ENGINE_OPTIONS "FV_SCALE=24;BookFile=no_book"
+	extern void set_engine_options(const std::string& options);
+
 	// エンジンオプションのoverrideのためにファイルから設定を読み込む。
 	// 1) これは起動時に"engine_options.txt"という設定ファイルを読み込むのに用いる。
 	// 2) "isready"応答に対して、EvalDirのなかにある"eval_options.txt"という設定ファイルを読み込むのにも用いる。
@@ -175,10 +179,17 @@ namespace USI
 // USIのoption設定はここに保持されている。
 extern USI::OptionsMap Options;
 
+// === やねうら王独自実装 ===
+
 // USIの"isready"コマンドが呼び出されたときの処理。このときに評価関数の読み込みなどを行なう。
 // benchmarkコマンドのハンドラなどで"isready"が来ていないときに評価関数を読み込ませたいときに用いる。
 // skipCorruptCheck == trueのときは評価関数の2度目の読み込みのときのcheck sumによるメモリ破損チェックを省略する。
 // ※　この関数は、Stockfishにはないがないと不便なので追加しておく。
-void is_ready(bool skipCorruptCheck = false);
+extern void is_ready(bool skipCorruptCheck = false);
+
+// positionコマンドのparserを呼び出したいことがあるので外部から呼び出せるようにしておく。
+// 使い方はbenchコマンド(benchmark.cpp)のコードを見てほしい。
+extern void position_cmd(Position& pos, std::istringstream& is, StateListPtr& states);
+
 
 #endif // #ifndef USI_H_INCLUDED

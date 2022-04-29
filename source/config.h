@@ -8,7 +8,7 @@
 
 // 思考エンジンのバージョンとしてUSIプロトコルの"usi"コマンドに応答するときの文字列。
 // ただし、この値を数値として使用することがあるので数値化できる文字列にしておく必要がある。
-#define ENGINE_VERSION "7.00beta4"
+#define ENGINE_VERSION "7.10"
 
 // --------------------
 //  思考エンジンの種類
@@ -103,6 +103,7 @@
 // →　ConsiderationMode というエンジンオプションを用意したので、この機能は無効化する。
 
 
+
 // ---------------------
 //  評価関数関連の設定
 // ---------------------
@@ -176,6 +177,32 @@
 // このオプションを有効化すると、金と小駒の成りを区別する。(Bonanzaとは異なる特徴量になる)
 // #define DISTINGUISH_GOLDS
 
+// エンジンオプションをコンパイル時に指定したい時に用いる。
+// ";"で区切って複数指定できる。
+// #define ENGINE_OPTIONS "FV_SCALE=24;BookFile=no_book"
+
+
+// ---------------------
+//  置換表絡みの設定
+// ---------------------
+
+// 通例hash keyは64bitだが、これを128にするとPosition::state()->long_key()から128bit hash keyが
+// 得られるようになる。研究時に局面が厳密に合致しているかどうかを判定したいときなどに用いる。
+// 実験用の機能なので、128bit,256bitのhash keyのサポートはAVX2のみ。
+// これ、128 or 256bitにすると、置換表に用いるhashのkeyにそれを使えるので置換表のhash衝突ちょっと減る。
+// 注意 : ふかうら王で、スーパーテラショック定跡の生成を行う時は、HASH_KEY_BITSを128に設定すること。
+//#define HASH_KEY_BITS 64
+
+// 置換表に関する設定
+// TTClusterのなかのTTEntryの数。2,3,4,6,8,16,32などが選べる。
+// Stockfishは3。
+// これを2にすると、置換表効率は悪くなるが、hashの格納bit数が増えるので
+// hash衝突が起きる確率自体は下がるため、hash衝突由来のバグが出にくくなる。
+// cf. https://yaneuraou.yaneu.com/2022/04/23/yaneuraou-v710-128-bit-edition-released/
+// これを4にすると、1つのTTEntryが64byteになる。いまどきのPCならCPUのcache line sizeが64byteであるため、
+// 速度低下はほぼないはず。
+//#define TT_CLUSTER_SIZE 3
+
 
 // ---------------------
 //  機械学習関連の設定
@@ -244,7 +271,7 @@
 // sortが少し高速化されるらしい。
 // 安定ソートではないので並び順が以前のとは異なるから、benchコマンドの探索ノード数は変わる。
 // CPU targetによって実装が変わるのでCPUによってbenchコマンドの探索ノード数は変わる。
-//#define USE_SUPER_SORT
+// #define USE_SUPER_SORT
 
 
 // ---------------------
@@ -343,20 +370,9 @@
 // 電王盤はMultiPV非対応なので定跡を送るとき、"multipv"をつけずに1番目の候補手を送信する必要がある。
 // #define NICONICO
 
-
 // ===============================================================
 // ここ以降では、↑↑↑で設定した内容に基づき必要なdefineを行う。
 // ===============================================================
-
-// 通例hash keyは64bitだが、これを128にするとPosition::state()->long_key()から128bit hash keyが
-// 得られるようになる。研究時に局面が厳密に合致しているかどうかを判定したいときなどに用いる。
-// 実験用の機能なので、128bit,256bitのhash keyのサポートはAVX2のみ。
-#if !defined(HASH_KEY_BITS) // Makefileの方から指定されているかも知れない。
-#define HASH_KEY_BITS 64
-//#define HASH_KEY_BITS 128
-//#define HASH_KEY_BITS 256
-// 注意 : ふかうら王で、スーパーテラショック定跡の生成を行う時は、HASH_KEY_BITSを128に設定すること。
-#endif
 
 // 通常探索時の最大探索深さ
 constexpr int MAX_PLY_NUM = 246;
@@ -600,7 +616,7 @@ extern GlobalOptions_ GlobalOptions;
 #endif
 
 // ASSERT LVに応じたassert
-#ifndef ASSERT_LV
+#if !defined(ASSERT_LV)
 #define ASSERT_LV 0
 #endif
 
@@ -646,7 +662,11 @@ constexpr bool pretty_jp = false;
 #endif
 
 
-// --- hash key bits
+// --- hash key bits and TT_CLUSTER_SIZE
+
+#if !defined(HASH_KEY_BITS)
+#define HASH_KEY_BITS 64
+#endif
 
 #if HASH_KEY_BITS <= 64
 #define HASH_KEY Key64
@@ -655,6 +675,11 @@ constexpr bool pretty_jp = false;
 #else
 #define HASH_KEY Key256
 #endif
+
+#if !defined(TT_CLUSTER_SIZE)
+#define TT_CLUSTER_SIZE 3
+#endif
+
 
 // --- lastMove
 

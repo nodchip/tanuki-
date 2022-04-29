@@ -379,16 +379,6 @@ enum Bound {
 };
 
 // --------------------
-//    探索用のフラグ
-// --------------------
-
-// 探索で組合せ爆発が起きていないかの状態
-enum ExplosionState {
-	EXPLOSION_NONE, // 平常運転
-	MUST_CALM_DOWN  // 組合せ爆発が起きているのでいったん冷静になれ
-};
-
-// --------------------
 //        評価値
 // --------------------
 
@@ -477,7 +467,8 @@ enum PieceType : uint32_t
 	GPM_GHD = 18,     // Gold Horse Dragon
 	GPM_GHDK = 19,     // Gold Horse Dragon King
 
-	// --- Position::pieces()で用いる定数。空いてるところを順番に用いる。
+	// --- Position::pieces()で用いる特殊な定数。空いてるところを順番に用いる。
+	// Position::pieces()では、PAWN , LANCE , … , DRAGONはそのまま用いるが、それ以外に↓の定数が使える。
 	ALL_PIECES = 0,			// 駒がある升を示すBitboardが返る。
 	GOLDS = QUEEN,			// 金と同じ移動特性を持つ駒のBitboardが返る。
 	HDK,				    // H=Horse,D=Dragon,K=Kingの合体したBitboardが返る。
@@ -485,7 +476,7 @@ enum PieceType : uint32_t
 	ROOK_DRAGON,			// ROOK,DRAGONを合成したBitboardが返る。
 	SILVER_HDK,				// SILVER,HDKを合成したBitboardが返る。
 	GOLDS_HDK,				// GOLDS,HDKを合成したBitboardが返る。
-	PIECE_BB_NB,			// デリミタ
+	PIECE_BB_NB,			// 終端
 };
 
 // 駒(先後の区別あり)
@@ -494,8 +485,8 @@ enum Piece : uint32_t
 	NO_PIECE = 0,
 
 	// 以下、先後の区別のある駒(Bがついているのは先手、Wがついているのは後手)
-	B_PAWN = 1, B_LANCE, B_KNIGHT, B_SILVER, B_BISHOP, B_ROOK, B_GOLD, B_KING, B_PRO_PAWN, B_PRO_LANCE, B_PRO_KNIGHT, B_PRO_SILVER, B_HORSE, B_DRAGON, B_QUEEN,
-	W_PAWN = 17, W_LANCE, W_KNIGHT, W_SILVER, W_BISHOP, W_ROOK, W_GOLD, W_KING, W_PRO_PAWN, W_PRO_LANCE, W_PRO_KNIGHT, W_PRO_SILVER, W_HORSE, W_DRAGON, W_QUEEN,
+	B_PAWN = 1 , B_LANCE, B_KNIGHT, B_SILVER, B_BISHOP, B_ROOK, B_GOLD, B_KING, B_PRO_PAWN, B_PRO_LANCE, B_PRO_KNIGHT, B_PRO_SILVER, B_HORSE, B_DRAGON, B_GOLDS/*金相当の駒*/,
+	W_PAWN = 17, W_LANCE, W_KNIGHT, W_SILVER, W_BISHOP, W_ROOK, W_GOLD, W_KING, W_PRO_PAWN, W_PRO_LANCE, W_PRO_KNIGHT, W_PRO_SILVER, W_HORSE, W_DRAGON, W_GOLDS/*金相当の駒*/,
 	PIECE_NB, // 終端
 	PIECE_ZERO = 0,
 
@@ -522,6 +513,13 @@ constexpr Color color_of(Piece pc)
 // 後手の歩→先手の歩のように、後手という属性を取り払った(先後の区別をなくした)駒種を返す
 constexpr PieceType type_of(Piece pc) { return (PieceType)(pc & 15); }
 
+// 駒に対して成れない駒かどうかを判定する。(玉、金に対してもtrueが返る)
+constexpr bool is_promoted_piece(Piece pc)
+{
+	static_assert(GOLD == 7, "GOLD must be 7.");
+	return (type_of(pc) >= GOLD) ? true : false;
+}
+
 // 成ってない駒を返す。後手という属性も消去する。
 // 例) 成銀→銀 , 後手の馬→先手の角
 // ただし、pc == KINGでの呼び出しはNO_PIECEが返るものとする。
@@ -534,6 +532,9 @@ constexpr Piece raw_of(Piece pc) { return (Piece)(pc & ~8); }
 
 // pcとして先手の駒を渡し、cが後手なら後手の駒を返す。cが先手なら先手の駒のまま。pcとしてNO_PIECEは渡してはならない。
 constexpr Piece make_piece(Color c, PieceType pt) { /*ASSERT_LV3(color_of(pt) == BLACK && pt!=NO_PIECE); */ return (Piece)((c << 4) + pt); }
+
+// 成り駒を返す。与えられたpcが成り駒の場合はそのまま返す。
+constexpr Piece make_promoted_piece(Piece pc) { return (Piece)(pc | PIECE_PROMOTE); }
 
 // pcが遠方駒であるかを判定する。LANCE,BISHOP(5),ROOK(6),HORSE(13),DRAGON(14)
 constexpr bool has_long_effect(Piece pc) { return (type_of(pc) == LANCE) || (((pc+1) & 6)==6); }
@@ -887,11 +888,7 @@ enum MOVE_GEN_TYPE
 	// 本ソースコードでは、NON_CAPTURESとCAPTURESは使わず、CAPTURES_PRO_PLUSとNON_CAPTURES_PRO_MINUSを使う。
 
 	// note : NON_CAPTURESとCAPTURESとの生成される指し手の集合は被覆していない。
-	// note : CAPTURES_PRO_PLUSとNON_CAPTURES_PRO_MINUSとの生成される指し手の集合も被覆していない。
 	// →　被覆させないことで、二段階に指し手生成を分解することが出来る。
-
-	CAPTURES_PRO_PLUS_ALL,      // CAPTURES_PRO_PLUS + 歩の不成なども含む
-	NON_CAPTURES_PRO_MINUS_ALL, // NON_CAPTURES_PRO_MINUS + 歩の不成なども含む
 	
 	EVASIONS,              // 王手の回避(指し手生成元で王手されている局面であることがわかっているときはこちらを呼び出す)
 	EVASIONS_ALL,          // EVASIONS + 歩の不成なども含む。

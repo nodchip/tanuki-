@@ -9,6 +9,7 @@
 #if defined(USE_SUPER_SORT) && defined(USE_AVX2)
 // partial_insertion_sort()のSuperSortを用いた実装
 extern void partial_super_sort(ExtMove* start, ExtMove* end, int limit);
+extern void super_sort(ExtMove* start, ExtMove* end);
 
 /*
   - 少し高速化されるらしい。
@@ -86,8 +87,8 @@ enum Stages: int {
 //   partial insertion sort
 // -----------------------
 
-// partial_insertion_sort()は指し手を与えられたlimitまで降順でソートする。
-// limitよりも小さい値の指し手の順序については、不定。
+// partial_insertion_sort()は指し手を与えられたlimitより、ExtMove::valueが大きいものだけを降順でソートする。
+// limitよりも小さい値の指し手の順序については、不定。(sortしたときに末尾のほうに移動する)
 // 将棋だと指し手の数が多い(ことがある)ので、数が多いときは途中で打ち切ったほうがいいかも。
 // 現状、全体時間の6.5～7.5%程度をこの関数で消費している。
 // (長い時間思考させるとこの割合が増えてくる)
@@ -109,10 +110,13 @@ void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
 // 指し手オーダリング器
 
 // 通常探索から呼び出されるとき用。
-MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHistory* mh, const LowPlyHistory* lp,
-	const CapturePieceToHistory* cph , const PieceToHistory** ch, Move cm, const Move* killers,int pl)
-	: pos(p), mainHistory(mh), lowPlyHistory(lp),captureHistory(cph) , continuationHistory(ch),
-	ttMove(ttm), refutations{ { killers[0], 0 },{ killers[1], 0 },{ cm, 0 } }, depth(d), ply(pl)
+MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHistory* mh,
+	const CapturePieceToHistory* cph ,
+	const PieceToHistory** ch,
+	Move cm,
+	const Move* killers)
+	: pos(p), mainHistory(mh), captureHistory(cph) , continuationHistory(ch),
+	ttMove(ttm), refutations{ { killers[0], 0 },{ killers[1], 0 },{ cm, 0 } }, depth(d)
 {
 	// 通常探索から呼び出されているので残り深さはゼロより大きい。
 	ASSERT_LV3(d > 0);
@@ -129,8 +133,11 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
 // 静止探索から呼び出される時用。
 // rs : recapture square
 MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHistory* mh,
-						const CapturePieceToHistory* cph, const PieceToHistory** ch, Square rs)
-	: pos(p), mainHistory(mh), captureHistory(cph) , continuationHistory(ch) , ttMove(ttm), recaptureSquare(rs), depth(d) {
+	const CapturePieceToHistory* cph,
+	const PieceToHistory** ch,
+	Square rs)
+	: pos(p), mainHistory(mh), captureHistory(cph) , continuationHistory(ch) , ttMove(ttm), recaptureSquare(rs), depth(d)
+{
 
 	// 静止探索から呼び出されているので残り深さはゼロ以下。
 	ASSERT_LV3(d <= 0);
@@ -147,17 +154,17 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
 
 // 通常探索時にProbCutの処理から呼び出されるの専用
 // th = 枝刈りのしきい値
-MovePicker::MovePicker(const Position& p, Move ttm, Value th , const CapturePieceToHistory* cph)
-			: pos(p), captureHistory(cph) , ttMove(ttm),threshold(th) {
+MovePicker::MovePicker(const Position& p, Move ttm, Value th , Depth d , const CapturePieceToHistory* cph)
+			: pos(p), captureHistory(cph) , ttMove(ttm),threshold(th) , depth(d) {
 
 	ASSERT_LV3(!pos.in_check());
 
 	// ProbCutにおいて、SEEが与えられたthresholdの値以上の指し手のみ生成する。
 	// (置換表の指しても、この条件を満たさなければならない)
 	// 置換表の指し手がないなら、次のstageから開始する。
-	stage = PROBCUT_TT + !(ttm && pos.capture(ttm)
-		&& pos.pseudo_legal(ttm)
-		&& pos.see_ge(ttm, threshold));
+	stage = PROBCUT_TT + !(ttm  && pos.capture_or_pawn_promotion(ttm)
+								&& pos.pseudo_legal(ttm)
+								&& pos.see_ge(ttm, threshold));
 
 }
 
@@ -166,6 +173,54 @@ template<MOVE_GEN_TYPE Type>
 void MovePicker::score()
 {
 	static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
+
+	// threatened        : 自分より価値の安い駒で当たりになっているか
+	// threatenedByPawn  : 敵の歩の利き。
+	// threatenedByMinor : 敵の歩・小駒による利き
+	// threatenedByRook  : 敵の大駒による利き(やねうら王では使わず)
+
+	// Bitboard threatened, threatenedByPawn , threatenedByMinor , threatenedByRook */;
+
+	if constexpr (Type == QUIETS)
+	{
+#if 0
+		Color us = pos.side_to_move();
+		// squares threatened by pawns
+		threatenedByPawn  = pos.attacks_by<PAWN>(~us);
+		// squares threatened by minors or pawns
+		threatenedByMinor = pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatenedByPawn;
+		// squares threatened by rooks, minors or pawns
+		threatenedByRook  = pos.attacks_by<ROOK>(~us) | threatenedByMinor;
+
+		// pieces threatened by pieces of lesser material value
+		threatened =  (pos.pieces(us, QUEEN) & threatenedByRook)
+					| (pos.pieces(us, ROOK)  & threatenedByMinor)
+					| (pos.pieces(us, KNIGHT, BISHOP) & threatenedByPawn);
+#endif
+
+#if 0
+		// →　Stockfishのコードを忠実に実装すると将棋ではたくさんの利きを計算しなくてはならないので
+		//     非常に計算コストが高くなる。ここでは歩による当たりになっている駒だけ考える。
+
+		const Color us = pos.side_to_move();
+
+		// 歩による脅威だけ。
+		// squares threatened by pawns
+		threatenedByPawn = (~us == BLACK) ? pos.attacks_by<BLACK, PAWN>() : pos.attacks_by<WHITE, PAWN>();
+
+		// 歩以外の自駒で、相手の歩の利きにある駒
+		threatened =  (pos.pieces(us,PAWN).andnot(pos.pieces(us))                 & threatenedByPawn );
+#endif
+		// →　やってみたが強くならないのでコメントアウトする。[2022/04/26]
+	}
+	else
+	{
+		// Silence unused variable warnings
+		//(void)threatened;
+		//(void)threatenedByPawn;
+		//(void)threatenedByMinor;
+		//(void)threatenedByRook;
+	}
 
 	for (auto& m : *this)
 	{
@@ -180,9 +235,11 @@ void MovePicker::score()
 			// Stockfish 9に倣いMVV + captureHistoryで処理する。
 
 			// 歩の成りは別途考慮してもいいような気はするのだが…。
+			// ここに来るCAPTURESに歩の成りを含めているので、捕獲する駒(pos.piece_on(to_sq(m)))がNO_PIECEで
+			// ある可能性については考慮しておく必要がある。
 
-			m.value = int(Eval::CapturePieceValue[pos.piece_on(to_sq(m))])*6
-					+ (*captureHistory)[to_sq(m)][pos.moved_piece_after(m)][type_of(pos.piece_on(to_sq(m)))];
+			m.value = 6 * int(Eval::CapturePieceValue[pos.piece_on(to_sq(m))])
+					 +    (*captureHistory)[to_sq(m)][pos.moved_piece_after(m)][type_of(pos.piece_on(to_sq(m)))];
 		}
 		else if constexpr (Type == QUIETS)
 		{
@@ -193,24 +250,34 @@ void MovePicker::score()
 
 			Piece movedPiece = pos.moved_piece_after(m);
 			Square movedSq = to_sq(m);
+			PieceType moved_piece = type_of(pos.moved_piece_before(m));
 
-#if 1
 			m.value =     (*mainHistory)[from_to(m)][pos.side_to_move()]
 					+ 2 * (*continuationHistory[0])[movedSq][movedPiece]
 					+     (*continuationHistory[1])[movedSq][movedPiece]
 					+     (*continuationHistory[3])[movedSq][movedPiece]
 					+     (*continuationHistory[5])[movedSq][movedPiece]
-					+ (ply < MAX_LPH ? 6 * (*lowPlyHistory)[ply][from_to(m)] : 0);
-#else
-
-			// パラメーターの調整フレームワークを利用するために、値を16倍して最適値を探す。
-			m.value = 16 * (*mainHistory)[from_to(m)][pos.side_to_move()]
-				+ MOVE_PICKER_Q_PARAM1 * (*continuationHistory[0])[movedSq][movedPiece]
-				+ MOVE_PICKER_Q_PARAM2 * (*continuationHistory[1])[movedSq][movedPiece]
-				+ MOVE_PICKER_Q_PARAM3 * (*continuationHistory[3])[movedSq][movedPiece]
-				+ MOVE_PICKER_Q_PARAM4 * (*continuationHistory[5])[movedSq][movedPiece]
-				+ MOVE_PICKER_Q_PARAM5 * (ply < MAX_LPH ? std::min(4, depth / 3) * (*lowPlyHistory)[ply][from_to(m)] : 0);
+				//	移動元の駒が安い駒で当たりになっている場合、移動させることでそれを回避できるなら価値を上げておく。
+#if 0
+					+     (threatened & from_sq(m) ?
+							 (type_of(pos.moved_piece_before(m)) == QUEEN && !(to_sq(m) & threatenedByRook ) ? 50000
+							: type_of(pos.moved_piece_before(m)) == ROOK  && !(to_sq(m) & threatenedByMinor) ? 25000
+							:                                                !(to_sq(m) & threatenedByPawn ) ? 15000
+							:																					0)
+																											    0);
+				// → Stockfishのコードそのままは書けない。
 #endif
+
+#if 0
+					+     (threatened & from_sq(m) ?
+							 ((moved_piece == ROOK || moved_piece == BISHOP) && !threatenedByPawn.test(to_sq(m)) ? 50000
+						:                                                       !threatenedByPawn.test(to_sq(m)) ? 15000
+						:                                                                                          0)
+						:                                                                                          0);
+#endif
+				// →　強くならなかったのでコメントアウト。
+					;
+
 		}
 		else // Type == EVASIONS
 		{
@@ -276,6 +343,7 @@ Move MovePicker::select(Pred filter) {
 // 呼び出されるごとに新しいpseudo legalな指し手をひとつ返す。
 // 指し手が尽きればMOVE_NONEが返る。
 // 置換表の指し手(ttMove)を返したあとは、それを取り除いた指し手を返す。
+// skipQuiets : これがtrueだとQUIETな指し手は返さない。
 Move MovePicker::next_move(bool skipQuiets) {
 
 top:
@@ -295,11 +363,13 @@ top:
 	case QCAPTURE_INIT:
 		cur = endBadCaptures = moves;
 
-		endMoves = Search::Limits.generate_all_legal_moves ? generateMoves<CAPTURES_PRO_PLUS_ALL>(pos, cur) : generateMoves<CAPTURES_PRO_PLUS>(pos, cur);
+		//endMoves = Search::Limits.generate_all_legal_moves ? generateMoves<CAPTURES_PRO_PLUS_ALL>(pos, cur) : generateMoves<CAPTURES_PRO_PLUS>(pos, cur);
+		// → Probcutとかでしか使わないから、CAPTURES_PRO_PLUS_ALLは廃止する。
+		endMoves = generateMoves<CAPTURES_PRO_PLUS>(pos, cur);
 
 		// 駒を捕獲する指し手に対してオーダリングのためのスコアをつける
 		score<CAPTURES>();
-
+		partial_insertion_sort(cur, endMoves, -3000 * depth);
 		++stage;
 		goto top;
 
@@ -307,7 +377,7 @@ top:
 	// (killer moveの前のフェーズなのでkiller除去は不要)
 	// SSEの値が悪いものはbad captureのほうに回す。
 	case GOOD_CAPTURE:
-		if (select<Best>([&]() {
+		if (select<Next>([&]() {
 				// moveは駒打ちではないからsee()の内部での駒打ちは判定不要だが…。
 				return pos.see_ge(*cur, Value(-69 * cur->value / 1024)) ?
 						// 損をする捕獲する指し手はあとのほうで試行されるようにendBadCapturesに移動させる
@@ -349,14 +419,30 @@ top:
 		{
 			cur = endBadCaptures;
 
-#if defined(USE_AVX2)
+			/*
+			moves          : バッファの先頭
+			endBadCaptures : movesから(endBadCaptures - 1) までに bad capturesの指し手が格納されている。
+				そこ以降はバッファの末尾まで自由に使って良い。
+
+				|--- 指し手生成用のバッファ -----------------------------------|
+				| ttMove | killer | captures |  未使用のバッファ               |  captures生成時 (CAPTURES_PRO_PLUS)
+				|--------------------------------------------------------------|
+				|   badCaptures      |     quiet         |  未使用のバッファ   |  quiet生成時    (NON_CAPTURES_PRO_MINUS)
+				|--------------------------------------------------------------|
+				↑                  ↑ 
+				moves          endBadCaptures
+			*/
+
+
+#if defined(USE_SUPER_SORT) && defined(USE_AVX2)
 			// curを32の倍数アドレスになるように少し進めてしまう。
 			// これにより、curがalignas(32)されているような効果がある。
 			// このあとSuperSortを使うときにこれが前提条件として必要。
 			cur = (ExtMove*)Math::align((size_t)cur, 32);
 #endif
 
-			endMoves = Search::Limits.generate_all_legal_moves ? generateMoves<NON_CAPTURES_PRO_MINUS_ALL>(pos, cur) : generateMoves<NON_CAPTURES_PRO_MINUS>(pos, cur);
+			//endMoves = Search::Limits.generate_all_legal_moves ? generateMoves<NON_CAPTURES_PRO_MINUS_ALL>(pos, cur) : generateMoves<NON_CAPTURES_PRO_MINUS>(pos, cur);
+			endMoves = generateMoves<NON_CAPTURES_PRO_MINUS>(pos, cur);
 
 			// 駒を捕獲しない指し手に対してオーダリングのためのスコアをつける
 			score<QUIETS>();
@@ -365,21 +451,33 @@ top:
 			// (depthが低いときに真面目に全要素ソートするのは無駄だから)
 
 #if defined(USE_SUPER_SORT) && defined(USE_AVX2)
+			// 以下のSuperSortを有効にするとinsertion_sortと結果が異なるのでbenchコマンドの探索node数が変わって困ることがあるので注意。
 
-			// AVX2なので自動的にlittle endianと仮定できるのでint64_tとみなしてソートして良い。
-			// このとき、sortの高速化として、SuperSortが使える。
-			// cur == movesの先頭だし、MAX_MOVESの分だけbufferは確保されているので32の倍数になるように
-			// 後方のpaddingをしてAVX2を使ったsortをして良い。このとき、他にbuffer不要。
-			
+#if 0
 			partial_super_sort(cur, endMoves , -3000 * depth);
+#endif
 
-			// ↑を有効にするとinsertion_sortと結果が異なるのでbenchコマンドの探索node数が変わって困ることがあるので注意。
+#if 0
+			// depth大きくて指し手の数も多い時だけsuper sortを使うとどう？
+			if (depth >= 10 && endMoves - cur >= 64)
+				partial_super_sort(cur, endMoves , -3000 * depth);
+			else
+				partial_insertion_sort(cur, endMoves, -3000 * depth);
+#endif
+
+#if 1
+			// depth大きくて指し手の数も多い時だけsuper sortを使うとどう？
+			if ((depth >= 15 && endMoves - cur >= 32) || (depth >= 10 && endMoves - cur >= 64) || (depth >= 5 && endMoves - cur >= 96) )
+				super_sort(cur, endMoves);
+			else
+				partial_insertion_sort(cur, endMoves, -3000 * depth);
+#endif
 
 #else
 
 			// TODO : このへん係数調整したほうが良いのでは…。
 			// →　sort時間がもったいないのでdepthが浅いときはscoreの悪い指し手を無視するようにしているだけで
-			//   sortできるなら全部したほうが良い。上のSuperSortを使う実装の場合、全部sortしている。
+			//   sortできるなら全部したほうが良い。
 			partial_insertion_sort(cur, endMoves, -3000 * depth);
 #endif
 		}
@@ -398,13 +496,13 @@ top:
 
 			return *(cur - 1);
 
-		// bad capturesの指し手に対して繰り返すためにポインタを準備する。
-		// bad capturesの先頭を指すようにする。これは指し手生成バッファの先頭付近を再利用している。
+		// bad capturesの指し手を返すためにポインタを準備する。
+		// bad capturesの先頭を指すようにする。これは指し手生成バッファの先頭からの領域を再利用している。
 		cur = moves;
 		endMoves = endBadCaptures;
 
 		++stage;
-		/* fallthrough */
+		[[fallthrough]];
 
 	// see()が負の指し手を返す。
 	case BAD_CAPTURE:
@@ -429,13 +527,13 @@ top:
 
 	// PROBCUTの指し手を返す
 	case PROBCUT_:
-		return select<Best>([&]() { return pos.see_ge(*cur, threshold); });
+		return select<Next>([&]() { return pos.see_ge(*cur, threshold); });
 		// threadshold以上のSEE値で、ベストのものを一つ
 
 	// 静止探索用の指し手を返す処理
 	case QCAPTURE_:
 		// depthがDEPTH_QS_RECAPTURES(-5)より深いなら、recaptureの升に移動する指し手のみを生成。
-		if (select<Best>([&]() { return    depth > DEPTH_QS_RECAPTURES
+		if (select<Next>([&]() { return    depth > DEPTH_QS_RECAPTURES
 										|| to_sq(*cur) == recaptureSquare; }))
 			return *(cur - 1);
 
