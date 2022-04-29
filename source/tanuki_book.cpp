@@ -63,7 +63,7 @@ namespace {
 	constexpr const char* kBookUctMaxSearchPerPosition = "BookUctMaxSearchPerPosition";
 	constexpr const char* kBookUctRecordFile = "BookUctRecordFile";
 	constexpr int kShowProgressPerAtMostSec = 1 * 60 * 60;	// 1時間
-	constexpr time_t kSavePerAtMostSec = 30 * 60;		// 30分
+	constexpr time_t kSavePerAtMostSec = 3 * 60 * 60;		// 3時間
 
 	struct SfenAndMove {
 		std::string sfen;
