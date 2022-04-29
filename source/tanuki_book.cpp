@@ -2777,4 +2777,60 @@ bool Tanuki::CreateUctBook() {
 	return true;
 }
 
+bool Tanuki::ConvertInternalBookToYaneuraOuBook() {
+	std::string csa_folder = Options[kBookCsaFolder];
+	std::string input_book_file = Options[kBookInputFile];
+	std::string output_book_file = Options[kBookOutputFile];
+	int minimum_winning_percentage = static_cast<int>(Options[kBookMinimumWinningPercentage]);
+	int minimum_count = static_cast<int>(Options[kBookMinimumCount]);
+
+	MemoryBook output_book;
+	output_book_file = "book/" + output_book_file;
+	sync_cout << "Reading output book file: " << output_book_file << sync_endl;
+	output_book.read_book(output_book_file);
+	sync_cout << "done..." << sync_endl;
+	sync_cout << "|output_book|=" << output_book.get_body().size() << sync_endl;
+
+	InternalBook internal_book;
+	ReadInternalBook("book\\" + input_book_file, internal_book);
+	RemoveBadMove(internal_book);
+	RemoveBadMove2(csa_folder, internal_book);
+
+	for (auto& [sfen, best16_to_book_move] : internal_book) {
+		for (auto& [best16, book_move] : best16_to_book_move) {
+			auto move = book_move.move;
+			auto ponder = book_move.ponder;
+			int value = book_move.num_values ? static_cast<int>(book_move.sum_values / book_move.num_values) : 0;
+			int count = book_move.num_win + book_move.num_lose;
+			auto color = (sfen.find(" b ") != std::string::npos ? BLACK : WHITE);
+
+			// 勝率が一定値以下の指し手を削除する。
+			// book_move.num_win / count < minimum_winning_percentage / 100
+			if (book_move.num_win * 100 < minimum_winning_percentage * count) {
+				continue;
+			}
+
+			// 出現回数が一定値以下の指し手を削除する。
+			if (count < minimum_count) {
+				continue;
+			}
+
+			auto& position = Threads[0]->rootPos;
+			StateInfo state_info;
+			position.set(sfen, &state_info, Threads[0]);
+			auto move32 = position.to_move(move);
+			if (!position.pseudo_legal(move32) || !position.legal(move32)) {
+				sync_cout << "Illegal move. sfen=" << position.sfen() << " move=" << move32 << sync_endl;
+				continue;
+			}
+
+			output_book.insert(sfen, Book::BookMove(move, ponder, value, 0, count));
+		}
+	}
+
+	WriteBook(output_book, output_book_file);
+
+	return true;
+}
+
 #endif

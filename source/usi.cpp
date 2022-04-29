@@ -1149,6 +1149,8 @@ void USI::loop(int argc, char* argv[])
 
 		else if (token == "create_uct_book") Tanuki::CreateUctBook();
 
+		else if (token == "convert_internal_book_to_yaneura_ou_book") Tanuki::ConvertInternalBookToYaneuraOuBook();
+
 		else if (token == "generate_kifu") Tanuki::GenerateKifu();
 
 		else if (token == "convert_sfen_to_learning_data") Tanuki::ConvertSfenToLearningData();
