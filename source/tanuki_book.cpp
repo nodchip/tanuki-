@@ -2323,7 +2323,7 @@ namespace {
 		std::string sfen;
 		while (std::getline(ifs, sfen)) {
 			if (++counter % 10000 == 0) {
-				sync_cout << counter << "/" << internal_book.size() << sync_endl;
+				sync_cout << counter << sync_endl;
 			}
 
 			int num_book_moves;
