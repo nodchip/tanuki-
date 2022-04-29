@@ -200,6 +200,8 @@ namespace USI {
 		Tanuki::KifuReader::Initialize(o);
 		Tanuki::KifuWriter::Initialize(o);
 		Tanuki::Progress::Initialize(o);
+
+		o["ForceSilent"] << Option(false);
 #endif
 
 #if defined(ENGINE_OPTIONS)
