@@ -69,14 +69,14 @@ TARGET_CPU = AVX2
 
 
 # デバッガーを使用するか (debugger)
-DEBUG = OFF
-#DEBUG = ON
+# DEBUG = OFF
+DEBUG = ON
 
 
 # 使用するコンパイラ (compiler)
 # ※ clangでコンパイルしたほうがgccより数%速いっぽい。
-COMPILER = g++
-#COMPILER = clang++
+# COMPILER = g++
+COMPILER = clang++
 
 
 # エンジンの表示名 (engine displayname)
@@ -190,7 +190,7 @@ endif
 CPPFLAGS  += -DUNICODE
 
 # stripの指示。(実行ファイルのサイズを小さく)
-LDFLAGS += -Wl,-s
+# LDFLAGS += -Wl,-s
 
 # mingw64では-D_WIN64,-D_WIN32は環境に応じて自動で設定されるので指定すべきではない。
 # CPPFLAGS += -D_WIN64
@@ -199,7 +199,7 @@ LDFLAGS += -Wl,-s
 # CPPFLAGS   += -march=native
 
 # デバッグ情報を付加
-# CPPFLAGS  += -g3 -ggdb
+CPPFLAGS  += -g3 -ggdb
 
 # OpenMPを使うときにCPPFLAGSとして指定するオプション
 # ※ 学習部ではOpenMpを用いるので、学習用のビルドではこのオプションを指定する。
