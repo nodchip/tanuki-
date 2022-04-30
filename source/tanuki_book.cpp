@@ -71,8 +71,9 @@ namespace {
 		Move next_move;
 	};
 
-	void WriteBook(Book::MemoryBook& book, const std::string output_book_file_path) {
-		std::string backup_file_path = output_book_file_path + ".bak";
+	void WriteBook(Book::MemoryBook& book, const std::filesystem::path& output_book_file_path) {
+		std::filesystem::path backup_file_path = output_book_file_path;
+		backup_file_path += ".bak";
 
 		if (std::filesystem::exists(backup_file_path)) {
 			sync_cout << "Removing the backup file. backup_file_path=" << backup_file_path << sync_endl;
@@ -84,11 +85,11 @@ namespace {
 			std::filesystem::rename(output_book_file_path, backup_file_path);
 		}
 
-		book.write_book(output_book_file_path);
+		book.write_book(output_book_file_path.string());
 		sync_cout << "|output_book_file_path|=" << book.get_body().size() << sync_endl;
 	}
 
-	void WriteBook(BookMoveSelector& book, const std::string output_book_file_path) {
+	void WriteBook(BookMoveSelector& book, const std::filesystem::path& output_book_file_path) {
 		WriteBook(book.get_body(), output_book_file_path);
 	}
 
@@ -234,7 +235,7 @@ bool Tanuki::CreateRawBook() {
 		}
 	}
 
-	WriteBook(memory_book, "book/" + Options[kBookFile]);
+	WriteBook(memory_book, std::filesystem::path("book") / static_cast<std::string>(Options[kBookFile]));
 
 	return true;
 }
@@ -444,7 +445,7 @@ bool Tanuki::MergeBook() {
 		}
 	}
 
-	WriteBook(output_book, "book/" + output_file);
+	WriteBook(output_book, std::filesystem::path("book") / output_file);
 
 	return true;
 }
@@ -818,7 +819,7 @@ bool Tanuki::PropagateLeafNodeValuesToRoot() {
 		NegaMax(book, pos, counter);
 	}
 
-	WriteBook(book, "book/" + output_book_file);
+	WriteBook(book, std::filesystem::path("book") / output_book_file);
 	sync_cout << "|output_book|=" << book.get_body().size() << sync_endl;
 
 	return true;
@@ -2316,7 +2317,7 @@ namespace {
 		}
 	}
 
-	void ReadInternalBook(const std::string& file_path, InternalBook& internal_book) {
+	void ReadInternalBook(const std::filesystem::path& file_path, InternalBook& internal_book) {
 		sync_cout << "ReadInternalBook(): file_path=" << file_path << sync_endl;
 		int counter = 0;
 		std::ifstream ifs(file_path);
@@ -2349,7 +2350,7 @@ namespace {
 		sync_cout << "done." << sync_endl;
 	}
 
-	void WriteInternalBook(const std::string& file_path, const InternalBook& internal_book) {
+	void WriteInternalBook(const std::filesystem::path& file_path, const InternalBook& internal_book) {
 		sync_cout << "WriteInternalBook(): file_path=" << file_path << sync_endl;
 		int counter = 0;
 		std::ofstream ofs(file_path);
@@ -2513,7 +2514,7 @@ bool Tanuki::CreateInternalBookFromFloodgateRecords() {
 
 	InternalBook internal_book;
 	ParseFloodgateCsaFiles(csa_folder, strong_players, minimum_rating, internal_book);
-	WriteInternalBook("book\\" + output_book_file, internal_book);
+	WriteInternalBook(std::filesystem::path("book") / output_book_file, internal_book);
 
 	return true;
 }
@@ -2540,7 +2541,7 @@ bool Tanuki::CreateUctBook() {
 	sync_cout << "resign_value=" << resign_value << sync_endl;
 
 	InternalBook internal_book;
-	ReadInternalBook("book\\" + output_book_file, internal_book);
+	ReadInternalBook(std::filesystem::path("book") / output_book_file, internal_book);
 
 	time_t last_save_time_sec = std::time(nullptr);
 
@@ -2767,7 +2768,7 @@ bool Tanuki::CreateUctBook() {
 		}
 
 		if (last_save_time_sec + kSavePerAtMostSec < std::time(nullptr)) {
-			WriteInternalBook("book\\" + output_book_file, internal_book);
+			WriteInternalBook(std::filesystem::path("book") / output_book_file, internal_book);
 			last_save_time_sec = std::time(nullptr);
 		}
 
@@ -2792,7 +2793,7 @@ bool Tanuki::ConvertInternalBookToYaneuraOuBook() {
 	sync_cout << "|output_book|=" << output_book.get_body().size() << sync_endl;
 
 	InternalBook internal_book;
-	ReadInternalBook("book\\" + input_book_file, internal_book);
+	ReadInternalBook(std::filesystem::path("book") / input_book_file, internal_book);
 	RemoveBadMove(internal_book);
 	RemoveBadMove2(csa_folder, internal_book);
 
