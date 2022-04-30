@@ -15,18 +15,18 @@ URL = 'url'
 LABEL = 'label'
 HTML = 'html'
 DATA_LIST = [
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2022-03-15/54/consoleText',
-    #     LABEL: 'suisho5.80G',
-    # },
+    {
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-03-15/54/consoleText',
+        LABEL: 'suisho5.80G',
+    },
     {
         URL: 'http://hnoda-dt2:8080/job/learn.2022-03-15/57/consoleText',
         LABEL: 'halfkp_1024x2-8-32',
     },
-    {
-        URL: 'http://hnoda-dt2:8080/job/learn.2022-03-15/58/consoleText',
-        LABEL: 'halfkp_1024x2-8-32.add',
-    },
+    # {
+    #     URL: 'http://hnoda-dt2:8080/job/learn.2022-03-15/58/consoleText',
+    #     LABEL: 'halfkp_1024x2-8-32.add',
+    # },
 ]
 PATTERNS = [
     Pattern('learn_cross_entropy',
