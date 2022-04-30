@@ -2322,7 +2322,7 @@ namespace {
 		std::ifstream ifs(file_path);
 		std::string sfen;
 		while (std::getline(ifs, sfen)) {
-			if (++counter % 10000 == 0) {
+			if (++counter % 100000 == 0) {
 				sync_cout << counter << sync_endl;
 			}
 
@@ -2354,7 +2354,7 @@ namespace {
 		int counter = 0;
 		std::ofstream ofs(file_path);
 		for (const auto& [sfen, move16_to_book_move] : internal_book) {
-			if (++counter % 10000 == 0) {
+			if (++counter % 100000 == 0) {
 				sync_cout << counter << "/" << internal_book.size() << sync_endl;
 			}
 
