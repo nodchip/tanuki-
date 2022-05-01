@@ -34,6 +34,7 @@ using USI::Option;
 
 void position_cmd(Position& pos, std::istringstream& is, StateListPtr& states);
 void go_cmd(const Position& pos, std::istringstream& is, StateListPtr& states, bool ignore_ponder = false);
+void is_ready_cmd(Position& pos, StateListPtr& states);
 
 namespace {
 	constexpr const char* kBookSfenFile = "BookSfenFile";
@@ -2554,12 +2555,12 @@ bool Tanuki::CreateUctBook() {
 
 		Position pos;
 		StateListPtr states(new StateList(1));
+		is_ready_cmd(pos, states);
+
 		{
 			std::istringstream iss("startpos");
 			position_cmd(pos, iss, states);
 		}
-
-		is_ready();
 
 		int black_time_ms = time_ms;
 		int white_time_ms = time_ms;
