@@ -20,9 +20,15 @@ def main():
     # parameters = ['10', '20', '30', '40', '50', '60', '70', '80', '90', '100', '1000']
     # parameters = ['200000000', '300000000', '400000000', '500000000']
     # parameters = ['10', '100', '1000', '10000']
-    parameters = ['0.1', '0.2', '0.3', '0.4', '0.5', '0.6', '0.7', '0.8', '0.9']
+    # parameters = ['0.1', '0.2', '0.3', '0.4', '0.5', '0.6', '0.7', '0.8', '0.9']
+    # parameters = ['V7.61', 'v7.50-wcsc32', 'v7.10', 'v7.00', 'v6.50', 'v6.00', 'v5.33',
+    #               'V5.00', 'V4.91', 'V4.89', 'V4.88', 'V4.86', 'V4.85', 'V4.83', 'V4.82_NNUE', ]
+    # parameters = ['V5.00', 'V4.91', 'V4.89', 'V4.88', 'V4.86', 'V4.85', 'V4.83', 'V4.82_NNUE',]
+    # parameters = ['V5.40_post', 'V5.40',]
+    # old_versions = ['V4.86', 'V4.85', 'V4.83', 'V4.82_NNUE',]
+    parameters = ['16', '20', '24', '28', '32',]
     for index, parameter in enumerate(parameters):
-        thread_id_offset = index * 16 % 128
+        thread_id_offset = index * 64 % 128
 
         # Parameterized Build - Jenkins - Jenkins Wiki https://wiki.jenkins.io/display/JENKINS/Parameterized+Build
 
@@ -206,12 +212,53 @@ def main():
         #     'nn_options': fr'momentum={momentum}',
         # })
 
-        momentum = parameter
+        # momentum = parameter
+        # query = urllib.parse.urlencode({
+        #     'eval1': fr'D:\hnoda\shogi\eval\suisho5.momentum={momentum}\final',
+        #     'eval2': fr'D:\hnoda\shogi\eval\suisho5\final',
+        #     'YANEURAOU_EDITION1': fr'YANEURAOU_ENGINE_NNUE_HALFKP_VM_256X2_32_32',
+        #     'YANEURAOU_EDITION2': fr'YANEURAOU_ENGINE_NNUE_HALFKP_VM_256X2_32_32',
+        # })
+
+        # branch = parameter
+        # YANEURAOU_EDITION = 'YANEURAOU_ENGINE_NNUE'
+        # if branch in old_versions:
+        #     YANEURAOU_EDITION = 'YANEURAOU_2018_TNK_ENGINE'
+        # query = urllib.parse.urlencode({
+        #     'EvalSaveDir': fr'D:\hnoda\shogi\eval\regression.{branch}',
+        #     'targetdir': fr'D:\hnoda\shogi\training_data\suisho5.shuffled.without_qsearch',
+        #     'validation_set_file_name': fr'D:\hnoda\shogi\validation_data\suisho5.shuffled.without_qsearch\xaa',
+        #     'BRANCH': fr' Branch_{branch}',
+        #     'YANEURAOU_EDITION': YANEURAOU_EDITION,
+        #     'Threads': 64,
+        # })
+
+        # branch = parameter
+        # query = urllib.parse.urlencode({
+        #     'eval1': fr'D:\hnoda\shogi\eval\regression.{branch}\final',
+        #     'eval2': fr'D:\hnoda\shogi\eval\suisho5.halfkp_256x2-32-32.80G\final',
+        #     'YANEURAOU_EDITION1': fr'YANEURAOU_ENGINE_NNUE',
+        #     'YANEURAOU_EDITION2': fr'YANEURAOU_ENGINE_NNUE',
+        # })
+
+        # fv_scale = parameter
+        # query = urllib.parse.urlencode({
+        #     'eval1': fr'D:\hnoda\shogi\eval\regression.v5.33\final',
+        #     'eval2': fr'D:\hnoda\tanuki-wcsc32-2022-05-06\eval',
+        #     'YANEURAOU_EDITION1': fr'YANEURAOU_ENGINE_NNUE',
+        #     'YANEURAOU_EDITION2': fr'YANEURAOU_ENGINE_NNUE_HALFKP_1024X2_8_32',
+        #     'hash': fr'640',
+        #     'fv_scale1': fr'{fv_scale}',
+        # })
+
+        fv_scale = parameter
         query = urllib.parse.urlencode({
-            'eval1': fr'D:\hnoda\shogi\eval\suisho5.momentum={momentum}\final',
-            'eval2': fr'D:\hnoda\shogi\eval\suisho5\final',
-            'YANEURAOU_EDITION1': fr'YANEURAOU_ENGINE_NNUE_HALFKP_VM_256X2_32_32',
-            'YANEURAOU_EDITION2': fr'YANEURAOU_ENGINE_NNUE_HALFKP_VM_256X2_32_32',
+            'eval1': fr'D:\hnoda\shogi\eval\regression.v5.33.iteration=2\final',
+            'eval2': fr'D:\hnoda\shogi\eval\regression.v5.33\final',
+            'YANEURAOU_EDITION1': fr'YANEURAOU_ENGINE_NNUE',
+            'YANEURAOU_EDITION2': fr'YANEURAOU_ENGINE_NNUE',
+            'fv_scale1': fr'{fv_scale}',
+            'fv_scale2': fr'20',
         })
 
         url = f'http://{args.host_name}:8080/job/{args.projet_name}/buildWithParameters?{query}'
