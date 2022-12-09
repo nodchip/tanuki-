@@ -2223,6 +2223,8 @@ namespace {
 		{"ln5nl/1r2gkg2/3ppp1p1/p2s1sp1p/1pp4P1/2PPSPP2/PPS1P1N1P/2GK1G3/LN5RL b Bb 35", "7f7e"},
 		{"ln5nl/4gkg2/4ppsp1/p2p2p1p/5P1P1/1rPPS1P2/P3P1N1P/2GK1G3/LN5RL b BSPbs2p 49", "P*8g"},
 		{"ln5nl/1r2gkg2/3ppp1p1/p4sp1p/1ps4P1/3PSPP2/PPS1P1N1P/2GK1G3/LN5RL b BPbp 37", "4f4e"},
+		// 第3回世界将棋AI電竜戦本戦【予選リーグ】 9回戦 ●Joyful Believer ― 〇dlshogi with HEROZ 30b
+		{"ln1gk2nl/1r4g2/3ppps1p/6pp1/pps4PP/2pP1SP2/PPS1PP3/2G4R1/LN2KG1NL b Bbp 35", "7g6h"},
 	};
 
 	void RemoveBadMove(InternalBook& internal_book) {
