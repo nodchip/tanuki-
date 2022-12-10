@@ -2567,11 +2567,39 @@ bool Tanuki::CreateUctBook() {
 		int black_time_ms = time_ms;
 		int white_time_ms = time_ms;
 
-		while (pos.game_ply() < max_moves_to_draw &&
-			!pos.is_mated() &&
-			pos.DeclarationWin() == MOVE_NONE &&
-			(internal_moves.empty() || internal_moves.back().value == Value::VALUE_NONE || std::abs(internal_moves.back().value) < resign_value) &&
-			pos.is_repetition() == RepetitionState::REPETITION_NONE) {
+		while (true) {
+			if (pos.game_ply() >= max_moves_to_draw) {
+				// 最大手数を超えている場合、対局を終える。
+				break;
+			}
+
+			if (pos.is_mated()) {
+				// 詰んでいる場合、対局を終える。
+				break;
+			}
+
+			if (pos.DeclarationWin() != MOVE_NONE) {
+				// 宣言勝ちできる場合、対局を終える。
+				break;
+			}
+
+			if (!internal_moves.empty()) {
+				if (std::abs(internal_moves.back().value) >= resign_value) {
+					// 直前の指し手の評価値が投了値を超えている場合、対局を終える。
+					break;
+				}
+
+				if (internal_moves.back().best == Move::MOVE_RESIGN) {
+					// 直前の指し手が投了の場合、対局を終える。
+					break;
+				}
+			}
+
+			if (pos.is_repetition() != RepetitionState::REPETITION_NONE) {
+				// 千日手等の場合、対局を終える。
+				break;
+			}
+
 			InternalMove internal_move = {};
 			internal_move.best = Move::MOVE_NONE;
 			internal_move.next = Move::MOVE_NONE;
@@ -2701,11 +2729,18 @@ bool Tanuki::CreateUctBook() {
 			current_player_is_win = true;
 		}
 		else if (!internal_moves.empty() && internal_moves.back().value >= resign_value) {
-			// 勝ち
+			// 最後の局面は相手の局面。
+			// 相手の勝ち。自分の負け。
 			current_player_is_win = false;
 		}
 		else if (!internal_moves.empty() && internal_moves.back().value <= -resign_value) {
-			// 負け
+			// 最後の局面は相手の局面。
+			// 相手の負け。自分の勝ち。
+			current_player_is_win = true;
+		}
+		else if (!internal_moves.empty() && internal_moves.back().best == Move::MOVE_RESIGN) {
+			// 最後の局面は相手の局面。
+			// 相手の負け。自分の勝ち。
 			current_player_is_win = true;
 		}
 		else if (repetition_state == RepetitionState::REPETITION_WIN)
@@ -2746,6 +2781,9 @@ bool Tanuki::CreateUctBook() {
 		for (int play = 0; play < static_cast<int>(internal_moves.size()); ++play) {
 			auto sfen = pos.sfen();
 			auto move = internal_moves[play].best;
+			if (move == Move::MOVE_RESIGN) {
+				break;
+			}
 			auto value = internal_moves[play].value;
 			auto& internal_book_move = internal_book[sfen][move];
 			internal_book_move.move = move;
