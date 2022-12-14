@@ -15,11 +15,13 @@ import urllib.request
 # PATTERN0 = re.compile(r'winning_percentage_for_win=([0-9.]+)')
 # PATTERN0 = re.compile(r'generator_start_position_max_play=([0-9]+)')
 # PATTERN0 = re.compile(r'regression\.(.+?)\\')
-PATTERN0 = re.compile(r'FVScale1=([0-9.]+)')
+# PATTERN0 = re.compile(r'FVScale1=([0-9.]+)')
+PATTERN0 = re.compile(r'eta2=([0-9.]+)')
 PATTERN1 = re.compile(
     r'勝ち\d+\([0-9.]+% R([-0-9.]+) \+-[0-9.]+\) 先手勝ち\d+\([0-9.]+%\) 後手勝ち\d+\([0-9.]+%\)')
 # BUILD_NUMBERS = [15, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27, 28, 29]
-BUILD_NUMBERS = [45, 46, 47, 48, 49]
+# BUILD_NUMBERS = [45, 46, 47, 48, 49]
+BUILD_NUMBERS = range(112, 122 + 1)
 
 
 def main():

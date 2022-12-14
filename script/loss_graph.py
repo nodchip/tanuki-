@@ -15,77 +15,49 @@ URL = 'url'
 LABEL = 'label'
 HTML = 'html'
 DATA_LIST = [
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2022-05-06/7/consoleText',
-    #     LABEL: 'suisho5.halfkp_256x2-32-32.preqsearch.evaluate',
-    # },
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/1/consoleText',
-    #     LABEL: 'V7.61',
-    # },
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/2/consoleText',
-    #     LABEL: 'v7.50-wcsc32',
-    # },
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/3/consoleText',
-    #     LABEL: 'v7.10',
-    # },
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/4/consoleText',
-    #     LABEL: 'v7.00',
-    # },
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/5/consoleText',
-    #     LABEL: 'v6.50',
-    # },
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/6/consoleText',
-    #     LABEL: 'v6.00',
-    # },
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/8/consoleText',
-    #     LABEL: 'V5.00',
-    # },
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/10/consoleText',
-    #     LABEL: 'V4.89',
-    # },
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/11/consoleText',
-    #     LABEL: 'V4.88',
-    # },
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/12/consoleText',
-    #     LABEL: 'V4.86',
-    # },
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/13/consoleText',
-    #     LABEL: 'V4.85',
-    # },
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/14/consoleText',
-    #     LABEL: 'V4.83',
-    # },
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/15/consoleText',
-    #     LABEL: 'V4.82_NNUE',
-    # },
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/17/consoleText',
-    #     LABEL: 'V5.40_post',
-    # },
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/18/consoleText',
-    #     LABEL: 'V5.40',
-    # },
     {
-        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/7/consoleText',
-        LABEL: 'v5.33',
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/135/consoleText',
+        LABEL: 'eta=0.01',
     },
     {
-        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/20/consoleText',
-        LABEL: 'v5.33.iteration=2',
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/136/consoleText',
+        LABEL: 'eta=0.005',
+    },
+    {
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/137/consoleText',
+        LABEL: 'eta=0.0025',
+    },
+    {
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/138/consoleText',
+        LABEL: 'eta=0.00125',
+    },
+    {
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/139/consoleText',
+        LABEL: 'eta=0.000625',
+    },
+    {
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/140/consoleText',
+        LABEL: 'eta=0.0003125',
+    },
+    {
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/141/consoleText',
+        LABEL: 'eta=0.00015625',
+    },
+    {
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/142/consoleText',
+        LABEL: 'eta=7.8125e-05',
+    },
+    {
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/143/consoleText',
+        LABEL: 'eta=3.90625e-05',
+    },
+    {
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/144/consoleText',
+        LABEL: 'eta=1.953125e-05',
+    },
+    {
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/145/consoleText',
+        LABEL: 'eta=9.765625e-06',
     },
 ]
 PATTERNS = [
