@@ -123,32 +123,43 @@ namespace {
 	};
 
 	bool ReadStrongPlayers(std::vector<Player>& strong_players) {
-		std::ifstream ifs("players-floodgate.html");
-		if (!ifs) {
-			return false;
+		std::vector<std::string> file_names = {
+			"players-floodgate.20220429.html",
+			"players-floodgate.20221128.html",
+		};
+		std::map<std::string, int> name_to_rate;
+		for (const auto& file_name : file_names) {
+			std::ifstream ifs(file_name);
+			if (!ifs) {
+				continue;
+			}
+
+			std::string name;
+			int rate = 0;
+			std::string line;
+			while (std::getline(ifs, line)) {
+				if (line.find("<a id=\"popup") != std::string::npos) {
+					auto left = line.find(">");
+					auto right = line.find("<", left);
+					name = line.substr(left + 1, right - left - 1);
+				}
+				else if (line.find("<span id=\"popup") != std::string::npos) {
+					auto left = line.find(">");
+					auto right = line.find("<", left);
+					auto rate_string = line.substr(left + 2, right - left - 2);
+					// N/A は取り除く
+					if (!std::isdigit(rate_string[0])) {
+						continue;
+					}
+					rate = std::stoi(rate_string);
+
+					name_to_rate[name] = std::max(name_to_rate[name], rate);
+				}
+			}
 		}
 
-		std::string name;
-		int rate = 0;
-		std::string line;
-		while (std::getline(ifs, line)) {
-			if (line.find("<a id=\"popup") != std::string::npos) {
-				auto left = line.find(">");
-				auto right = line.find("<", left);
-				name = line.substr(left + 1, right - left - 1);
-			}
-			else if (line.find("<span id=\"popup") != std::string::npos) {
-				auto left = line.find(">");
-				auto right = line.find("<", left);
-				auto rate_string = line.substr(left + 2, right - left - 2);
-				// N/A は取り除く
-				if (!std::isdigit(rate_string[0])) {
-					continue;
-				}
-				rate = std::stoi(rate_string);
-
-				strong_players.push_back({ name, rate });
-			}
+		for (auto [name, rate] : name_to_rate) {
+			strong_players.push_back({ name, rate });
 		}
 
 		if (strong_players.empty()) {
