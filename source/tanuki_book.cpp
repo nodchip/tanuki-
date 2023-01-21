@@ -2595,7 +2595,8 @@ bool Tanuki::CreateUctBook() {
 			}
 
 			if (!internal_moves.empty()) {
-				if (std::abs(internal_moves.back().value) >= resign_value) {
+				auto last_value = internal_moves.back().value;
+				if (last_value != Value::VALUE_NONE && std::abs(last_value) >= resign_value) {
 					// 直前の指し手の評価値が投了値を超えている場合、対局を終える。
 					break;
 				}
