@@ -2788,17 +2788,21 @@ bool Tanuki::CreateUctBook() {
 		}
 
 		// 定跡データベースに追加していく
+		// 同時に標準出力に出力するための文字列も構築していく。
+		std::ostringstream oss;
+		oss << "startpos moves";
+
 		states.reset(new StateList(1));
 		pos.set_hirate(&states->back(), Threads.main());
 		for (int play = 0; play < static_cast<int>(internal_moves.size()); ++play) {
 			auto sfen = pos.sfen();
-			auto move = internal_moves[play].best;
-			if (move == Move::MOVE_RESIGN) {
+			auto best = internal_moves[play].best;
+			if (best == Move::MOVE_RESIGN) {
 				break;
 			}
 			auto value = internal_moves[play].value;
-			auto& internal_book_move = internal_book[sfen][move];
-			internal_book_move.move = move;
+			auto& internal_book_move = internal_book[sfen][best];
+			internal_book_move.move = best;
 			if (play + 1 < static_cast<int>(internal_moves.size())) {
 				internal_book_move.ponder = internal_moves[play + 1].best;
 			}
@@ -2816,9 +2820,13 @@ bool Tanuki::CreateUctBook() {
 			}
 
 			states->emplace_back();
-			pos.do_move(pos.to_move(move), states->back());
+			auto move = pos.to_move(best);
+			pos.do_move(move, states->back());
+			oss << " " << move;
 			win = !win;
 		}
+
+		sync_cout << oss.str() << sync_endl;
 
 		if (last_save_time_sec + kSavePerAtMostSec < std::time(nullptr)) {
 			WriteInternalBook(std::filesystem::path("book") / output_book_file, internal_book);
