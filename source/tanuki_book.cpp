@@ -63,6 +63,7 @@ namespace {
 	constexpr const char* kBookUctNumMatches = "BookUctNumMatches";
 	constexpr const char* kBookUctMaxSearchPerPosition = "BookUctMaxSearchPerPosition";
 	constexpr const char* kBookUctRecordFile = "BookUctRecordFile";
+	constexpr const char* kBookUctMinorMovePercentage = "BookUctMinorMovePercentage";
 	constexpr int kShowProgressPerAtMostSec = 1 * 60 * 60;	// 1時間
 	constexpr time_t kSavePerAtMostSec = 6 * 60 * 60;		// 6時間
 
@@ -193,6 +194,7 @@ bool Tanuki::InitializeBook(USI::OptionsMap& o) {
 	o[kBookUctNumMatches] << Option(5 * 1000, 0, INT_MAX);
 	o[kBookUctMaxSearchPerPosition] << Option(3, 0, INT_MAX);
 	o[kBookUctRecordFile] << Option("record.sqlite");
+	o[kBookUctMinorMovePercentage] << Option(0, 0, 100);
 
 	return true;
 }
@@ -2519,6 +2521,7 @@ bool Tanuki::CreateInternalBookFromFloodgateRecords() {
 	std::string csa_folder = Options[kBookCsaFolder];
 	std::string output_book_file = Options[kBookOutputFile];
 	int minimum_rating = static_cast<int>(Options[kBookMinimumRating]);
+	int minor_move_percentage = Options[kBookUctMinorMovePercentage];
 
 	std::vector<Player> strong_players;
 	if (!ReadStrongPlayers(strong_players)) {
@@ -2528,6 +2531,25 @@ bool Tanuki::CreateInternalBookFromFloodgateRecords() {
 
 	InternalBook internal_book;
 	ParseFloodgateCsaFiles(csa_folder, strong_players, minimum_rating, internal_book);
+
+	for (auto& [sfen, move16_and_internal_book_moves] : internal_book) {
+		int num_moves = 0;
+		for (const auto& [move16, internal_book_move] : move16_and_internal_book_moves) {
+			num_moves += internal_book_move.num_win;
+			num_moves += internal_book_move.num_lose;
+		}
+
+		for (auto it = move16_and_internal_book_moves.begin(); it != move16_and_internal_book_moves.end();) {
+			const auto& internal_book_move = it->second;
+			if ((internal_book_move.num_win + internal_book_move.num_lose) * 100 < minor_move_percentage * num_moves) {
+				it = move16_and_internal_book_moves.erase(it);
+			}
+			else {
+				++it;
+			}
+		}
+	}
+
 	WriteInternalBook(std::filesystem::path("book") / output_book_file, internal_book);
 
 	return true;
