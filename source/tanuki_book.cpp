@@ -2800,6 +2800,7 @@ bool Tanuki::CreateUctBook() {
 		else {
 			// 引き分け
 			// この対局は定跡データベースに記録しない。
+			sync_cout << "Draw..." << sync_endl;
 			continue;
 		}
 
