@@ -2895,8 +2895,8 @@ bool Tanuki::ConvertInternalBookToYaneuraOuBook() {
 				continue;
 			}
 
-			// 出現回数が一定値以下の指し手を削除する。
-			if (count < minimum_count) {
+			// 出現回数が一定値以下の指し手、かつ手元の自己対戦で指されていない指し手を削除する。
+			if (count < minimum_count && book_move.num_values == 0) {
 				continue;
 			}
 
