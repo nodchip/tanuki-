@@ -25,36 +25,57 @@ def main():
     # parameters = [0.0, -1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0, -10.0, ]
     # parameters = [0.0]
     # parameters = [-1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0, -10.0, ]
-    parameters = [10, 20, 30, 40, 50, 60, 70, ]
+    # parameters = [5, 15, 25, 30, 35]
+    # parameters = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    parameters = [
+        'Branch_v5.33_20201128192325',
+        'Branch_v5.33_20201128225947',
+        'Branch_v5.33_20201130081917',
+        'Branch_v5.33_20201130102017',
+        'Branch_v5.33_20201201163629',
+        'Branch_v5.33_20201201214136',
+        'Branch_v5.33_20201201214447',
+        'Branch_v5.33_20201202075042',
+        'Branch_v5.33_20201202080706',
+    ]
     for index, parameter in enumerate(parameters):
         thread_id_offset = index * threads % num_cores
 
         # Parameterized Build - Jenkins - Jenkins Wiki https://wiki.jenkins.io/display/JENKINS/Parameterized+Build
 
-        # eta2 = 0.01 * math.pow(2.0, parameter)
+        # max_progress = parameter
         # query = urllib.parse.urlencode({
-        #     'EvalDir': fr'D:\hnoda\shogi\eval\halfkp_1024x2-8-32\final',
-        #     'Threads': fr'{threads}',
-        #     'EvalSaveDir': fr'D:\hnoda\shogi\eval\halfkp_1024x2-8-32.add.nodes=2M.eta2={eta2}',
-        #     'targetdir': fr'D:\hnoda\shogi\training_data\suisho5.nodes=2M.shuffled',
-        #     'eta2': fr'{eta2}',
-        #     'lambda': fr'0.0',
-        #     'validation_set_file_name': fr'D:\hnoda\shogi\validation_data\suisho5.nodes=2M.shuffled\xaa',
-        #     'ThreadIdOffset': fr'{thread_id_offset}',
-        #     'winning_percentage_for_win': fr'0.99',
-        #     'YANEURAOU_EDITION': fr'YANEURAOU_ENGINE_NNUE_HALFKP_1024X2_8_32',
+        #     'kifu_folder_name': fr'Suishopsv-150m',
+        #     'shuffled_kifu_folder_name': fr'Suishopsv-150m.min_progress=0.1.max_progress={max_progress}',
+        #     'shuffle_kifu_for_test': fr'false',
+        #     'ShuffledMinProgress': fr'0.1',
+        #     'ShuffledMaxProgress': fr'{max_progress}',
         # })
 
-        eta2 = 0.01 * math.pow(2.0, -10.0)
-        save_index = parameter
+        # branch = parameter
+        # query = urllib.parse.urlencode({
+        #     'EvalDir': fr'D:\hnoda\tanuki-wcsc29-2019-05-06\eval',
+        #     'Threads': fr'{threads}',
+        #     'EvalSaveDir': fr'D:\hnoda\shogi\eval\{branch}',
+        #     'targetdir': fr'D:\hnoda\shogi\training_data\suisho5.shuffled',
+        #     'eta2': fr'1.0',
+        #     'lambda': fr'0.5',
+        #     'validation_set_file_name': fr'D:\hnoda\shogi\validation_data\suisho5.shuffled\xaa',
+        #     'ThreadIdOffset': fr'{thread_id_offset}',
+        #     'winning_percentage_for_win': fr'0.99',
+        #     'YANEURAOU_EDITION': fr'YANEURAOU_ENGINE_NNUE',
+        #     'BRANCH': fr'{branch}'
+        # })
+
+        branch = parameter
         query = urllib.parse.urlencode({
-            'eval1': fr'D:\hnoda\shogi\eval\halfkp_1024x2-8-32.add.nodes=2M.eta2={eta2}\{save_index}',
-            'eval2': fr'D:\hnoda\shogi\eval\halfkp_1024x2-8-32\final',
-            'YANEURAOU_EDITION1': fr'YANEURAOU_ENGINE_NNUE_HALFKP_1024X2_8_32',
-            'YANEURAOU_EDITION2': fr'YANEURAOU_ENGINE_NNUE_HALFKP_1024X2_8_32',
+            'eval1': fr'D:\hnoda\shogi\eval\{branch}\final',
+            'eval2': fr'D:\hnoda\shogi\eval\suisho5.halfkp_256x2-32-32.80G\final',
+            'YANEURAOU_EDITION1': fr'YANEURAOU_ENGINE_NNUE',
+            'YANEURAOU_EDITION2': fr'YANEURAOU_ENGINE_NNUE',
             'fv_scale1': fr'16',
             'fv_scale2': fr'16',
-            'hash': fr'512',
+            'hash': fr'768',
         })
 
         url = f'http://{args.host_name}:8080/job/{args.projet_name}/buildWithParameters?{query}'

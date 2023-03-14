@@ -16,48 +16,40 @@ LABEL = 'label'
 HTML = 'html'
 DATA_LIST = [
     {
-        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/135/consoleText',
-        LABEL: 'eta=0.01',
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/192/consoleText',
+        LABEL: 'Branch_v5.33_20201128192325',
     },
     {
-        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/136/consoleText',
-        LABEL: 'eta=0.005',
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/193/consoleText',
+        LABEL: 'Branch_v5.33_20201128225947',
     },
     {
-        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/137/consoleText',
-        LABEL: 'eta=0.0025',
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/194/consoleText',
+        LABEL: 'Branch_v5.33_20201130081917',
     },
     {
-        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/138/consoleText',
-        LABEL: 'eta=0.00125',
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/195/consoleText',
+        LABEL: 'Branch_v5.33_20201130102017',
     },
     {
-        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/139/consoleText',
-        LABEL: 'eta=0.000625',
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/196/consoleText',
+        LABEL: 'Branch_v5.33_20201201163629',
     },
     {
-        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/140/consoleText',
-        LABEL: 'eta=0.0003125',
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/197/consoleText',
+        LABEL: 'Branch_v5.33_20201201214136',
     },
     {
-        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/141/consoleText',
-        LABEL: 'eta=0.00015625',
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/198/consoleText',
+        LABEL: 'Branch_v5.33_20201201214447',
     },
     {
-        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/142/consoleText',
-        LABEL: 'eta=7.8125e-05',
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/199/consoleText',
+        LABEL: 'Branch_v5.33_20201202075042',
     },
     {
-        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/143/consoleText',
-        LABEL: 'eta=3.90625e-05',
-    },
-    {
-        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/144/consoleText',
-        LABEL: 'eta=1.953125e-05',
-    },
-    {
-        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/145/consoleText',
-        LABEL: 'eta=9.765625e-06',
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/200/consoleText',
+        LABEL: 'Branch_v5.33_20201202080706',
     },
 ]
 PATTERNS = [
