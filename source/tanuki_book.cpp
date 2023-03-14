@@ -63,8 +63,9 @@ namespace {
 	constexpr const char* kBookUctNumMatches = "BookUctNumMatches";
 	constexpr const char* kBookUctMaxSearchPerPosition = "BookUctMaxSearchPerPosition";
 	constexpr const char* kBookUctRecordFile = "BookUctRecordFile";
+	constexpr const char* kBookUctMinorMovePercentage = "BookUctMinorMovePercentage";
 	constexpr int kShowProgressPerAtMostSec = 1 * 60 * 60;	// 1時間
-	constexpr time_t kSavePerAtMostSec = 1 * 60 * 60;		// 1時間
+	constexpr time_t kSavePerAtMostSec = 6 * 60 * 60;		// 6時間
 
 	struct SfenAndMove {
 		std::string sfen;
@@ -123,32 +124,43 @@ namespace {
 	};
 
 	bool ReadStrongPlayers(std::vector<Player>& strong_players) {
-		std::ifstream ifs("players-floodgate.html");
-		if (!ifs) {
-			return false;
+		std::vector<std::string> file_names = {
+			"players-floodgate.20220429.html",
+			"players-floodgate.20221128.html",
+		};
+		std::map<std::string, int> name_to_rate;
+		for (const auto& file_name : file_names) {
+			std::ifstream ifs(file_name);
+			if (!ifs) {
+				continue;
+			}
+
+			std::string name;
+			int rate = 0;
+			std::string line;
+			while (std::getline(ifs, line)) {
+				if (line.find("<a id=\"popup") != std::string::npos) {
+					auto left = line.find(">");
+					auto right = line.find("<", left);
+					name = line.substr(left + 1, right - left - 1);
+				}
+				else if (line.find("<span id=\"popup") != std::string::npos) {
+					auto left = line.find(">");
+					auto right = line.find("<", left);
+					auto rate_string = line.substr(left + 2, right - left - 2);
+					// N/A は取り除く
+					if (!std::isdigit(rate_string[0])) {
+						continue;
+					}
+					rate = std::stoi(rate_string);
+
+					name_to_rate[name] = std::max(name_to_rate[name], rate);
+				}
+			}
 		}
 
-		std::string name;
-		int rate = 0;
-		std::string line;
-		while (std::getline(ifs, line)) {
-			if (line.find("<a id=\"popup") != std::string::npos) {
-				auto left = line.find(">");
-				auto right = line.find("<", left);
-				name = line.substr(left + 1, right - left - 1);
-			}
-			else if (line.find("<span id=\"popup") != std::string::npos) {
-				auto left = line.find(">");
-				auto right = line.find("<", left);
-				auto rate_string = line.substr(left + 2, right - left - 2);
-				// N/A は取り除く
-				if (!std::isdigit(rate_string[0])) {
-					continue;
-				}
-				rate = std::stoi(rate_string);
-
-				strong_players.push_back({ name, rate });
-			}
+		for (auto [name, rate] : name_to_rate) {
+			strong_players.push_back({ name, rate });
 		}
 
 		if (strong_players.empty()) {
@@ -182,6 +194,7 @@ bool Tanuki::InitializeBook(USI::OptionsMap& o) {
 	o[kBookUctNumMatches] << Option(5 * 1000, 0, INT_MAX);
 	o[kBookUctMaxSearchPerPosition] << Option(3, 0, INT_MAX);
 	o[kBookUctRecordFile] << Option("record.sqlite");
+	o[kBookUctMinorMovePercentage] << Option(0, 0, 100);
 
 	return true;
 }
@@ -2223,6 +2236,8 @@ namespace {
 		{"ln5nl/1r2gkg2/3ppp1p1/p2s1sp1p/1pp4P1/2PPSPP2/PPS1P1N1P/2GK1G3/LN5RL b Bb 35", "7f7e"},
 		{"ln5nl/4gkg2/4ppsp1/p2p2p1p/5P1P1/1rPPS1P2/P3P1N1P/2GK1G3/LN5RL b BSPbs2p 49", "P*8g"},
 		{"ln5nl/1r2gkg2/3ppp1p1/p4sp1p/1ps4P1/3PSPP2/PPS1P1N1P/2GK1G3/LN5RL b BPbp 37", "4f4e"},
+		// 第3回世界将棋AI電竜戦本戦【予選リーグ】 9回戦 ●Joyful Believer ― 〇dlshogi with HEROZ 30b
+		{"ln1gk2nl/1r4g2/3ppps1p/6pp1/pps4PP/2pP1SP2/PPS1PP3/2G4R1/LN2KG1NL b Bbp 35", "7g6h"},
 	};
 
 	void RemoveBadMove(InternalBook& internal_book) {
@@ -2506,6 +2521,7 @@ bool Tanuki::CreateInternalBookFromFloodgateRecords() {
 	std::string csa_folder = Options[kBookCsaFolder];
 	std::string output_book_file = Options[kBookOutputFile];
 	int minimum_rating = static_cast<int>(Options[kBookMinimumRating]);
+	int minor_move_percentage = Options[kBookUctMinorMovePercentage];
 
 	std::vector<Player> strong_players;
 	if (!ReadStrongPlayers(strong_players)) {
@@ -2515,6 +2531,25 @@ bool Tanuki::CreateInternalBookFromFloodgateRecords() {
 
 	InternalBook internal_book;
 	ParseFloodgateCsaFiles(csa_folder, strong_players, minimum_rating, internal_book);
+
+	for (auto& [sfen, move16_and_internal_book_moves] : internal_book) {
+		int num_moves = 0;
+		for (const auto& [move16, internal_book_move] : move16_and_internal_book_moves) {
+			num_moves += internal_book_move.num_win;
+			num_moves += internal_book_move.num_lose;
+		}
+
+		for (auto it = move16_and_internal_book_moves.begin(); it != move16_and_internal_book_moves.end();) {
+			const auto& internal_book_move = it->second;
+			if ((internal_book_move.num_win + internal_book_move.num_lose) * 100 < minor_move_percentage * num_moves) {
+				it = move16_and_internal_book_moves.erase(it);
+			}
+			else {
+				++it;
+			}
+		}
+	}
+
 	WriteInternalBook(std::filesystem::path("book") / output_book_file, internal_book);
 
 	return true;
@@ -2565,11 +2600,40 @@ bool Tanuki::CreateUctBook() {
 		int black_time_ms = time_ms;
 		int white_time_ms = time_ms;
 
-		while (pos.game_ply() < max_moves_to_draw &&
-			!pos.is_mated() &&
-			pos.DeclarationWin() == MOVE_NONE &&
-			(internal_moves.empty() || internal_moves.back().value == Value::VALUE_NONE || std::abs(internal_moves.back().value) < resign_value) &&
-			pos.is_repetition() == RepetitionState::REPETITION_NONE) {
+		while (true) {
+			if (pos.game_ply() >= max_moves_to_draw) {
+				// 最大手数を超えている場合、対局を終える。
+				break;
+			}
+
+			if (pos.is_mated()) {
+				// 詰んでいる場合、対局を終える。
+				break;
+			}
+
+			if (pos.DeclarationWin() != MOVE_NONE) {
+				// 宣言勝ちできる場合、対局を終える。
+				break;
+			}
+
+			if (!internal_moves.empty()) {
+				auto last_value = internal_moves.back().value;
+				if (last_value != Value::VALUE_NONE && std::abs(last_value) >= resign_value) {
+					// 直前の指し手の評価値が投了値を超えている場合、対局を終える。
+					break;
+				}
+
+				if (internal_moves.back().best == Move::MOVE_RESIGN) {
+					// 直前の指し手が投了の場合、対局を終える。
+					break;
+				}
+			}
+
+			if (pos.is_repetition() != RepetitionState::REPETITION_NONE) {
+				// 千日手等の場合、対局を終える。
+				break;
+			}
+
 			InternalMove internal_move = {};
 			internal_move.best = Move::MOVE_NONE;
 			internal_move.next = Move::MOVE_NONE;
@@ -2699,11 +2763,18 @@ bool Tanuki::CreateUctBook() {
 			current_player_is_win = true;
 		}
 		else if (!internal_moves.empty() && internal_moves.back().value >= resign_value) {
-			// 勝ち
+			// 最後の局面は相手の局面。
+			// 相手の勝ち。自分の負け。
 			current_player_is_win = false;
 		}
 		else if (!internal_moves.empty() && internal_moves.back().value <= -resign_value) {
-			// 負け
+			// 最後の局面は相手の局面。
+			// 相手の負け。自分の勝ち。
+			current_player_is_win = true;
+		}
+		else if (!internal_moves.empty() && internal_moves.back().best == Move::MOVE_RESIGN) {
+			// 最後の局面は相手の局面。
+			// 相手の負け。自分の勝ち。
 			current_player_is_win = true;
 		}
 		else if (repetition_state == RepetitionState::REPETITION_WIN)
@@ -2729,6 +2800,7 @@ bool Tanuki::CreateUctBook() {
 		else {
 			// 引き分け
 			// この対局は定跡データベースに記録しない。
+			sync_cout << "Draw..." << sync_endl;
 			continue;
 		}
 
@@ -2739,14 +2811,21 @@ bool Tanuki::CreateUctBook() {
 		}
 
 		// 定跡データベースに追加していく
+		// 同時に標準出力に出力するための文字列も構築していく。
+		std::ostringstream oss;
+		oss << "startpos moves";
+
 		states.reset(new StateList(1));
 		pos.set_hirate(&states->back(), Threads.main());
 		for (int play = 0; play < static_cast<int>(internal_moves.size()); ++play) {
 			auto sfen = pos.sfen();
-			auto move = internal_moves[play].best;
+			auto best = internal_moves[play].best;
+			if (best == Move::MOVE_RESIGN) {
+				break;
+			}
 			auto value = internal_moves[play].value;
-			auto& internal_book_move = internal_book[sfen][move];
-			internal_book_move.move = move;
+			auto& internal_book_move = internal_book[sfen][best];
+			internal_book_move.move = best;
 			if (play + 1 < static_cast<int>(internal_moves.size())) {
 				internal_book_move.ponder = internal_moves[play + 1].best;
 			}
@@ -2764,9 +2843,13 @@ bool Tanuki::CreateUctBook() {
 			}
 
 			states->emplace_back();
-			pos.do_move(pos.to_move(move), states->back());
+			auto move = pos.to_move(best);
+			pos.do_move(move, states->back());
+			oss << " " << move;
 			win = !win;
 		}
+
+		sync_cout << oss.str() << sync_endl;
 
 		if (last_save_time_sec + kSavePerAtMostSec < std::time(nullptr)) {
 			WriteInternalBook(std::filesystem::path("book") / output_book_file, internal_book);
@@ -2812,8 +2895,8 @@ bool Tanuki::ConvertInternalBookToYaneuraOuBook() {
 				continue;
 			}
 
-			// 出現回数が一定値以下の指し手を削除する。
-			if (count < minimum_count) {
+			// 出現回数が一定値以下の指し手、かつ手元の自己対戦で指されていない指し手を削除する。
+			if (count < minimum_count && book_move.num_values == 0) {
 				continue;
 			}
 
