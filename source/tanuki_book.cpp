@@ -2600,6 +2600,9 @@ bool Tanuki::CreateUctBook() {
 		int black_time_ms = time_ms;
 		int white_time_ms = time_ms;
 
+		int num_book_moves = 0;
+		int num_search_moves = 0;
+
 		while (true) {
 			if (pos.game_ply() >= max_moves_to_draw) {
 				// 最大手数を超えている場合、対局を終える。
@@ -2652,6 +2655,8 @@ bool Tanuki::CreateUctBook() {
 			}
 
 			if (num_searches < max_search_per_position){
+				++num_search_moves;
+
 				// この局面で探索した回数が一定値以下の場合、探索を行う。
 
 				// goコマンドを生成して実行する
@@ -2698,6 +2703,8 @@ bool Tanuki::CreateUctBook() {
 				internal_move.book = 0;
 			}
 			else {
+				++num_book_moves;
+
 				// 定跡の指し手を指す
 				auto it = internal_book.find(sfen);
 				ASSERT_LV3(it != internal_book.end());
@@ -2850,6 +2857,7 @@ bool Tanuki::CreateUctBook() {
 		}
 
 		sync_cout << oss.str() << sync_endl;
+		sync_cout << "num_book_moves=" << num_book_moves << " num_search_moves=" << num_search_moves << sync_endl;
 
 		if (last_save_time_sec + kSavePerAtMostSec < std::time(nullptr)) {
 			WriteInternalBook(std::filesystem::path("book") / output_book_file, internal_book);
@@ -2900,16 +2908,16 @@ bool Tanuki::ConvertInternalBookToYaneuraOuBook() {
 				continue;
 			}
 
-			auto& position = Threads[0]->rootPos;
-			StateInfo state_info;
-			position.set(sfen, &state_info, Threads[0]);
-			auto move32 = position.to_move(move);
-			if (!position.pseudo_legal(move32) || !position.legal(move32)) {
-				sync_cout << "Illegal move. sfen=" << position.sfen() << " move=" << move32 << sync_endl;
-				continue;
-			}
+		auto& position = Threads[0]->rootPos;
+		StateInfo state_info;
+		position.set(sfen, &state_info, Threads[0]);
+		auto move32 = position.to_move(move);
+		if (!position.pseudo_legal(move32) || !position.legal(move32)) {
+			sync_cout << "Illegal move. sfen=" << position.sfen() << " move=" << move32 << sync_endl;
+			continue;
+		}
 
-			output_book.insert(sfen, Book::BookMove(move, ponder, value, 0, count));
+		output_book.insert(sfen, Book::BookMove(move, ponder, value, 0, count));
 		}
 	}
 
