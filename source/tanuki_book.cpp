@@ -2350,24 +2350,36 @@ namespace {
 			int num_book_moves;
 			ifs >> num_book_moves;
 
+			// 末尾の改行を読む
+			std::string _;
+			std::getline(ifs, _);
+
 			for (int book_move_index = 0; book_move_index < num_book_moves; ++book_move_index) {
+				std::string line;
+				std::getline(ifs, line);
+				std::istringstream iss(line);
+
 				std::string move_string;
 				std::string ponder_string;
 				int num_win;
 				int num_lose;
 				s64 sum_values;
 				int num_values;
-				ifs >> move_string >> ponder_string >> num_win >> num_lose >> sum_values >> num_values;
+				if (line.find("  ") == std::string::npos) {
+					iss >> move_string >> ponder_string >> num_win >> num_lose >> sum_values >> num_values;
+				}
+				else {
+					// 何らかの原因でponderが空文字の場合がある。この場合noneが含まれていると仮定して読み込む。
+					ponder_string = "none";
+					iss >> move_string >> num_win >> num_lose >> sum_values >> num_values;
+				}
 				u16 move16 = USI::to_move16(move_string).to_u16();
 				u16 ponder16 = ponder_string == "none" ? static_cast<u16>(Move::MOVE_NONE) : USI::to_move16(ponder_string).to_u16();
 				internal_book[sfen][move16] = { move16, ponder16, num_win, num_lose, sum_values, num_values };
 			}
 
-			// 末尾の改行を読む
-			std::string _;
-			std::getline(ifs, _);
 		}
-		sync_cout << "counter=" << 0 << " done." << sync_endl;
+		sync_cout << "counter=" << counter << " done." << sync_endl;
 	}
 
 	void WriteInternalBook(const std::filesystem::path& file_path, const InternalBook& internal_book) {
