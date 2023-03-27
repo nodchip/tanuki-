@@ -16,17 +16,41 @@ LABEL = 'label'
 HTML = 'html'
 DATA_LIST = [
     {
-        URL: 'http://hnoda-dt2:8080/job/learn.2022-03-15/54/consoleText',
-        LABEL: 'suisho5.80G',
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/192/consoleText',
+        LABEL: 'Branch_v5.33_20201128192325',
     },
     {
-        URL: 'http://hnoda-dt2:8080/job/learn.2022-03-15/57/consoleText',
-        LABEL: 'halfkp_1024x2-8-32',
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/193/consoleText',
+        LABEL: 'Branch_v5.33_20201128225947',
     },
-    # {
-    #     URL: 'http://hnoda-dt2:8080/job/learn.2022-03-15/58/consoleText',
-    #     LABEL: 'halfkp_1024x2-8-32.add',
-    # },
+    {
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/194/consoleText',
+        LABEL: 'Branch_v5.33_20201130081917',
+    },
+    {
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/195/consoleText',
+        LABEL: 'Branch_v5.33_20201130102017',
+    },
+    {
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/196/consoleText',
+        LABEL: 'Branch_v5.33_20201201163629',
+    },
+    {
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/197/consoleText',
+        LABEL: 'Branch_v5.33_20201201214136',
+    },
+    {
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/198/consoleText',
+        LABEL: 'Branch_v5.33_20201201214447',
+    },
+    {
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/199/consoleText',
+        LABEL: 'Branch_v5.33_20201202075042',
+    },
+    {
+        URL: 'http://hnoda-dt2:8080/job/learn.2022-05-20/200/consoleText',
+        LABEL: 'Branch_v5.33_20201202080706',
+    },
 ]
 PATTERNS = [
     Pattern('learn_cross_entropy',
