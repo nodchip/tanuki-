@@ -2337,6 +2337,10 @@ namespace {
 		sync_cout << "ReadInternalBook(): file_path=" << file_path << sync_endl;
 		int counter = 0;
 		std::ifstream ifs(file_path);
+		if (!ifs) {
+			sync_cout << "!!! Failed to read an internal book file" << sync_endl;
+			std::exit(-1);
+		}
 		std::string sfen;
 		while (std::getline(ifs, sfen)) {
 			if (++counter % 100000 == 0) {
@@ -2363,7 +2367,7 @@ namespace {
 			std::string _;
 			std::getline(ifs, _);
 		}
-		sync_cout << "done." << sync_endl;
+		sync_cout << "counter=" << 0 << " done." << sync_endl;
 	}
 
 	void WriteInternalBook(const std::filesystem::path& file_path, const InternalBook& internal_book) {
