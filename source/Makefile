@@ -206,7 +206,7 @@ ifneq (,$(findstring em++,$(COMPILER)))
 else
 	ifeq ($(OS),Windows_NT)
 		CPPFLAGS += $(WCPPFLAGS)
-		LDFLAGS += -static -Wl,--stack,25000000
+		LDFLAGS += -static -Wl,--stack,50000000
 		TARGET = $(TARGETDIR)/YaneuraOu-by-gcc.exe
 	else
 		CPPFLAGS += -D_LINUX
