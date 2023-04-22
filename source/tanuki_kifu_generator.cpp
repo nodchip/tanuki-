@@ -16,6 +16,7 @@
 
 #include "misc.h"
 #include "search.h"
+#include "tanuki_kifu_reader.h"
 #include "tanuki_kifu_writer.h"
 #include "tanuki_progress_report.h"
 #include "thread.h"
@@ -60,6 +61,8 @@ namespace {
 		"ConvertSfenToLearningDataSearchDepth";
 	constexpr const char* kOptionConvertSfenToLearningDataOutputFileName =
 		"ConvertSfenToLearningDataOutputFileName";
+	constexpr const char* kOptionFilterKifuKifuInputDir = "FilterKifuKifuInputDir";
+	constexpr const char* kOptionFilterKifuKifuOutputDir = "FilterKifuKifuOutputDir";
 
 	std::vector<std::string> start_positions;
 	std::uniform_real_distribution<> probability_distribution;
@@ -148,6 +151,8 @@ void Tanuki::InitializeGenerator(USI::OptionsMap& o) {
 	o[kOptionGeneratorMaxMultiPVPlay] << Option(32, 1, std::numeric_limits<int>::max());
 	o[kOptionGeneratorMaxMultiPVMoves] << Option(16, 0, std::numeric_limits<int>::max());
 	o[kOptionGeneratorMaxEvalDiff] << Option(30, 0, std::numeric_limits<int>::max());
+	o[kOptionFilterKifuKifuInputDir] << Option("");
+	o[kOptionFilterKifuKifuOutputDir] << Option("");
 }
 
 namespace {
@@ -576,6 +581,44 @@ void Tanuki::ConvertSfenToLearningData() {
 
 			progress_report.Show(global_sfen_index);
 		}
+	}
+}
+
+namespace {
+	bool IsEnteringKing(Position& position, Color color) {
+		Bitboard ef = enemy_field(color);
+		return ef & position.king_square(color);
+	}
+}
+
+void Tanuki::FilterKifu() {
+	std::string kifu_input_directory = (std::string)Options[kOptionFilterKifuKifuInputDir];
+	std::string kifu_output_directory = (std::string)Options[kOptionFilterKifuKifuOutputDir];
+	std::filesystem::create_directories(kifu_output_directory);
+
+	std::cout << "kifu_input_directory=" << kifu_input_directory << std::endl;
+	std::cout << "kifu_output_directory=" << kifu_output_directory << std::endl;
+
+	Search::LimitsType limits;
+	// 引き分けの手数付近で引き分けの値が返るのを防ぐため1 << 16にする
+	limits.max_game_ply = 1 << 16;
+	limits.depth = MAX_PLY;
+	limits.silent = true;
+	limits.enteringKingRule = EKR_27_POINT;
+	Search::Limits = limits;
+
+	std::unique_ptr<KifuReader> kifu_reader = std::make_unique<KifuReader>(kifu_input_directory, 1);
+	std::unique_ptr<KifuWriter> kifu_writer = std::make_unique<KifuWriter>(kifu_output_directory + "\\filtered.bin");
+	Learner::PackedSfenValue packed_sfen_value;
+	Position& position = Threads.main()->rootPos;
+	while (kifu_reader->Read(packed_sfen_value)) {
+		StateInfo state_info = {};
+		position.set_from_packed_sfen(packed_sfen_value.sfen, &state_info, Threads.main());
+		if (!IsEnteringKing(position, BLACK) && !IsEnteringKing(position, WHITE)) {
+			continue;
+		}
+
+		kifu_writer->Write(packed_sfen_value);
 	}
 }
 
