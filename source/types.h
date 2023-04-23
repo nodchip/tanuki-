@@ -358,7 +358,7 @@ static bool aligned(Square sq1, Square sq2, Square sq3/* is ksq */)
 constexpr int MAX_PLY = MAX_PLY_NUM;
 
 // 探索深さを表現する型
-using Depth = int;
+typedef int Depth;
 
 enum : int {
 
@@ -658,25 +658,9 @@ private:
 static std::ostream& operator<<(std::ostream& os, Move m)   { os << to_usi_string(m); return os; }
 static std::ostream& operator<<(std::ostream& os, Move16 m) { os << to_usi_string(m); return os; }
 
-// 指し手がおかしくないかをテストする
-// ただし、盤面のことは考慮していない。MOVE_NULLとMOVE_NONEであるとfalseが返る。
-// これら２つの定数は、移動元と移動先が等しい値になっている。このテストだけをする。
-// MOVE_WIN(宣言勝ちの指し手は)は、falseが返る。
-constexpr bool is_ok(Move m) {
-	return m != MOVE_NONE && m != MOVE_NULL;
-}
-
-static bool is_ok(Move16 m) { return m.is_ok(); }
-
 // 指し手の移動元の升を返す。
-constexpr Square from_sq(Move   m) {
-	ASSERT_LV3(is_ok(m));
-	return Square((m          >> 7) & 0x7f);
-}
-static    Square from_sq(Move16 m) {
-	ASSERT_LV3(is_ok(m));
-	return Square((m.to_u16() >> 7) & 0x7f);
-}
+constexpr Square from_sq(Move   m) { return Square((m          >> 7) & 0x7f); }
+static    Square from_sq(Move16 m) { return Square((m.to_u16() >> 7) & 0x7f); }
 
 // 指し手の移動先の升を返す。
 constexpr Square to_sq(Move   m) { return Square(m          & 0x7f); }
@@ -723,6 +707,19 @@ constexpr Move make_move_drop(PieceType pt, Square to , Color us ) { return (Mov
 // 大抵、悪影響しかない。
 // また、reverse_move()を用いるならば、ifの条件式に " && !is_drop(move)"が要ると思う。
 static Move16 reverse_move(Move m) { return make_move16(to_sq(m), from_sq(m)); }
+
+// 指し手がおかしくないかをテストする
+// ただし、盤面のことは考慮していない。MOVE_NULLとMOVE_NONEであるとfalseが返る。
+// これら２つの定数は、移動元と移動先が等しい値になっている。このテストだけをする。
+// MOVE_WIN(宣言勝ちの指し手は)は、falseが返る。
+constexpr bool is_ok(Move m) {
+  // return move_from(m)!=move_to(m);
+  // とやりたいところだが、駒打ちでfromのbitを使ってしまっているのでそれだとまずい。
+  // 駒打ちのbitも考慮に入れるために次のように書く。
+  return (m >> 7) != (m & 0x7f);
+}
+
+static bool is_ok(Move16 m) { return m.is_ok(); }
 
 // 見た目に、わかりやすい形式で表示する
 std::string pretty(Move m);
@@ -985,7 +982,7 @@ private:
 
 // 局面のハッシュキー
 // 盤面(盤上の駒 + 手駒)に対して、Zobrist Hashでそれに対応する値を計算する。
-using Key = uint64_t;
+typedef uint64_t Key;
 
 // 合同法による擬似乱数生成器
 // 探索で、excludedMoveを考慮した局面のhash keyが欲しいので、それを生成するために

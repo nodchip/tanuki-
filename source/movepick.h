@@ -71,14 +71,14 @@ public:
 template <typename T, int D, int Size, int... Sizes>
 struct Stats : public std::array<Stats<T, D, Sizes...>, Size>
 {
-	using stats = Stats<T, D, Size, Sizes...>;
+	typedef Stats<T, D, Size, Sizes...> stats;
 
 	void fill(const T& v) {
 
 		// For standard-layout 'this' points to first struct member
 		ASSERT_LV3(std::is_standard_layout<stats>::value);
 		
-		using entry = StatsEntry<T, D>;
+		typedef StatsEntry<T, D> entry;
 		entry* p = reinterpret_cast<entry*>(this);
 		std::fill(p, p + sizeof(*this) / sizeof(entry), v);
 	}
@@ -99,29 +99,29 @@ enum StatsType { NoCaptures, Captures };
 // やねうら王では、ここで用いられるfromは、駒打ちのときに特殊な値になっていて、盤上のfromとは区別される。
 // そのため、(SQ_NB + 7)まで移動元がある。
 // ※　Stockfishとは、添字の順番を入れ替えてあるので注意。
-using ButterflyHistory = Stats<int16_t, 7183, int(SQ_NB + 7) * int(SQ_NB) , COLOR_NB>;
+typedef Stats<int16_t, 14365, int(SQ_NB + 7) * int(SQ_NB) , COLOR_NB> ButterflyHistory;
 
 
 /// CounterMoveHistoryは、直前の指し手の[to][piece]によってindexされるcounter moves(応手)を格納する。
 /// cf. http://chessprogramming.wikispaces.com/Countermove+Heuristic
 // ※　Stockfishとは、添字の順番を入れ替えてあるので注意。
-using CounterMoveHistory = Stats<Move, NOT_USED, SQ_NB , PIECE_NB>;
+typedef Stats<Move, NOT_USED, SQ_NB , PIECE_NB> CounterMoveHistory;
 
 /// CapturePieceToHistoryは、指し手の[to][piece][captured piece type]で示される。
 // ※　Stockfishとは、添字の順番を変更してあるので注意。
 //     Stockfishでは、[piece][to][captured piece type]の順。
-using CapturePieceToHistory = Stats<int16_t, 10692, SQ_NB, PIECE_NB , PIECE_TYPE_NB>;
+typedef Stats<int16_t, 10692, SQ_NB, PIECE_NB , PIECE_TYPE_NB> CapturePieceToHistory;
 
 /// PieceToHistoryは、ButterflyHistoryに似たものだが、指し手の[to][piece]で示される。
 // ※　Stockfishとは、添字の順番を入れ替えてあるので注意。
 //     Stockfishでは[piece][to]の順。
-using PieceToHistory = Stats<int16_t, 29952, SQ_NB , PIECE_NB>;
+typedef Stats<int16_t, 29952, SQ_NB , PIECE_NB> PieceToHistory;
 
 /// ContinuationHistoryは、与えられた2つの指し手のhistoryを組み合わせたもので、
 // 普通、1手前によって与えられる現在の指し手(によるcombined history)
 // このnested history tableは、ButterflyBoardsの代わりに、PieceToHistoryをベースとしている。
 // ※　Stockfishとは、添字の順番を入れ替えてあるので注意。
-using ContinuationHistory = Stats<PieceToHistory, NOT_USED, SQ_NB , PIECE_NB>;
+typedef Stats<PieceToHistory, NOT_USED, SQ_NB , PIECE_NB> ContinuationHistory;
 
 
 // -----------------------
@@ -165,7 +165,7 @@ public:
 	// 通常探索(search)のProbCutの処理から呼び出されるの専用。
 	// threshold_ = 直前に取られた駒の価値。これ以下の捕獲の指し手は生成しない。
 	// capture_or_pawn_promotion()に該当する指し手しか返さない。
-	MovePicker(const Position& pos_, Move ttMove_, Value threshold_,
+	MovePicker(const Position& pos_, Move ttMove_, Value threshold_, Depth d,
 		const CapturePieceToHistory* cph);
 
 

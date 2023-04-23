@@ -150,12 +150,42 @@ private:
 	int64_t average;
 };
 
+//
+// 探索でtrendと楽観値の計算で用いるsigmoid関数。
+// →　やねうら王では使っていない。
+//
+/// sigmoid(t, x0, y0, C, P, Q) implements a sigmoid-like function using only integers,
+/// with the following properties:
+///
+///  -  sigmoid is centered in (x0, y0)
+///  -  sigmoid has amplitude [-P/Q , P/Q] instead of [-1 , +1]
+///  -  limit is (y0 - P/Q) when t tends to -infinity
+///  -  limit is (y0 + P/Q) when t tends to +infinity
+///  -  the slope can be adjusted using C > 0, smaller C giving a steeper sigmoid
+///  -  the slope of the sigmoid when t = x0 is P/(Q*C)
+///  -  sigmoid is increasing with t when P > 0 and Q > 0
+///  -  to get a decreasing sigmoid, change sign of P
+///  -  mean value of the sigmoid is y0
+///
+/// Use <https://www.desmos.com/calculator/jhh83sqq92> to draw the sigmoid
+
+inline int64_t sigmoid(int64_t t, int64_t x0,
+	int64_t y0,
+	int64_t  C,
+	int64_t  P,
+	int64_t  Q)
+{
+	ASSERT_LV3(C > 0);
+	ASSERT_LV3(Q != 0);
+	return y0 + P * (t - x0) / (Q * (std::abs(t - x0) + C));
+}
+
 // --------------------
 //  Time[ms] wrapper
 // --------------------
 
 // ms単位での時間計測しか必要ないのでこれをTimePoint型のように扱う。
-using TimePoint = std::chrono::milliseconds::rep;
+typedef std::chrono::milliseconds::rep TimePoint;
 static_assert(sizeof(TimePoint) == sizeof(int64_t), "TimePoint should be 64 bits");
 
 // ms単位で現在時刻を返す
@@ -248,7 +278,7 @@ static std::ostream& operator<<(std::ostream& os, PRNG& prng)
 
 inline uint64_t mul_hi64(uint64_t a, uint64_t b) {
 #if defined(__GNUC__) && defined(IS_64BIT)
-	__extension__ using uint128 = unsigned __int128;
+	__extension__ typedef unsigned __int128 uint128;
 	return ((uint128)a * (uint128)b) >> 64;
 #else
 	// 64bit同士の掛け算を64bitを32bit 2つに分割して、筆算のようなことをするコード

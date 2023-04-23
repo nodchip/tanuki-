@@ -50,23 +50,27 @@ void Thread::clear()
 
 	for (bool inCheck : { false, true })
 		for (StatsType c : { NoCaptures, Captures })
+		{
 			// ほとんどの履歴エントリがいずれにせよ後で負になるため、
 			// 開始値を「正しい」方向に少しシフトさせるため、-71で埋めている。
 			// この効果は、深度が深くなるほど薄れるので、長時間思考させる時には
 			// あまり意味がないが、無駄ではないらしい。
 			// Tweak history initialization : https://github.com/official-stockfish/Stockfish/commit/7d44b43b3ceb2eebc756709432a0e291f885a1d2
+
 			for (auto& to : continuationHistory[inCheck][c])
 				for (auto& h : to)
 					h->fill(-71);
+
+			continuationHistory[inCheck][c][SQ_ZERO][NO_PIECE]->fill(Search::CounterMovePruneThreshold - 1);
+		}
 #endif
 }
 
 // 待機していたスレッドを起こして探索を開始させる
 void Thread::start_searching()
 {
-	mutex.lock();
+	std::lock_guard<std::mutex> lk(mutex);
 	searching = true;
-	mutex.unlock(); // Unlock before notifying saves a few CPU-cycles
 	cv.notify_one(); // idle_loop()で回っているスレッドを起こす。(次の処理をさせる)
 }
 
@@ -129,12 +133,12 @@ void ThreadPool::set(size_t requested)
 		return;
 #endif
 
-	if (threads.size() > 0) { // いったんすべてのスレッドを解体(NUMA対策)
+	if (size() > 0) { // いったんすべてのスレッドを解体(NUMA対策)
 		main()->wait_for_search_finished();
 
 #if !defined(__EMSCRIPTEN__)
-		while (threads.size() > 0)
-			delete threads.back(), threads.pop_back();
+		while (size() > 0)
+			delete back(), pop_back();
 #else
 		// yaneuraou.wasm
 		while (size() > requested)
@@ -144,10 +148,10 @@ void ThreadPool::set(size_t requested)
 
 	if (requested > 0) { // 要求された数だけのスレッドを生成
 #if !defined(__EMSCRIPTEN__)
-		threads.push_back(new MainThread(0));
+		push_back(new MainThread(0));
 
-		while (threads.size() < requested)
-			threads.push_back(new Thread(threads.size()));
+		while (size() < requested)
+			push_back(new Thread(size()));
 #else
 		// yaneuraou.wasm
 		while (size() < requested)
@@ -284,47 +288,43 @@ Thread* ThreadPool::get_best_thread() const {
 	// 単にcompleteDepthが深いほうのスレッドを採用しても良さそうだが、スコアが良いほうの探索深さのほうが
 	// いい指し手を発見している可能性があって楽観合議のような効果があるようだ。
 
-	Thread* bestThread = threads.front();
+	Thread* bestThread = front();
 	std::map<Move, int64_t> votes;
 	Value minScore = VALUE_NONE;
 
 	// Find minimum score of all threads
-	for (Thread* th : threads)
+	for (Thread* th : *this)
 		minScore = std::min(minScore, th->rootMoves[0].score);
 
 	// Vote according to score and depth, and select the best thread
-	auto thread_value = [minScore](Thread* th) {
-		return (th->rootMoves[0].score - minScore + 14) * int(th->completedDepth);
-	};
+	for (Thread* th : *this)
+	{
+		votes[th->rootMoves[0].pv[0]] +=
+			(th->rootMoves[0].score - minScore + 14) * int(th->completedDepth);
 
-	for (Thread* th : threads)
-		votes[th->rootMoves[0].pv[0]] += thread_value(th);
-
-	for (Thread* th : threads)
 		if (abs(bestThread->rootMoves[0].score) >= VALUE_TB_WIN_IN_MAX_PLY)
 		{
 			// Make sure we pick the shortest mate / TB conversion or stave off mate the longest
 			if (th->rootMoves[0].score > bestThread->rootMoves[0].score)
 				bestThread = th;
 		}
-		else if (th->rootMoves[0].score >= VALUE_TB_WIN_IN_MAX_PLY
-			|| (th->rootMoves[0].score > VALUE_TB_LOSS_IN_MAX_PLY
-				&& (votes[th->rootMoves[0].pv[0]] > votes[bestThread->rootMoves[0].pv[0]]
-					|| (votes[th->rootMoves[0].pv[0]] == votes[bestThread->rootMoves[0].pv[0]]
-						&& thread_value(th) * int(th->rootMoves[0].pv.size() > 2)
-								> thread_value(bestThread) * int(bestThread->rootMoves[0].pv.size() > 2)))))
+		else if (   th->rootMoves[0].score >= VALUE_TB_WIN_IN_MAX_PLY
+				 || (   th->rootMoves[0].score > VALUE_TB_LOSS_IN_MAX_PLY
+					 && votes[th->rootMoves[0].pv[0]] > votes[bestThread->rootMoves[0].pv[0]]))
 			bestThread = th;
+	}
 
 	return bestThread;
 }
+
 
 /// Start non-main threads
 // 探索を開始する(main thread以外)
 
 void ThreadPool::start_searching() {
 
-	for (Thread* th : threads)
-		if (th != threads.front())
+	for (Thread* th : *this)
+		if (th != front())
 			th->start_searching();
 }
 
@@ -334,8 +334,8 @@ void ThreadPool::start_searching() {
 
 void ThreadPool::wait_for_search_finished() const {
 
-	for (Thread* th : threads)
-		if (th != threads.front())
+	for (Thread* th : *this)
+		if (th != front())
 			th->wait_for_search_finished();
 }
 
@@ -343,8 +343,8 @@ void ThreadPool::wait_for_search_finished() const {
 // すべて終了していればtrueが返る。
 bool ThreadPool::search_finished() const
 {
-	for (Thread* th : threads)
-		if (th != threads.front())
+	for (Thread* th : *this)
+		if (th != front())
 			if (th->is_searching())
 				return false;
 

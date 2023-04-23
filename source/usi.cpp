@@ -152,7 +152,7 @@ namespace USI
 	// --------------------
 
 	// depth : iteration深さ
-	std::string pv(const Position& pos, Depth depth)
+	std::string pv(const Position& pos, Depth depth, Value alpha, Value beta)
 	{
 #if defined(YANEURAOU_ENGINE_DEEP)
 		// ふかうら王では、この関数呼び出さないからまるっと要らない。
@@ -186,7 +186,7 @@ namespace USI
 
 			// 1より小さな探索depthで出力しない。
 			Depth d = updated ? depth : std::max(1, depth - 1);
-			Value v = updated ? rootMoves[i].uciScore : rootMoves[i].previousScore;
+			Value v = updated ? rootMoves[i].score : rootMoves[i].previousScore;
 
 			// multi pv時、例えば3個目の候補手までしか評価が終わっていなくて(PVIdx==2)、このとき、
 			// 3,4,5個目にあるのは前回のiterationまでずっと評価されていなかった指し手であるような場合に、
@@ -210,8 +210,8 @@ namespace USI
 				;
 
 			// これが現在探索中の指し手であるなら、それがlowerboundかupperboundかは表示させる
-			if (i == pvIdx && updated) // tablebase- and previous-scores are exact
-				ss << (rootMoves[i].scoreLowerbound ? " lowerbound" : (rootMoves[i].scoreUpperbound ? " upperbound" : ""));
+			if (i == pvIdx)
+				ss << (v >= beta ? " lowerbound" : v <= alpha ? " upperbound" : "");
 
 			// 将棋所はmultipvに対応していないが、とりあえず出力はしておく。
 			if (multiPV > 1)

@@ -24,7 +24,7 @@ namespace USI
 	};
 
 	// USIのoption名と、それに対応する設定内容を保持しているclass。実体はstd::map
-	using OptionsMap = std::map<std::string, Option , CaseInsensitiveLess>;
+	typedef std::map<std::string, Option , CaseInsensitiveLess> OptionsMap;
 
 	// USIプロトコルで指定されるoptionの内容を保持するclass
 	class Option {
@@ -33,7 +33,7 @@ namespace USI
 		//		typedef void(*OnChange)(const Option&);
 		// Stockfishでは↑のように関数ポインタになっているが、
 		// これだと[&](o){...}みたいなlambda式を受けられないのでここはstd::functionを使うべきだと思う。
-		using OnChange = std::function<void(const Option&)>;
+		typedef std::function<void(const Option&)> OnChange;
 
 	public:
 		// (GUI側のエンジン設定画面に出てくる)ボタン
@@ -129,7 +129,7 @@ namespace USI
 
 	// pv(読み筋)をUSIプロトコルに基いて出力する。
 	// depth : 反復深化のiteration深さ。
-	std::string pv(const Position& pos, Depth depth);
+	std::string pv(const Position& pos, Depth depth, Value alpha, Value beta);
 
 	// 局面posとUSIプロトコルによる指し手を与えて
 	// もし可能なら等価で合法な指し手を返す。

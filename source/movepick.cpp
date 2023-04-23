@@ -147,14 +147,15 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
 
 	stage = (pos.in_check() ? EVASION_TT : QSEARCH_TT) +
 		!(ttm
+			&& (pos.in_check() || depth > DEPTH_QS_RECAPTURES || to_sq(ttm) == recaptureSquare)
 			&& pos.pseudo_legal(ttm));
 
 }
 
 // 通常探索時にProbCutの処理から呼び出されるの専用
 // th = 枝刈りのしきい値
-MovePicker::MovePicker(const Position& p, Move ttm, Value th, const CapturePieceToHistory* cph)
-			: pos(p), captureHistory(cph) , ttMove(ttm),threshold(th) {
+MovePicker::MovePicker(const Position& p, Move ttm, Value th , Depth d , const CapturePieceToHistory* cph)
+			: pos(p), captureHistory(cph) , ttMove(ttm),threshold(th) , depth(d) {
 
 	ASSERT_LV3(!pos.in_check());
 
@@ -237,8 +238,8 @@ void MovePicker::score()
 			// ここに来るCAPTURESに歩の成りを含めているので、捕獲する駒(pos.piece_on(to_sq(m)))がNO_PIECEで
 			// ある可能性については考慮しておく必要がある。
 
-			m.value = (7 * int(Eval::CapturePieceValue[pos.piece_on(to_sq(m))])
-				+ (*captureHistory)[to_sq(m)][pos.moved_piece_after(m)][type_of(pos.piece_on(to_sq(m)))]) / 16;
+			m.value = 6 * int(Eval::CapturePieceValue[pos.piece_on(to_sq(m))])
+					 +    (*captureHistory)[to_sq(m)][pos.moved_piece_after(m)][type_of(pos.piece_on(to_sq(m)))];
 		}
 		else if constexpr (Type == QUIETS)
 		{
@@ -251,7 +252,7 @@ void MovePicker::score()
 			Square movedSq = to_sq(m);
 			PieceType moved_piece = type_of(pos.moved_piece_before(m));
 
-			m.value = 2 * (*mainHistory)[from_to(m)][pos.side_to_move()]
+			m.value =     (*mainHistory)[from_to(m)][pos.side_to_move()]
 					+ 2 * (*continuationHistory[0])[movedSq][movedPiece]
 					+     (*continuationHistory[1])[movedSq][movedPiece]
 					+     (*continuationHistory[3])[movedSq][movedPiece]
@@ -305,12 +306,12 @@ void MovePicker::score()
 			if (pos.capture(m))
 				// 捕獲する指し手に関しては簡易SEE + MVV/LVA
 				m.value = (Value)Eval::CapturePieceValue[pos.piece_on(to_sq(m))]
-				        - (Value)(LVA(type_of(pos.moved_piece_before(m))))
-				        + (1 << 28);
+				        - (Value)(LVA(type_of(pos.moved_piece_before(m))));
 			else
 				// 捕獲しない指し手に関してはhistoryの値の順番
-				m.value = 2 * (*mainHistory)[from_to(m)][pos.side_to_move()]
-						+ 2 * (*continuationHistory[0])[to_sq(m)][pos.moved_piece_after(m)];
+				m.value =     (*mainHistory)[from_to(m)][pos.side_to_move()]
+						+ 2 * (*continuationHistory[0])[to_sq(m)][pos.moved_piece_after(m)]
+						- (1 << 28);
 
 		}
 	}
@@ -368,7 +369,7 @@ top:
 
 		// 駒を捕獲する指し手に対してオーダリングのためのスコアをつける
 		score<CAPTURES>();
-		partial_insertion_sort(cur, endMoves, std::numeric_limits<int>::min());
+		partial_insertion_sort(cur, endMoves, -3000 * depth);
 		++stage;
 		goto top;
 
@@ -378,7 +379,7 @@ top:
 	case GOOD_CAPTURE:
 		if (select<Next>([&]() {
 				// moveは駒打ちではないからsee()の内部での駒打ちは判定不要だが…。
-				return pos.see_ge(*cur, Value(-cur->value)) ?
+				return pos.see_ge(*cur, Value(-69 * cur->value / 1024)) ?
 						// 損をする捕獲する指し手はあとのほうで試行されるようにendBadCapturesに移動させる
 						true : (*endBadCaptures++ = *cur, false); }))
 			return *(cur -1);

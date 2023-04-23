@@ -100,6 +100,7 @@ public:
 	// nmpColor  : null moveの前回の適用Color
 	// state     : 探索で組合せ爆発が起きているか等を示す状態
 	int selDepth, nmpMinPly;
+	Color nmpColor;
 
 	// bestValue :
 	// search()で、そのnodeでbestMoveを指したときの(探索の)評価値
@@ -251,7 +252,7 @@ struct MainThread: public Thread
 // Threads(スレッドオブジェクト)はglobalに配置するし、スレッドの初期化の際には
 // スレッドが保持する思考エンジンが使う変数等がすべてが初期化されていて欲しいからである。
 // スレッドの生成はset(options["Threads"])で行い、スレッドの終了はset(0)で行なう。
-struct ThreadPool
+struct ThreadPool: public std::vector<Thread*>
 {
 	// mainスレッドに思考を開始させる。
 	void start_thinking(const Position& pos, StateListPtr& states , const Search::LimitsType& limits , bool ponderMode = false);
@@ -264,7 +265,7 @@ struct ThreadPool
 	void set(size_t requested);
 
 	// mainスレッドを取得する。これはthis[0]がそう。
-	MainThread* main() const { return static_cast<MainThread*>(threads.front()); }
+	MainThread* main() { return static_cast<MainThread*>(at(0)); }
 
 	// 今回、goコマンド以降に探索したノード数
 	// →　これはPosition::do_move()を呼び出した回数。
@@ -286,14 +287,6 @@ struct ThreadPool
 	//                 増えて行ってないなら、同じ深さを再度探索するのに用いる。
 	std::atomic_bool stop , increaseDepth;
 
-	auto cbegin() const noexcept { return threads.cbegin(); }
-	auto begin() noexcept { return threads.begin(); }
-	auto end() noexcept { return threads.end(); }
-	auto cend() const noexcept { return threads.cend(); }
-	auto size() const noexcept { return threads.size(); }
-	auto empty() const noexcept { return threads.empty(); }
-	auto operator[](int i)const noexcept { return threads[i]; }
-
 	// === やねうら王独自拡張 ===
 
 	// main thread以外の探索スレッドがすべて終了しているか。
@@ -304,13 +297,12 @@ private:
 
 	// 現局面までのStateInfoのlist
 	StateListPtr setupStates;
-	std::vector<Thread*> threads;
 
 	// Threadクラスの特定のメンバー変数を足し合わせたものを返す。
 	uint64_t accumulate(std::atomic<uint64_t> Thread::* member) const {
 
 		uint64_t sum = 0;
-		for (Thread* th : threads)
+		for (Thread* th : *this)
 			sum += (th->*member).load(std::memory_order_relaxed);
 		return sum;
 	}

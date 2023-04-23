@@ -10,6 +10,8 @@
 namespace Search {
 
 #if defined(USE_MOVE_PICKER)
+	// countermoves based pruningで使う閾値
+	constexpr int CounterMovePruneThreshold = 0;
 
 	// -----------------------
 	//  探索のときに使うStack
@@ -31,7 +33,6 @@ namespace Search {
 		bool ttPv;					// 置換表にPV nodeで調べた値が格納されていたか(これは価値が高い)
 		bool ttHit;					// 置換表にhitしたかのフラグ
 		int doubleExtensions;		// 前のノードで延長した手数と今回のノードで延長したか手数を加算した値
-		int cutoffCnt;
 	};
 #endif
 
@@ -68,9 +69,6 @@ namespace Search {
 
 		// aspiration searchの時に用いる。previousScoreの移動平均。
 		Value averageScore = -VALUE_INFINITE;
-		Value uciScore = -VALUE_INFINITE;
-		bool scoreLowerbound = false;
-		bool scoreUpperbound = false;
 
 		// このスレッドがrootから最大、何手目まで探索したか(選択深さの最大)
 		int selDepth = 0;
@@ -83,7 +81,7 @@ namespace Search {
 		std::vector<Move> pv;
 	};
 
-	using RootMoves = std::vector<RootMove>;
+	typedef std::vector<RootMove> RootMoves;
 
 	// goコマンドでの探索時に用いる、持ち時間設定などが入った構造体
 	// "ponder"のフラグはここに含まれず、Threads.ponderにあるので注意。

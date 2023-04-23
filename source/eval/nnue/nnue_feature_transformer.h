@@ -24,7 +24,7 @@ namespace Eval::NNUE {
 #define VECTOR
 
 #if defined(USE_AVX512)
-using vec_t = __m512i;
+typedef __m512i vec_t;
 #define vec_load(a) _mm512_load_si512(a)
 #define vec_store(a, b) _mm512_store_si512(a, b)
 #define vec_add_16(a, b) _mm512_add_epi16(a, b)
@@ -33,7 +33,7 @@ using vec_t = __m512i;
 static constexpr IndexType kNumRegs = 8;  // only 8 are needed
 
 #elif defined(USE_AVX2)
-using vec_t = __m256i;
+typedef __m256i vec_t;
 #define vec_load(a) _mm256_load_si256(a)
 #define vec_store(a, b) _mm256_store_si256(a, b)
 #define vec_add_16(a, b) _mm256_add_epi16(a, b)
@@ -42,7 +42,7 @@ using vec_t = __m256i;
 static constexpr IndexType kNumRegs = 16;
 
 #elif defined(USE_SSE2)
-using vec_t = __m128i;
+typedef __m128i vec_t;
 #define vec_load(a) (*(a))
 #define vec_store(a, b) *(a) = (b)
 #define vec_add_16(a, b) _mm_add_epi16(a, b)
@@ -51,7 +51,7 @@ using vec_t = __m128i;
 static constexpr IndexType kNumRegs = Is64Bit ? 16 : 8;
 
 #elif defined(USE_MMX)
-using vec_t = __m64;
+typedef __m64 vec_t;
 #define vec_load(a) (*(a))
 #define vec_store(a, b) *(a) = (b)
 #define vec_add_16(a, b) _mm_add_pi16(a, b)
@@ -60,7 +60,7 @@ using vec_t = __m64;
 static constexpr IndexType kNumRegs = 8;
 
 #elif defined(USE_NEON)
-using vec_t = int16x8_t;
+typedef int16x8_t vec_t;
 #define vec_load(a) (*(a))
 #define vec_store(a, b) *(a) = (b)
 #define vec_add_16(a, b) vaddq_s16(a, b)

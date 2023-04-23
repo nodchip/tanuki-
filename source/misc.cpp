@@ -21,12 +21,12 @@
 // the calls at compile time), try to load them at runtime. To do this we need
 // first to define the corresponding function pointers.
 extern "C" {
-	using fun1_t = bool(*)(LOGICAL_PROCESSOR_RELATIONSHIP,
-						   PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX, PDWORD);
-	using fun2_t = bool(*)(USHORT, PGROUP_AFFINITY);
-	using fun3_t = bool(*)(HANDLE, CONST GROUP_AFFINITY*, PGROUP_AFFINITY);
-	using fun4_t = bool(*)(USHORT, PGROUP_AFFINITY, USHORT, PUSHORT);
-	using fun5_t = WORD(*)();
+	typedef bool(*fun1_t)(LOGICAL_PROCESSOR_RELATIONSHIP,
+		PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX, PDWORD);
+	typedef bool(*fun2_t)(USHORT, PGROUP_AFFINITY);
+	typedef bool(*fun3_t)(HANDLE, CONST GROUP_AFFINITY*, PGROUP_AFFINITY);
+	typedef bool(*fun4_t)(USHORT, PGROUP_AFFINITY, USHORT, PUSHORT);
+	typedef WORD(*fun5_t)();
 }
 
 #endif
@@ -495,11 +495,12 @@ void std_aligned_free(void* ptr) {
 // Windows
 #if defined(_WIN32)
 
-static void* aligned_large_pages_alloc_windows([[maybe_unused]] size_t allocSize) {
+static void* aligned_large_pages_alloc_windows(size_t allocSize) {
 
 	// Windows 64bit用専用。
 	// Windows 32bit用ならこの機能は利用できない。
 	#if !defined(_WIN64)
+		(void)allocSize; // suppress unused-parameter compiler warning
 		return nullptr;
 	#else
 
@@ -527,7 +528,7 @@ static void* aligned_large_pages_alloc_windows([[maybe_unused]] size_t allocSize
 	if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hProcessToken))
 		return nullptr;
 
-	if (LookupPrivilegeValue(nullptr, SE_LOCK_MEMORY_NAME, &luid))
+	if (LookupPrivilegeValue(NULL, SE_LOCK_MEMORY_NAME, &luid))
 	{
 		TOKEN_PRIVILEGES tp{ };
 		TOKEN_PRIVILEGES prevTp{ };
@@ -546,10 +547,10 @@ static void* aligned_large_pages_alloc_windows([[maybe_unused]] size_t allocSize
 			// round up size to full pages and allocate
 			allocSize = (allocSize + largePageSize - 1) & ~size_t(largePageSize - 1);
 			mem = VirtualAlloc(
-				nullptr, allocSize, MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES, PAGE_READWRITE);
+				NULL, allocSize, MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES, PAGE_READWRITE);
 
 			// privilege no longer needed, restore previous state
-			AdjustTokenPrivileges(hProcessToken, FALSE, &prevTp, 0, nullptr, nullptr);
+			AdjustTokenPrivileges(hProcessToken, FALSE, &prevTp, 0, NULL, NULL);
 		}
 	}
 
@@ -594,7 +595,7 @@ void* aligned_large_pages_alloc(size_t allocSize) {
 	// fall back to regular, page aligned, allocation if necessary
 	// 4KB単位であることは保証されているはず..
 	if (!ptr)
-		ptr = VirtualAlloc(nullptr, allocSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+		ptr = VirtualAlloc(NULL, allocSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
 	// VirtualAlloc()はpage size(4KB)でalignされていること自体は保証されているはず。
 
@@ -2218,7 +2219,8 @@ namespace CommandLine {
 	string binaryDirectory;  // path of the executable directory
 	string workingDirectory; // path of the working directory
 
-	void init([[maybe_unused]] int argc, char* argv[]) {
+	void init(int argc, char* argv[]) {
+		(void)argc;
 		string pathSeparator;
 
 		// extract the path+name of the executable binary
