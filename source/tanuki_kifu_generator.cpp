@@ -611,7 +611,12 @@ void Tanuki::FilterKifu() {
 	std::unique_ptr<KifuWriter> kifu_writer = std::make_unique<KifuWriter>(kifu_output_directory + "\\filtered.bin");
 	Learner::PackedSfenValue packed_sfen_value;
 	Position& position = Threads.main()->rootPos;
+	int64_t record_index = 0;
 	while (kifu_reader->Read(packed_sfen_value)) {
+		if (++record_index % 10000000 == 0) {
+			std::cout << "record_index=" << record_index << std::endl;
+		}
+
 		StateInfo state_info = {};
 		position.set_from_packed_sfen(packed_sfen_value.sfen, &state_info, Threads.main());
 		if (!IsEnteringKing(position, BLACK) && !IsEnteringKing(position, WHITE)) {
