@@ -785,9 +785,11 @@ private:
 	// 盤面、81升分の駒 + 1
 	Piece board[SQ_NB_PLUS1];
 
+public:
 	// 手駒
 	Hand hand[COLOR_NB];
 
+private:
 	// 手番
 	Color sideToMove;
 

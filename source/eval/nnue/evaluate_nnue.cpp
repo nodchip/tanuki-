@@ -281,19 +281,51 @@ namespace Eval {
     // 初期化
     void init() {}
 
-    // 評価関数。差分計算ではなく全計算する。
+	// 入玉時に与えるボーナス点を計算する。
+	Value CalculateEnteringKingBonus(const Position& pos, Color color) {
+		// 敵陣
+		Bitboard ef = enemy_field(color);
+
+		// (b)宣言側の玉が敵陣三段目以内に入っている。
+		if (!(ef & pos.king_square(color)))
+			return VALUE_ZERO;
+
+		// (d)宣言側の敵陣三段目以内の駒は、玉を除いて10枚以上存在する。
+		int p1 = (pos.pieces(color) & ef).pop_count();
+
+		// 敵陣にいる大駒の数
+		int p2 = ((pos.pieces(color, BISHOP_HORSE, ROOK_DRAGON)) & ef).pop_count();
+
+		// 小駒1点、大駒5点、玉除く
+		// ＝　敵陣の自駒 + 敵陣の自駒の大駒×4 - 玉
+
+		// (c)
+		// ・先手の場合28点以上の持点がある。
+		// ・後手の場合27点以上の持点がある。
+		Hand h = pos.hand[color];
+		int score = p1 + p2 * 4 - 1
+			+ hand_count(h, PAWN) + hand_count(h, LANCE) + hand_count(h, KNIGHT) + hand_count(h, SILVER)
+			+ hand_count(h, GOLD) + (hand_count(h, BISHOP) + hand_count(h, ROOK)) * 5;
+		return static_cast<Value>(p1 + score);
+	}
+
+	// 評価関数。差分計算ではなく全計算する。
     // Position::set()で一度だけ呼び出される。(以降は差分計算)
     // 手番側から見た評価値を返すので注意。(他の評価関数とは設計がこの点において異なる)
     // なので、この関数の最適化は頑張らない。
     Value compute_eval(const Position& pos) {
-        return NNUE::ComputeScore(pos, true);
+        return NNUE::ComputeScore(pos, true)
+			+ CalculateEnteringKingBonus(pos, pos.side_to_move())
+			- CalculateEnteringKingBonus(pos, ~pos.side_to_move());
     }
 
     // 評価関数
     Value evaluate(const Position& pos) {
         const auto& accumulator = pos.state()->accumulator;
         if (accumulator.computed_score) {
-            return accumulator.score;
+            return accumulator.score
+				+ CalculateEnteringKingBonus(pos, pos.side_to_move())
+				- CalculateEnteringKingBonus(pos, ~pos.side_to_move());
         }
 
 #if defined(USE_GLOBAL_OPTIONS)
@@ -301,7 +333,9 @@ namespace Eval {
         // eval hashへの照会をskipする。
         if (!GlobalOptions.use_eval_hash) {
             ASSERT_LV5(pos.state()->materialValue == Eval::material(pos));
-            return NNUE::ComputeScore(pos);
+            return NNUE::ComputeScore(pos)
+				+ CalculateEnteringKingBonus(pos, pos.side_to_move())
+				- CalculateEnteringKingBonus(pos, ~pos.side_to_move());
         }
 #endif
 
@@ -312,7 +346,9 @@ namespace Eval {
         entry.decode();
         if (entry.key == key) {
             // あった！
-            return Value(entry.score);
+            return Value(entry.score)
+				+ CalculateEnteringKingBonus(pos, pos.side_to_move())
+				- CalculateEnteringKingBonus(pos, ~pos.side_to_move());
         }
 #endif
 
@@ -325,7 +361,9 @@ namespace Eval {
         *g_evalTable[key] = entry;
 #endif
 
-        return score;
+        return score
+			+ CalculateEnteringKingBonus(pos, pos.side_to_move())
+			- CalculateEnteringKingBonus(pos, ~pos.side_to_move());
     }
 
     // 差分計算ができるなら進める
