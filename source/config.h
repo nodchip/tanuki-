@@ -8,7 +8,7 @@
 
 // 思考エンジンのバージョンとしてUSIプロトコルの"usi"コマンドに応答するときの文字列。
 // ただし、この値を数値として使用することがあるので数値化できる文字列にしておく必要がある。
-#define ENGINE_VERSION "7.63"
+#define ENGINE_VERSION "wcsc33"
 
 // --------------------
 //  思考エンジンの種類
@@ -395,7 +395,7 @@ constexpr int MAX_PLY_NUM = 512;
 
 #if defined(YANEURAOU_ENGINE_KPPT) || defined(YANEURAOU_ENGINE_KPP_KKPT) || defined(YANEURAOU_ENGINE_NNUE) || defined(YANEURAOU_ENGINE_MATERIAL)
 
-	#define ENGINE_NAME "YaneuraOu"
+	#define ENGINE_NAME "tanuki-"
 
 	// 通常のやねうら王探索部(Stockfishっぽいやつ)を用いる。
 	#define YANEURAOU_ENGINE

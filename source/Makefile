@@ -207,10 +207,10 @@ else
 	ifeq ($(OS),Windows_NT)
 		CPPFLAGS += $(WCPPFLAGS)
 		LDFLAGS += -static -Wl,--stack,50000000
-		TARGET = $(TARGETDIR)/YaneuraOu-by-gcc.exe
+		TARGET = $(TARGETDIR)/tanuki-wcsc33.exe
 	else
 		CPPFLAGS += -D_LINUX
-		TARGET = $(TARGETDIR)/YaneuraOu-by-gcc
+		TARGET = $(TARGETDIR)/tanuki-wcsc33
 	endif
 endif
 
