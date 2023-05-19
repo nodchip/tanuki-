@@ -32,9 +32,9 @@ using Book::BookMove;
 using Book::MemoryBook;
 using USI::Option;
 
-void position_cmd(Position& pos, std::istringstream& is, StateListPtr& states);
-void go_cmd(const Position& pos, std::istringstream& is, StateListPtr& states, bool ignore_ponder = false);
-void is_ready_cmd(Position& pos, StateListPtr& states);
+//void position_cmd(Position& pos, std::istringstream& is, StateListPtr& states);
+//void go_cmd(const Position& pos, std::istringstream& is, StateListPtr& states, bool ignore_ponder = false);
+//void is_ready_cmd(Position& pos, StateListPtr& states);
 
 namespace {
 	constexpr const char* kBookSfenFile = "BookSfenFile";
@@ -58,12 +58,12 @@ namespace {
 	constexpr const char* kBookMinimumCount = "BookMinimumCount";
 	constexpr const char* kBookMinimumRating = "BookMinimumRating";
 	constexpr const char* kBookUctUcb1Constant = "BookUctUcb1Constant";
-	constexpr const char* kBookUctTimeMs = "BookUctTimeMs";
-	constexpr const char* kBookUctIncMs = "BookUctIncMs";
 	constexpr const char* kBookUctNumMatches = "BookUctNumMatches";
 	constexpr const char* kBookUctMaxSearchPerPosition = "BookUctMaxSearchPerPosition";
 	constexpr const char* kBookUctRecordFile = "BookUctRecordFile";
 	constexpr const char* kBookUctMinorMovePercentage = "BookUctMinorMovePercentage";
+	constexpr const char* kBookMinNodesLimit = "BookMinNodesLimit";
+	constexpr const char* kBookMaxNodesLimit = "BookMaxNodesLimit";
 	constexpr int kShowProgressPerAtMostSec = 1 * 60 * 60;	// 1時間
 	constexpr time_t kSavePerAtMostSec = 6 * 60 * 60;		// 6時間
 
@@ -189,12 +189,12 @@ bool Tanuki::InitializeBook(USI::OptionsMap& o) {
 	o[kBookMinimumCount] << Option(0, 0, INT_MAX);
 	o[kBookMinimumRating] << Option(3300, 0, INT_MAX);
 	o[kBookUctUcb1Constant] << Option(std::to_string(std::sqrt(2.0)).c_str());
-	o[kBookUctTimeMs] << Option(15 * 60 * 1000, 0, INT_MAX);
-	o[kBookUctIncMs] << Option(5 * 1000, 0, INT_MAX);
 	o[kBookUctNumMatches] << Option(5 * 1000, 0, INT_MAX);
 	o[kBookUctMaxSearchPerPosition] << Option(3, 0, INT_MAX);
 	o[kBookUctRecordFile] << Option("record.sqlite");
 	o[kBookUctMinorMovePercentage] << Option(0, 0, 100);
+	o[kBookMinNodesLimit] << Option(10000000, 0, std::numeric_limits<uint64_t>::max() / 2);
+	o[kBookMaxNodesLimit] << Option(100000000, 0, std::numeric_limits<uint64_t>::max() / 2);
 
 	return true;
 }
@@ -1360,7 +1360,7 @@ bool Tanuki::Create18Book() {
 					return false;
 				}
 
-				return file_path.string().find("+" + strong_player.name + "+") != std::string::npos;
+		return file_path.string().find("+" + strong_player.name + "+") != std::string::npos;
 			}) != 2) {
 			// 強いプレイヤー同士の対局でなかったらスキップする。
 			continue;
@@ -1555,7 +1555,7 @@ namespace {
 						return false;
 					}
 
-					return file_path.string().find("+" + strong_player.name + "+") != std::string::npos;
+			return file_path.string().find("+" + strong_player.name + "+") != std::string::npos;
 				}) != 2) {
 				// 強いプレイヤー同士の対局でなかったらスキップする。
 				continue;
@@ -1605,7 +1605,7 @@ namespace {
 	}
 
 	int GetGameIdsAndWinners(sqlite3* database, std::vector<std::pair<int, int>>& game_ids_and_winners) {
-		sync_cout << "GetGameIdsAndWinners()" << sync_endl;
+		//sync_cout << "GetGameIdsAndWinners()" << sync_endl;
 
 		sqlite3_stmt* stmt = NULL;
 
@@ -2217,7 +2217,8 @@ namespace {
 		result = sqlite3_open(record_file.c_str(), &database);
 		if (result == SQLITE_OK) {
 			result = WriteRecordToSQLiteBody(database, winner, internal_moves);
-		} else {
+		}
+		else {
 			sync_cout << "Failed to open an sqlite file."
 				<< " record_file=" << record_file
 				<< sync_endl;
@@ -2571,316 +2572,364 @@ bool Tanuki::CreateInternalBookFromFloodgateRecords() {
 	return true;
 }
 
+namespace {
+	void CreateUctBookThreadProcedure(
+		int thread_index, int num_matches, const std::string& initial_position_sfen,
+		int max_moves_to_draw, int resign_value, int max_search_per_position, int min_nodes_limit,
+		int max_nodes_limit, double ucb1_constant, const std::string& output_book_file,
+		const std::string& record_file, std::mutex& internal_book_mutex,
+		std::mutex& last_save_time_sec_mutex, std::atomic<int>& global_match_index,
+		InternalBook& internal_book, time_t& last_save_time_sec, std::atomic<int>& num_consecutive_black_win) {
+		std::random_device random_device;
+		std::mt19937_64 mt(random_device() + thread_index);
+		std::uniform_int_distribution<> nodes_limit_distribution(min_nodes_limit, max_nodes_limit);
+
+		for (int match_index = global_match_index++; match_index < num_matches; match_index = global_match_index++) {
+			//sync_cout << "Match:" << match_index << "/" << num_matches << sync_endl;
+			std::vector<InternalMove> internal_moves;
+
+			std::vector<StateInfo> state_info(MAX_PLY * 2);
+			Position& pos = Threads[thread_index]->rootPos;
+			pos.set(initial_position_sfen, &state_info[0], Threads[thread_index]);
+			Color initial_color = pos.side_to_move();
+
+			int num_book_moves = 0;
+			int num_search_moves = 0;
+
+			int nodes_limit = nodes_limit_distribution(mt);
+
+			while (true) {
+				if (pos.game_ply() >= max_moves_to_draw) {
+					// 最大手数を超えている場合、対局を終える。
+					break;
+				}
+
+				if (pos.is_mated()) {
+					// 詰んでいる場合、対局を終える。
+					break;
+				}
+
+				if (pos.DeclarationWin() != MOVE_NONE) {
+					// 宣言勝ちできる場合、対局を終える。
+					break;
+				}
+
+				if (!internal_moves.empty()) {
+					auto last_value = internal_moves.back().value;
+					if (last_value != Value::VALUE_NONE && std::abs(last_value) >= resign_value) {
+						// 直前の指し手の評価値が投了値を超えている場合、対局を終える。
+						break;
+					}
+
+					if (internal_moves.back().best == Move::MOVE_RESIGN) {
+						// 直前の指し手が投了の場合、対局を終える。
+						break;
+					}
+				}
+
+				if (pos.is_repetition() != RepetitionState::REPETITION_NONE) {
+					// 千日手等の場合、対局を終える。
+					break;
+				}
+
+				InternalMove internal_move = {};
+				internal_move.best = Move::MOVE_NONE;
+				internal_move.next = Move::MOVE_NONE;
+				internal_move.value = Value::VALUE_NONE;
+				auto sfen = pos.sfen();
+
+				//sync_cout << "sfen=" << pos.sfen() << sync_endl;
+				//sync_cout << pos << sync_endl;
+
+				// この局面で探索した回数を調べる。
+				// 探索した場合は、評価値を記録するため、その個数を調べる。
+				int num_searches = 0;
+				{
+					std::lock_guard<std::mutex> lock(internal_book_mutex);
+					if (auto it = internal_book.find(sfen); it != internal_book.end()) {
+						for (const auto& [best16, internal_book_move] : it->second) {
+							num_searches += internal_book_move.num_values;
+						}
+					}
+				}
+
+				if (num_searches < max_search_per_position) {
+					++num_search_moves;
+
+					// この局面で探索した回数が一定値以下の場合、探索を行う。
+					Learner::search(pos, MAX_PLY / 2, 1, nodes_limit);
+
+					// 選ばれた指し手のスコアをこの局面のスコアとして記録する
+					// 終局している場合はmated_in(0)が代入されている。
+					const auto& root_moves = Threads[thread_index]->rootMoves;
+
+					// 指し手と評価値を保存する
+					internal_move.best = root_moves[0].pv[0];
+					if (root_moves[0].pv.size() > 1) {
+						internal_move.next = root_moves[0].pv[1];
+					}
+					internal_move.value = root_moves[0].score;
+					internal_move.depth = Threads.get_best_thread()->completedDepth;
+					internal_move.book = 0;
+				}
+				else {
+					std::lock_guard<std::mutex> lock(internal_book_mutex);
+
+					++num_book_moves;
+
+					// 定跡の指し手を指す
+					auto it = internal_book.find(sfen);
+					ASSERT_LV3(it != internal_book.end());
+					//sync_cout << "Selecting a move with the book." << sync_endl;
+
+					// 全シミュレーション回数を求める
+					int N = 0;
+					for (const auto& [best16, internal_book_move] : it->second) {
+						N += internal_book_move.num_win;
+						N += internal_book_move.num_lose;
+					}
+
+					// 最大の UCB1 を求める。
+					double best_ucb1 = 0.0;
+					InternalBookMove* best_internal_book_move = nullptr;
+					for (auto& [best16, internal_book_move] : it->second) {
+						double w = internal_book_move.num_win;
+						double n = internal_book_move.num_win + internal_book_move.num_lose;
+						double ucb1 = w / n + ucb1_constant * std::sqrt(std::log(N) / n);
+						//sync_cout << "w=" << w << " n=" << n << " ucb1=" << ucb1 << sync_endl;
+						if (best_ucb1 < ucb1) {
+							best_ucb1 = ucb1;
+							best_internal_book_move = &internal_book_move;
+						}
+					}
+
+					ASSERT_LV3(best_internal_book_move != nullptr);
+
+					//その手を指す
+					internal_move.best = best_internal_book_move->move.to_u16();
+					internal_move.next = best_internal_book_move->ponder.to_u16();
+					internal_move.value = Value::VALUE_NONE;
+					internal_move.book = 1;
+					internal_move.depth = 0;
+
+					// Virtual Loss
+					++best_internal_book_move->num_lose;
+				}
+
+				internal_moves.push_back(internal_move);
+
+				Move best_move = pos.to_move(internal_move.best);
+				pos.do_move(best_move, state_info[pos.game_ply()]);
+			}
+
+			// 終局処理
+			// 現局面のプレイヤーが勝ったかどうか。
+			bool current_player_is_win;
+			RepetitionState repetition_state = pos.is_repetition(0);
+			if (pos.is_mated()) {
+				// 負け
+				// 詰まされた
+				current_player_is_win = false;
+			}
+			else if (pos.DeclarationWin() != MOVE_NONE) {
+				// 勝ち
+				// 入玉勝利
+				current_player_is_win = true;
+			}
+			else if (!internal_moves.empty() && internal_moves.back().value >= resign_value) {
+				// 最後の局面は相手の局面。
+				// 相手の勝ち。自分の負け。
+				current_player_is_win = false;
+			}
+			else if (!internal_moves.empty() && internal_moves.back().value <= -resign_value) {
+				// 最後の局面は相手の局面。
+				// 相手の負け。自分の勝ち。
+				current_player_is_win = true;
+			}
+			else if (!internal_moves.empty() && internal_moves.back().best == Move::MOVE_RESIGN) {
+				// 最後の局面は相手の局面。
+				// 相手の負け。自分の勝ち。
+				current_player_is_win = true;
+			}
+			else if (repetition_state == RepetitionState::REPETITION_WIN)
+			{
+				// 連続王手の千日手による勝ち
+				current_player_is_win = true;
+			}
+			else if (repetition_state == RepetitionState::REPETITION_LOSE)
+			{
+				// 連続王手の千日手による負け
+				current_player_is_win = false;
+			}
+			else if (repetition_state == RepetitionState::REPETITION_SUPERIOR)
+			{
+				// 優等局面
+				current_player_is_win = true;
+			}
+			else if (repetition_state == RepetitionState::REPETITION_INFERIOR)
+			{
+				// 劣等局面
+				current_player_is_win = false;
+			}
+			else {
+				// 引き分け
+				// 先手負け、後手勝ちとする。
+				if (pos.side_to_move() == BLACK) {
+					current_player_is_win = false;
+				}
+				else {
+					current_player_is_win = true;
+				}
+			}
+
+			// 初期局面の手番のプレイヤーが勝ったかどうか
+			bool initial_color_win = current_player_is_win;
+			if (initial_color != pos.side_to_move()) {
+				initial_color_win = !initial_color_win;
+			}
+
+			bool black_win =
+				(initial_color == BLACK && initial_color_win) ||
+				(initial_color == WHITE && !initial_color_win);
+			if (black_win) {
+				++num_consecutive_black_win;
+			}
+			else {
+				num_consecutive_black_win = 0;
+			}
+
+			// 定跡データベースに追加していく
+			// 同時に標準出力に出力するための文字列も構築していく。
+			std::ostringstream oss;
+			oss << "sfen " << initial_position_sfen << " moves";
+			bool win = initial_color_win;
+			{
+				std::lock_guard<std::mutex> lock(internal_book_mutex);
+
+				pos.set(initial_position_sfen, &state_info[0], Threads[thread_index]);
+				for (int play = 0; play < static_cast<int>(internal_moves.size()); ++play) {
+					auto sfen = pos.sfen();
+					auto best = internal_moves[play].best;
+					if (best == Move::MOVE_RESIGN) {
+						break;
+					}
+					auto value = internal_moves[play].value;
+					auto& internal_book_move = internal_book[sfen][best];
+					internal_book_move.move = best;
+					if (play + 1 < static_cast<int>(internal_moves.size())) {
+						internal_book_move.ponder = internal_moves[play + 1].best;
+					}
+
+					if (win) {
+						++internal_book_move.num_win;
+					}
+					else {
+						++internal_book_move.num_lose;
+					}
+
+					if (value != Value::VALUE_NONE) {
+						++internal_book_move.num_values;
+						internal_book_move.sum_values += value;
+					}
+
+					if (play < num_book_moves) {
+						// Virtual Loss
+						--internal_book_move.num_lose;
+					}
+
+					auto move = pos.to_move(best);
+					pos.do_move(move, state_info[pos.game_ply()]);
+					oss << " " << move;
+					win = !win;
+				}
+
+				sync_cout << oss.str() << sync_endl;
+				sync_cout
+					<< "num_book_moves=" << num_book_moves
+					<< " num_search_moves=" << num_search_moves
+					<< " black_win=" << black_win
+					<< " num_consecutive_black_win=" << num_consecutive_black_win
+					<< sync_endl;
+
+				std::lock_guard<std::mutex> last_save_time_sec_lock(last_save_time_sec_mutex);
+				if (last_save_time_sec + kSavePerAtMostSec < std::time(nullptr)) {
+					WriteInternalBook(std::filesystem::path("book") / output_book_file, internal_book);
+					last_save_time_sec = std::time(nullptr);
+				}
+			}
+
+			WriteRecordToSQLite(record_file, win ? 0 : 1, internal_moves);
+		}
+	}
+}
+
 bool Tanuki::CreateUctBook() {
 	std::string output_book_file = Options[kBookOutputFile];
 	double ucb1_constant = std::stof(Options[kBookUctUcb1Constant]);
-	int time_ms = static_cast<int>(Options[kBookUctTimeMs]);
-	int inc_ms = static_cast<int>(Options[kBookUctIncMs]);
 	int num_matches = static_cast<int>(Options[kBookUctNumMatches]);
 	int max_moves_to_draw = static_cast<int>(Options["MaxMovesToDraw"]);
 	int max_search_per_position = static_cast<int>(Options[kBookUctMaxSearchPerPosition]);
 	int resign_value = static_cast<int>(Options["ResignValue"]);
 	std::string record_file = Options[kBookUctRecordFile];
+	int num_threads = Options[kThreads];
+	int min_nodes_limit = static_cast<int>(Options[kBookMinNodesLimit]);
+	int max_nodes_limit = static_cast<int>(Options[kBookMaxNodesLimit]);
 	ASSERT_LV3(max_moves_to_draw > 0);
 
 	sync_cout << "output_book_file=" << output_book_file << sync_endl;
 	sync_cout << "ucb1_constant=" << ucb1_constant << sync_endl;
-	sync_cout << "time_ms=" << time_ms << sync_endl;
-	sync_cout << "inc_ms=" << inc_ms << sync_endl;
 	sync_cout << "num_matches=" << num_matches << sync_endl;
 	sync_cout << "max_moves_to_draw=" << max_moves_to_draw << sync_endl;
 	sync_cout << "max_search_per_position=" << max_search_per_position << sync_endl;
 	sync_cout << "resign_value=" << resign_value << sync_endl;
+	sync_cout << "record_file=" << record_file << sync_endl;
+	sync_cout << "num_threads=" << num_threads << sync_endl;
+	sync_cout << "min_nodes_limit=" << min_nodes_limit << sync_endl;
+	sync_cout << "max_nodes_limit=" << max_nodes_limit << sync_endl;
 
 	InternalBook internal_book;
 	ReadInternalBook(std::filesystem::path("book") / output_book_file, internal_book);
 
 	time_t last_save_time_sec = std::time(nullptr);
+	std::mutex internal_book_mutex;
+	std::mutex last_save_time_sec_mutex;
 
-	std::random_device random_device;
-	std::mt19937_64 mt(random_device());
-
-	for (int match_index = 0; match_index < num_matches; ++match_index) {
-		sync_cout << "Match:" << match_index << "/" << num_matches << sync_endl;
-		std::vector<InternalMove> internal_moves;
-
-		Position pos;
-		StateListPtr states(new StateList(1));
-		is_ready_cmd(pos, states);
-
-		{
-			std::istringstream iss("startpos");
-			position_cmd(pos, iss, states);
+	std::vector<std::thread> threads;
+	std::atomic<int> global_match_index;
+	global_match_index = 0;
+	std::atomic<int> num_consecutive_black_win;
+	num_consecutive_black_win = 0;
+	// 角換わり基本図
+	std::string initial_position_sfen = "lr5nl/3g1kg2/2n1ppsp1/p1pps1p1p/1p5P1/P1PPSPP1P/1PS1P1N2/2GK1G3/LN5RL w Bb 38";
+	if (num_threads == 1) {
+		CreateUctBookThreadProcedure(0, num_matches, initial_position_sfen,
+			max_moves_to_draw, resign_value, max_search_per_position, min_nodes_limit,
+			max_nodes_limit, ucb1_constant, output_book_file,
+			record_file, internal_book_mutex,
+			last_save_time_sec_mutex, global_match_index,
+			internal_book, last_save_time_sec, num_consecutive_black_win);
+	}
+	else {
+		for (int thread_index = 0; thread_index < num_threads; ++thread_index) {
+			threads.emplace_back([thread_index, num_matches, initial_position_sfen,
+				max_moves_to_draw, resign_value, max_search_per_position, min_nodes_limit,
+				max_nodes_limit, ucb1_constant, output_book_file,
+				record_file, &internal_book_mutex,
+				&last_save_time_sec_mutex, &global_match_index,
+				&internal_book, &last_save_time_sec, &num_consecutive_black_win]() {
+					CreateUctBookThreadProcedure(thread_index, num_matches, initial_position_sfen,
+					max_moves_to_draw, resign_value, max_search_per_position, min_nodes_limit,
+					max_nodes_limit, ucb1_constant, output_book_file,
+					record_file, internal_book_mutex,
+					last_save_time_sec_mutex, global_match_index,
+					internal_book, last_save_time_sec, num_consecutive_black_win);
+				});
 		}
 
-		int black_time_ms = time_ms;
-		int white_time_ms = time_ms;
+	}
 
-		int num_book_moves = 0;
-		int num_search_moves = 0;
-
-		while (true) {
-			if (pos.game_ply() >= max_moves_to_draw) {
-				// 最大手数を超えている場合、対局を終える。
-				break;
-			}
-
-			if (pos.is_mated()) {
-				// 詰んでいる場合、対局を終える。
-				break;
-			}
-
-			if (pos.DeclarationWin() != MOVE_NONE) {
-				// 宣言勝ちできる場合、対局を終える。
-				break;
-			}
-
-			if (!internal_moves.empty()) {
-				auto last_value = internal_moves.back().value;
-				if (last_value != Value::VALUE_NONE && std::abs(last_value) >= resign_value) {
-					// 直前の指し手の評価値が投了値を超えている場合、対局を終える。
-					break;
-				}
-
-				if (internal_moves.back().best == Move::MOVE_RESIGN) {
-					// 直前の指し手が投了の場合、対局を終える。
-					break;
-				}
-			}
-
-			if (pos.is_repetition() != RepetitionState::REPETITION_NONE) {
-				// 千日手等の場合、対局を終える。
-				break;
-			}
-
-			InternalMove internal_move = {};
-			internal_move.best = Move::MOVE_NONE;
-			internal_move.next = Move::MOVE_NONE;
-			internal_move.value = Value::VALUE_NONE;
-			auto sfen = pos.sfen();
-
-			//sync_cout << "sfen=" << pos.sfen() << sync_endl;
-
-			// この局面で探索した回数を調べる。
-			// 探索した場合は、評価値を記録するため、その個数を調べる。
-			int num_searches = 0;
-			if (auto it = internal_book.find(sfen); it != internal_book.end()) {
-				for (const auto& [best16, internal_book_move] : it->second) {
-					num_searches += internal_book_move.num_values;
-				}
-			}
-
-			if (num_searches < max_search_per_position){
-				++num_search_moves;
-
-				// この局面で探索した回数が一定値以下の場合、探索を行う。
-
-				// goコマンドを生成して実行する
-				std::string go_command = "go";
-				go_command += " btime " + std::to_string(black_time_ms);
-				go_command += " wtime " + std::to_string(white_time_ms);
-				go_command += " binc " + std::to_string(inc_ms);
-				go_command += " winc " + std::to_string(inc_ms);
-
-				//sync_cout << go_command << sync_endl;
-
-				// goコマンドを実行する
-				{
-					std::istringstream iss(go_command);
-					go_cmd(pos, iss, states);
-				}
-
-				// goコマンドを待機する
-				Threads.main()->wait_for_search_finished();
-
-				// 残り時間を更新する
-				TimePoint elapsed = Time.elapsed() + 1;
-				if (pos.game_ply() % 2 == 1) {
-					// 先手
-					black_time_ms += inc_ms;
-					black_time_ms -= static_cast<int>(elapsed);
-				}
-				else {
-					white_time_ms += inc_ms;
-					white_time_ms -= static_cast<int>(elapsed);
-				}
-
-				// 選ばれた指し手のスコアをこの局面のスコアとして記録する
-				// 終局している場合はmated_in(0)が代入されている。
-				const auto& root_moves = Threads.main()->rootMoves;
-
-				// 指し手と評価値を保存する
-				internal_move.best = root_moves[0].pv[0];
-				if (root_moves[0].pv.size() > 1) {
-					internal_move.next = root_moves[0].pv[1];
-				}
-				internal_move.value = root_moves[0].score;
-				internal_move.depth = Threads.get_best_thread()->completedDepth;
-				internal_move.book = 0;
-			}
-			else {
-				++num_book_moves;
-
-				// 定跡の指し手を指す
-				auto it = internal_book.find(sfen);
-				ASSERT_LV3(it != internal_book.end());
-				//sync_cout << "Selecting a move with the book." << sync_endl;
-
-				// 全シミュレーション回数を求める
-				int N = 0;
-				for (const auto& [best16, internal_book_move] : it->second) {
-					N += internal_book_move.num_win;
-					N += internal_book_move.num_lose;
-				}
-
-				// 最大の UCB1 を求める。
-				double best_ucb1 = 0.0;
-				InternalBookMove best_internal_book_move;
-				for (const auto& [best16, internal_book_move] : it->second) {
-					double w = internal_book_move.num_win;
-					double n = internal_book_move.num_win + internal_book_move.num_lose;
-					double ucb1 = w / n + ucb1_constant * std::sqrt(std::log(N) / n);
-					//sync_cout << "w=" << w << " n=" << n << " ucb1=" << ucb1 << sync_endl;
-					if (best_ucb1 < ucb1) {
-						best_ucb1 = ucb1;
-						best_internal_book_move = internal_book_move;
-					}
-				}
-
-				//その手を指す
-				internal_move.best = best_internal_book_move.move.to_u16();
-				internal_move.next = best_internal_book_move.ponder.to_u16();
-				internal_move.value = Value::VALUE_NONE;
-				internal_move.book = 1;
-				internal_move.depth = 0;
-			}
-
-			internal_moves.push_back(internal_move);
-
-			std::string position_command = "startpos";
-			if (!internal_moves.empty()) {
-				position_command += " moves";
-			}
-			for (auto move : internal_moves) {
-				position_command += " ";
-				position_command += to_usi_string(move.best);
-			}
-			{
-				std::istringstream iss(position_command);
-				position_cmd(pos, iss, states);
-			}
-		}
-
-		// 終局処理
-		// 現局面のプレイヤーが勝ったかどうか。
-		bool current_player_is_win;
-		RepetitionState repetition_state = pos.is_repetition(0);
-		if (pos.is_mated()) {
-			// 負け
-			// 詰まされた
-			current_player_is_win = false;
-		}
-		else if (pos.DeclarationWin() != MOVE_NONE) {
-			// 勝ち
-			// 入玉勝利
-			current_player_is_win = true;
-		}
-		else if (!internal_moves.empty() && internal_moves.back().value >= resign_value) {
-			// 最後の局面は相手の局面。
-			// 相手の勝ち。自分の負け。
-			current_player_is_win = false;
-		}
-		else if (!internal_moves.empty() && internal_moves.back().value <= -resign_value) {
-			// 最後の局面は相手の局面。
-			// 相手の負け。自分の勝ち。
-			current_player_is_win = true;
-		}
-		else if (!internal_moves.empty() && internal_moves.back().best == Move::MOVE_RESIGN) {
-			// 最後の局面は相手の局面。
-			// 相手の負け。自分の勝ち。
-			current_player_is_win = true;
-		}
-		else if (repetition_state == RepetitionState::REPETITION_WIN)
-		{
-			// 連続王手の千日手による勝ち
-			current_player_is_win = true;
-		}
-		else if (repetition_state == RepetitionState::REPETITION_LOSE)
-		{
-			// 連続王手の千日手による負け
-			current_player_is_win = false;
-		}
-		else if (repetition_state == RepetitionState::REPETITION_SUPERIOR)
-		{
-			// 優等局面
-			current_player_is_win = true;
-		}
-		else if (repetition_state == RepetitionState::REPETITION_INFERIOR)
-		{
-			// 劣等局面
-			current_player_is_win = false;
-		}
-		else {
-			// 引き分け
-			// この対局は定跡データベースに記録しない。
-			sync_cout << "Draw..." << sync_endl;
-			continue;
-		}
-
-		// 先手が勝ったかどうか
-		bool win = current_player_is_win;
-		if (internal_moves.size() % 2 == 1) {
-			win = !win;
-		}
-
-		// 定跡データベースに追加していく
-		// 同時に標準出力に出力するための文字列も構築していく。
-		std::ostringstream oss;
-		oss << "startpos moves";
-
-		states.reset(new StateList(1));
-		pos.set_hirate(&states->back(), Threads.main());
-		for (int play = 0; play < static_cast<int>(internal_moves.size()); ++play) {
-			auto sfen = pos.sfen();
-			auto best = internal_moves[play].best;
-			if (best == Move::MOVE_RESIGN) {
-				break;
-			}
-			auto value = internal_moves[play].value;
-			auto& internal_book_move = internal_book[sfen][best];
-			internal_book_move.move = best;
-			if (play + 1 < static_cast<int>(internal_moves.size())) {
-				internal_book_move.ponder = internal_moves[play + 1].best;
-			}
-
-			if (win) {
-				++internal_book_move.num_win;
-			}
-			else {
-				++internal_book_move.num_lose;
-			}
-
-			if (value != Value::VALUE_NONE) {
-				++internal_book_move.num_values;
-				internal_book_move.sum_values += value;
-			}
-
-			states->emplace_back();
-			auto move = pos.to_move(best);
-			pos.do_move(move, states->back());
-			oss << " " << move;
-			win = !win;
-		}
-
-		sync_cout << oss.str() << sync_endl;
-		sync_cout << "num_book_moves=" << num_book_moves << " num_search_moves=" << num_search_moves << sync_endl;
-
-		if (last_save_time_sec + kSavePerAtMostSec < std::time(nullptr)) {
-			WriteInternalBook(std::filesystem::path("book") / output_book_file, internal_book);
-			last_save_time_sec = std::time(nullptr);
-		}
-
-		WriteRecordToSQLite(record_file, win ? 0 : 1, internal_moves);
+	for (auto& thread : threads) {
+		thread.join();
 	}
 
 	return true;
@@ -2924,16 +2973,16 @@ bool Tanuki::ConvertInternalBookToYaneuraOuBook() {
 				continue;
 			}
 
-		auto& position = Threads[0]->rootPos;
-		StateInfo state_info;
-		position.set(sfen, &state_info, Threads[0]);
-		auto move32 = position.to_move(move);
-		if (!position.pseudo_legal(move32) || !position.legal(move32)) {
-			sync_cout << "Illegal move. sfen=" << position.sfen() << " move=" << move32 << sync_endl;
-			continue;
-		}
+			auto& position = Threads[0]->rootPos;
+			StateInfo state_info;
+			position.set(sfen, &state_info, Threads[0]);
+			auto move32 = position.to_move(move);
+			if (!position.pseudo_legal(move32) || !position.legal(move32)) {
+				sync_cout << "Illegal move. sfen=" << position.sfen() << " move=" << move32 << sync_endl;
+				continue;
+			}
 
-		output_book.insert(sfen, Book::BookMove(move, ponder, value, 0, count));
+			output_book.insert(sfen, Book::BookMove(move, ponder, value, 0, count));
 		}
 	}
 
