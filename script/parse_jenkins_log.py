@@ -18,13 +18,14 @@ import urllib.request
 # PATTERN0 = re.compile(r'FVScale1=([0-9.]+)')
 # PATTERN0 = re.compile(r'eta2=([0-9.]+)')
 # PATTERN0 = re.compile(r'0\.001\\(\d+)')
-PATTERN0 = re.compile(r'(Branch_v5\.33_[0-9]+)')
+# PATTERN0 = re.compile(r'(Branch_v5\.33_[0-9]+)')
+PATTERN0 = re.compile(r'nnue-pytorch.2023-05-19\\([0-9]+)')
 PATTERN1 = re.compile(
     r'勝ち\d+\([0-9.]+% R([-0-9.]+) \+-[0-9.]+\) 先手勝ち\d+\([0-9.]+%\) 後手勝ち\d+\([0-9.]+%\)')
 # BUILD_NUMBERS = [15, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27, 28, 29]
 # BUILD_NUMBERS = [45, 46, 47, 48, 49]
 # BUILD_NUMBERS = range(123, 129 + 1)
-BUILD_NUMBERS = range(172, 180 + 1)
+BUILD_NUMBERS = range(78, 87 + 1)
 
 def main():
     parser = argparse.ArgumentParser(description='Execute Jenkins Jobs')

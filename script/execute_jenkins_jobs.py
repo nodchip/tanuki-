@@ -20,24 +20,7 @@ def main():
     num_cores = 128
     num_concurrent_processes = num_cores // threads
 
-    # parameters = ['V5.40_post', 'V5.40',]
-    # old_versions = ['V4.86', 'V4.85', 'V4.83', 'V4.82_NNUE',]
-    # parameters = [0.0, -1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0, -10.0, ]
-    # parameters = [0.0]
-    # parameters = [-1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0, -10.0, ]
-    # parameters = [5, 15, 25, 30, 35]
-    # parameters = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-    parameters = [
-        'Branch_v5.33_20201128192325',
-        'Branch_v5.33_20201128225947',
-        'Branch_v5.33_20201130081917',
-        'Branch_v5.33_20201130102017',
-        'Branch_v5.33_20201201163629',
-        'Branch_v5.33_20201201214136',
-        'Branch_v5.33_20201201214447',
-        'Branch_v5.33_20201202075042',
-        'Branch_v5.33_20201202080706',
-    ]
+    parameters = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
     for index, parameter in enumerate(parameters):
         thread_id_offset = index * threads % num_cores
 
@@ -67,15 +50,34 @@ def main():
         #     'BRANCH': fr'{branch}'
         # })
 
-        branch = parameter
+        # branch1 = parameter[0]
+        # branch2 = parameter[1]
+        # query = urllib.parse.urlencode({
+        #     'eval1': fr'D:\hnoda\shogi\eval\regression.v5.33.add.Suishopsv-150m.eta2=0.001.min_progress=0.1\{}',
+        #     'eval2': fr'D:\hnoda\shogi\eval\halfkp_1024x2-8-32.add.Suishopsv-150m.eta2=0.001.min_progress=0.1\20',
+        #     'YANEURAOU_EDITION1': fr'YANEURAOU_ENGINE_NNUE_HALFKP_1024X2_8_32',
+        #     'YANEURAOU_EDITION2': fr'YANEURAOU_ENGINE_NNUE_HALFKP_1024X2_8_32',
+        #     'fv_scale1': fr'16',
+        #     'fv_scale2': fr'16',
+        #     'hash': fr'384',
+        #     'num_games': fr'1000',
+        #     'branch1': fr'{branch1}',
+        #     'branch2': fr'{branch2}',
+        # })
+
+        branch1 = 'a0f9bb59acf42e3146c035442f3598a7945fc7c9'
+        branch2 = 'a0f9bb59acf42e3146c035442f3598a7945fc7c9'
         query = urllib.parse.urlencode({
-            'eval1': fr'D:\hnoda\shogi\eval\{branch}\final',
-            'eval2': fr'D:\hnoda\shogi\eval\suisho5.halfkp_256x2-32-32.80G\final',
+            'eval1': fr'D:\hnoda\shogi\eval\nnue-pytorch.2023-05-19\{parameter}',
+            'eval2': fr'D:\hnoda\shogi\eval\regression.v5.33\final',
             'YANEURAOU_EDITION1': fr'YANEURAOU_ENGINE_NNUE',
             'YANEURAOU_EDITION2': fr'YANEURAOU_ENGINE_NNUE',
             'fv_scale1': fr'16',
             'fv_scale2': fr'16',
             'hash': fr'768',
+            'num_games': fr'2000',
+            'branch1': fr'{branch1}',
+            'branch2': fr'{branch2}',
         })
 
         url = f'http://{args.host_name}:8080/job/{args.projet_name}/buildWithParameters?{query}'
