@@ -124,13 +124,16 @@ namespace {
 	};
 
 	bool ReadStrongPlayers(std::vector<Player>& strong_players) {
-		std::vector<std::string> file_names = {
-			"players-floodgate.20220429.html",
-			"players-floodgate.20221128.html",
-		};
 		std::map<std::string, int> name_to_rate;
-		for (const auto& file_name : file_names) {
-			std::ifstream ifs(file_name);
+		for (const auto& entry : std::filesystem::directory_iterator("../players-floodgate/wdoor.c.u-tokyo.ac.jp/shogi/logs/logs/LATEST/rating")) {
+			auto file_path = entry.path().string();
+			if (file_path.find("players-floodgate-2021") == std::string::npos &&
+				file_path.find("players-floodgate-2022") == std::string::npos &&
+				file_path.find("players-floodgate-2023") == std::string::npos) {
+				continue;
+			}
+
+			std::ifstream ifs(file_path);
 			if (!ifs) {
 				continue;
 			}
