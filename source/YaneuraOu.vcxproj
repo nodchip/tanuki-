@@ -693,9 +693,9 @@
     <ClCompile Include="book\makebook2015.cpp" />
     <ClCompile Include="book\makebook2019.cpp" />
     <ClCompile Include="book\makebook2021.cpp" />
+    <ClCompile Include="book\makebook2023.cpp" />
     <ClCompile Include="csa.cpp" />
     <ClCompile Include="denryu2_investigation.cpp" />
-    <ClCompile Include="engine\dlshogi-engine\yo_cluster.cpp" />
     <ClCompile Include="engine\dlshogi-engine\dlshogi_searcher.cpp" />
     <ClCompile Include="engine\dlshogi-engine\PrintInfo.cpp" />
     <ClCompile Include="engine\dlshogi-engine\UctSearch.cpp" />

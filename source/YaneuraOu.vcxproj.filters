@@ -618,9 +618,6 @@
     <ClCompile Include="testcmd\unit_test.cpp">
       <Filter>リソース ファイル\testcmd</Filter>
     </ClCompile>
-    <ClCompile Include="engine\dlshogi-engine\yo_cluster.cpp">
-      <Filter>リソース ファイル\engine\dlshogi-engine</Filter>
-    </ClCompile>
     <ClCompile Include="eval\nnue\features\half_kp_vm.cpp">
       <Filter>リソース ファイル\eval\nnue\features</Filter>
     </ClCompile>
@@ -639,11 +636,11 @@
     <ClCompile Include="engine\yo-cluster\ClusterStrategy.cpp">
       <Filter>リソース ファイル\engine\yo-cluster</Filter>
     </ClCompile>
-    <ClCompile Include="book\makebook2023.cpp">
-      <Filter>リソース ファイル\book</Filter>
-    </ClCompile>
     <ClCompile Include="denryu2_investigation.cpp">
       <Filter>リソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="book\makebook2023.cpp">
+      <Filter>リソース ファイル\book</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -677,8 +674,6 @@
     <None Include="..\script\bench.py">
       <Filter>script</Filter>
     </None>
-    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime.dll" />
-    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime_providers_shared.dll" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="eval\deep\unpack.cu">

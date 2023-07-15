@@ -1064,6 +1064,7 @@ void usi_cmdexec(Position& pos, StateListPtr& states, string& cmd)
 			// cluster時のUSIメッセージの処理ループ
 			YaneuraouTheCluster::cluster_usi_loop(pos, is);
 #endif
+#endif
 
 #ifdef EVAL_LEARN
 		else if (token == "create_raw_book") Tanuki::CreateRawBook();
@@ -1072,27 +1073,27 @@ void usi_cmdexec(Position& pos, StateListPtr& states, string& cmd)
 
 		else if (token == "merge_book") {
 			Tanuki::MergeBook();
-			break;
+			return;
 		}
 
 		else if (token == "set_score_to_move") {
 			Tanuki::SetScoreToMove();
-			break;
+			return;
 		}
 
 		else if (token == "propagate_leaf_node_values_to_root") {
 			Tanuki::PropagateLeafNodeValuesToRoot();
-			break;
+			return;
 		}
 
 		else if (token == "extract_target_positions") {
 			Tanuki::ExtractTargetPositions();
-			break;
+			return;
 		}
 
 		else if (token == "add_target_positions") {
 			Tanuki::AddTargetPositions();
-			break;
+			return;
 		}
 
 		else if (token == "endless_tera_shock") {
