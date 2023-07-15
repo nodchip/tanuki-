@@ -113,7 +113,7 @@ struct StateInfo {
 #if defined(EVAL_KPPT) || defined(EVAL_KPP_KKPT)
 
 	// 評価値。(次の局面で評価値を差分計算するときに用いる)
-	// まだ計算されていなければsum.p[2][0]の値はINT_MAX
+	// まだ計算されていなければsum.p[2][0]の値はint_max
 	Eval::EvalSum sum;
 
 #endif
@@ -225,8 +225,16 @@ public:
 	// ※ USIプロトコルにおいては不要な機能ではあるが、デバッグのために局面を標準出力に出力して
 	// 　その局面から開始させたりしたいときに、sfenで現在の局面を出力出来ないと困るので用意してある。
 	// 引数としてintを取るほうのsfen()は、出力するsfen文字列の末尾の手数を指定できるバージョン。
+	// ※　裏技 : gamePlyが負なら、sfen文字列末尾の手数を出力しない。
 	const std::string sfen() const { return sfen(game_ply()); }
 	const std::string sfen(int gamePly) const;
+
+	// sfen()の先後反転(盤面を180度回転)させた時のsfenを返す。
+	const std::string flipped_sfen() const { return flipped_sfen(game_ply()); }
+	const std::string flipped_sfen(int gamePly) const;
+
+	// sfen文字列を先後反転したsfen文字列に変換する。
+	static const std::string sfen_to_flipped_sfen(std::string sfen);
 
 	// 平手の初期盤面を設定する。
 	// siについては、上記のset()にある説明を読むこと。
@@ -628,6 +636,7 @@ public:
 	// 32bit Moveが返る。
 	Move DeclarationWin() const;
 
+
 	// -- sfen化ヘルパ
 #if defined(USE_SFEN_PACKER)
   // packされたsfenを得る。引数に指定したバッファに返す。
@@ -943,5 +952,6 @@ std::ostream& operator<<(std::ostream& os, const Position& pos);
 
 // depthに応じたZobrist Hashを得る。depthを含めてhash keyを求めたいときに用いる。
 HASH_KEY DepthHash(int depth);
+
 
 #endif // of #ifndef _POSITION_H_

@@ -4,7 +4,6 @@
 # normal     : 通常使用用
 # evallearn  : 教師局面からの学習用
 # tournament : 大会で使う用
-# gensfen    : 教師生成用(2019年版)
 
 # === ビルドオプション (build options) ===
 
@@ -22,6 +21,10 @@
 # YANEURAOU_MATE_ENGINE          : やねうら王 詰将棋solver (2020/12/29～)
 # USER_ENGINE                    : USER定義エンジン
 
+# YANEURAOU_ENGINE_DEEP_TENSOR_RT_UBUNTU : ふかうら王(dlshogi互換エンジン) , TensorRT使用 , Ubuntu用build。
+#                                  ビルドを確認したDocker image → nvcr.io/nvidia/tensorrt:22.12-py3
+
+
 YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_KP256
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_HALFKPE9
@@ -31,9 +34,14 @@ YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_KPPT
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_KPP_KKPT
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_MATERIAL
+#YANEURAOU_EDITION = YANEURAOU_ENGINE_DEEP_TENSOR_RT_UBUNTU
 #YANEURAOU_EDITION = TANUKI_MATE_ENGINE
 #YANEURAOU_EDITION = YANEURAOU_MATE_ENGINE
 #YANEURAOU_EDITION = USER_ENGINE
+
+# やねうら王のcluster機能を使いたいなら、これもdefineする。(define if you want to use YO-cluster)
+YO_CLUSTER = OFF
+#YO_CLUSTER = ON
 
 
 # ターゲットCPU (target cpu)
@@ -66,6 +74,7 @@ TARGET_CPU = AVX2
 # -- ARMとか
 #TARGET_CPU = OTHER
 #TARGET_CPU = GRAVITON2
+#TARGET_CPU = WASM
 
 
 # デバッガーを使用するか (debugger)
@@ -77,6 +86,7 @@ DEBUG = OFF
 # ※ clangでコンパイルしたほうがgccより数%速いっぽい。
 # COMPILER = g++
 COMPILER = clang++
+#COMPILER = em++
 
 
 # エンジンの表示名 (engine displayname)
@@ -91,7 +101,8 @@ COMPILER = clang++
 
 
 # 標準的なコンパイルオプション (standard compile options)
-CPPFLAGS   = -std=c++17 -fno-exceptions -fno-rtti -Wextra -Ofast -MMD -MP -fpermissive
+CPPFLAGS   = -std=c++17 -fno-exceptions -fno-rtti -Wextra -MMD -MP -fpermissive
+NVCC_CPPFLAGS = -std=c++17 -x cu -maxrregcount=0 --machine 64 --compile -cudart static -DNDEBUG -Xcompiler "-Ofast"
 WCPPFLAGS  =
 LDFLAGS  = $(EXTRA_LDFLAGS)
 LIBS     =
@@ -127,6 +138,13 @@ EVAL_EMBEDDING = OFF
 # ※ ifeq (A,B) は「AとBが等しいならば、以下を実行してください。」という意味。紛らわしいので気をつけよう。
 
 
+# em++ では -Ofast の指定は対応していない
+ifneq (,$(findstring em++,$(COMPILER)))
+	CPPFLAGS += -O2
+else
+	CPPFLAGS += -Ofast
+endif
+
 # デバッガーを使わないなら、NDEBUGをdefineする。
 ifeq ($(DEBUG),OFF)
 	CPPFLAGS += -DNDEBUG
@@ -160,18 +178,45 @@ else
 
 		# C++17のfilesystem
 		# LDFLAGS += -lstdc++fs
-
+	endif
+	ifneq (,$(findstring em++,$(COMPILER)))
+		EM_EXPORT_NAME=YaneuraOu
+		EM_INITIAL_MEMORY_SIZE=$(shell if [ $(MATERIAL_LEVEL) -ge 5 ]; then echo 385875968; else echo 138412032; fi)
+		CPPFLAGS += -Wno-unused-parameter
+		CPPFLAGS += -DUSE_WASM_SIMD -msimd128
+		CPPFLAGS += -DUSE_SSE42 -msse4.2
+		CPPFLAGS += -march=wasm32
+		# CPPFLAGS += -march=corei7
+		CPPFLAGS += -s USE_PTHREADS=1
+		CPPFLAGS += -s STRICT=1
+		LDFLAGS += --pre-js wasm_pre.js
+		# LDFLAGS += --preload-file eval/nn.bin
+		LDFLAGS += -s MODULARIZE=1 -s EXPORT_NAME="$(EM_EXPORT_NAME)" -s ENVIRONMENT=web,worker,node
+		LDFLAGS += -s PTHREAD_POOL_SIZE=32
+		# -s PTHREAD_POOL_SIZE_STRICT=32
+		LDFLAGS += -s FILESYSTEM=1 -s EXIT_RUNTIME=0 -s "EXPORTED_RUNTIME_METHODS=['FS','ccall']"
+		LDFLAGS += -s ALLOW_MEMORY_GROWTH=1 -s INITIAL_MEMORY=$(EM_INITIAL_MEMORY_SIZE) -s MAXIMUM_MEMORY=4294967296
+		LDFLAGS += -s TOTAL_STACK=67108864
+		LDFLAGS += -s LLD_REPORT_UNDEFINED
+		# LDFLAGS += -s PROXY_TO_PTHREAD
+		# LDFLAGS += -s ALLOW_UNIMPLEMENTED_SYSCALLS
+		# LDFLAGS += -s ASSERTIONS
+		LDFLAGS += -s --closure 1
 	endif
 endif
 
 TARGETDIR = .
-ifeq ($(OS),Windows_NT)
-	CPPFLAGS += $(WCPPFLAGS)
-	LDFLAGS += -static -Wl,--stack,25000000
-	TARGET = $(TARGETDIR)/YaneuraOu-by-gcc.exe
+ifneq (,$(findstring em++,$(COMPILER)))
+	TARGET = $(TARGETDIR)/yaneuraou.js
 else
-	CPPFLAGS += -D_LINUX
-	TARGET = $(TARGETDIR)/YaneuraOu-by-gcc
+	ifeq ($(OS),Windows_NT)
+		CPPFLAGS += $(WCPPFLAGS)
+		LDFLAGS += -static -Wl,--stack,25000000
+		TARGET = $(TARGETDIR)/YaneuraOu-by-gcc.exe
+	else
+		CPPFLAGS += -D_LINUX
+		TARGET = $(TARGETDIR)/YaneuraOu-by-gcc
+	endif
 endif
 
 # リンク時最適化。
@@ -189,8 +234,11 @@ endif
 # wstringを使うためにこのシンボル定義が必要。
 CPPFLAGS  += -DUNICODE
 
+# em++ では strip: -Wl,-s の指定はしない
+ifeq (,$(findstring em++,$(COMPILER)))
 # stripの指示。(実行ファイルのサイズを小さく)
 LDFLAGS += -Wl,-s
+endif
 
 # mingw64では-D_WIN64,-D_WIN32は環境に応じて自動で設定されるので指定すべきではない。
 # CPPFLAGS += -D_WIN64
@@ -291,6 +339,9 @@ SOURCES  = \
 	testcmd/normal_test_cmd.cpp                                                \
 	testcmd/benchmark.cpp
 
+CUDA_SOURCES =
+
+OBJC_SOURCES =
 
 #ifneq (,$(findstring evallearn,$@))
 # →これこの時点で$@を取得できないのか…。なんぞこれ。
@@ -304,6 +355,7 @@ ifeq (,)
 		book/makebook2015.cpp                                                  \
 		book/makebook2019.cpp                                                  \
 		book/makebook2021.cpp                                                  \
+		book/makebook2023.cpp                                                  \
 		learn/learner.cpp                                                      \
 		learn/learning_tools.cpp                                               \
 		learn/multi_think.cpp                                                  \
@@ -349,25 +401,39 @@ ifneq (,$(findstring YANEURAOU_ENGINE_DEEP,$(YANEURAOU_EDITION)))
 		# とりあえず"YANEURAOU_ENGINE_DEEP"というシンボルを定義してやる。
 		CPPFLAGS += -DYANEURAOU_ENGINE_DEEP
 
-		ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_DEEP_TENSOR_RT)
+		ifneq (,$(findstring TENSOR_RT,$(YANEURAOU_EDITION)))
 			CPPFLAGS += -DTENSOR_RT
-			LDFLAGS += -lnvinfer -lnvparsers -lnvonnxparser -lcudnn -lcudart
-			# CPPFLAGS += -I/usr/local/cuda/include
-			# LDFLAGS += -L/usr/local/cuda/lib64
+			NVCC_CPPFLAGS += -DTENSOR_RT
+			LDFLAGS += -lnvinfer -lnvonnxparser -lcudart
+
+			# YANEURAOU_EDITIONのなかにUBUNTUと言う文字列が含まれているならlinkerなどの設定をしてやる。
+			ifneq (,$(findstring UBUNTU,$(YANEURAOU_EDITION)))
+				CPPFLAGS += -I/usr/local/cuda/include
+				LDFLAGS += -L/usr/local/cuda/lib64
+				LDFLAGS += -L/usr/local/cuda/lib64/stubs
+			endif
+
+			CUDA_SOURCES += eval/deep/unpack.cu
 
 		else ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_DEEP_ORT_CPU)
-			CPPFLAGS += -DORT_CPU
+			CPPFLAGS += -DONNXRUNTIME -DORT_NO_EXCEPTIONS -DORT_CPU
+			LDFLAGS += -lonnxruntime
 
 		else ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_DEEP_ORT_DML)
-			CPPFLAGS += -DORT_DML
-
-		else ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_DEEP_ORT_MKL)
-			CPPFLAGS += -DORT_MKL
+			CPPFLAGS += -DONNXRUNTIME -DORT_NO_EXCEPTIONS -DORT_DML
+			LDFLAGS += -lonnxruntime
 
 		else ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_DEEP_ORT_TRT)
-			CPPFLAGS += -DORT_TRT
+			CPPFLAGS += -DONNXRUNTIME -DORT_NO_EXCEPTIONS -DORT_TRT
+			LDFLAGS += -lonnxruntime
+
+		else ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_DEEP_COREML)
+			CPPFLAGS += -DCOREML
+			LDFLAGS += -framework Foundation -framework CoreML
+			OBJC_SOURCES += eval/deep/nn_coreml.mm
 
 		endif
+
 	endif
 
 	# 大して大きなファイルではないので全部追加する。
@@ -380,8 +446,7 @@ ifneq (,$(findstring YANEURAOU_ENGINE_DEEP,$(YANEURAOU_EDITION)))
 		engine/dlshogi-engine/PrintInfo.cpp                             \
 		engine/dlshogi-engine/UctSearch.cpp                             \
 		engine/dlshogi-engine/Node.cpp                                  \
-		engine/dlshogi-engine/YaneuraOu_dlshogi_bridge.cpp              \
-		engine/dlshogi-engine/yo_cluster.cpp
+		engine/dlshogi-engine/YaneuraOu_dlshogi_bridge.cpp
 endif
 
 ifneq (,$(findstring YANEURAOU_ENGINE_NNUE,$(YANEURAOU_EDITION)))
@@ -423,6 +488,10 @@ ifneq (,$(findstring YANEURAOU_ENGINE_NNUE,$(YANEURAOU_EDITION)))
 		eval/nnue/features/pe9.cpp                                      \
 		engine/yaneuraou-engine/yaneuraou-search.cpp
 
+	ifneq (,$(findstring em++,$(COMPILER)))
+		SOURCES += \
+			eval/nnue/wasm_simd.cpp
+	endif
 	ifeq ($(EVAL_EMBEDDING),ON)
 		SOURCES += \
 			eval/nnue/embedded_nnue.cpp
@@ -450,6 +519,16 @@ endif
 
 ifneq ($(ENGINE_NAME),)
 	CPPFLAGS += -DENGINE_NAME_FROM_MAKEFILE=$(ENGINE_NAME)
+endif
+
+ifeq ($(YO_CLUSTER),ON)
+	SOURCES += \
+		engine/yo-cluster/ClusterCommon.cpp       \
+		engine/yo-cluster/ProcessNegotiator.cpp   \
+		engine/yo-cluster/EngineNegotiator.cpp    \
+		engine/yo-cluster/ClusterObserver.cpp     \
+		engine/yo-cluster/ClusterStrategy.cpp
+	CPPFLAGS += -DUSE_YO_CLUSTER
 endif
 
 
@@ -533,9 +612,13 @@ else ifeq ($(TARGET_CPU),GRAVITON2)
 	# for Amazon Web Servece EC2, the Graviton2 CPU [M6g/M6gd, C6g/C6gd/C6gn, R6g/R6gd, T4g, X2gd] instances
 	# https://github.com/aws/aws-graviton-getting-started/blob/main/c-c++.md
 	CPPFLAGS += -DIS_64BIT -DUSE_NEON -march=armv8.2-a+fp16+rcpc+dotprod+crypto
-else ifeq ($(TARGET_CPU),M1)
-	# for Apple M1
-	CPPFLAGS += -DIS_64BIT -DUSE_NEON -march=armv8.5-a+fp16+rcpc+dotprod+crypto -mcpu=apple-m1
+else ifeq ($(TARGET_CPU),APPLEAVX2)
+	CPPFLAGS += -DIS_64BIT -DUSE_AVX2 -DUSE_BMI2 -target x86_64-apple-macos11 -mbmi -mbmi2 -mavx2 -mpopcnt
+else ifeq ($(TARGET_CPU),APPLESSE42)
+	CPPFLAGS += -DIS_64BIT -DUSE_SSE42 -target x86_64-apple-macos11
+else ifeq ($(TARGET_CPU),APPLEM1)
+	CPPFLAGS += -DIS_64BIT -DUSE_NEON -target arm64-apple-macos11
+else ifeq ($(TARGET_CPU),WASM)
 
 else ifeq ($(TARGET_CPU),OTHER)
 	CPPFLAGS += -DNO_SSE
@@ -544,19 +627,29 @@ endif
 
 # YANEURAOU_EDITION , CPUターゲット名 などのシンボルをコンパイル時に定義してやる。
 CPPFLAGS += -D$(YANEURAOU_EDITION) -DTARGET_CPU=\"$(TARGET_CPU)\" $(EXTRA_CPPFLAGS)
+NVCC_CPPFLAGS += -D$(YANEURAOU_EDITION) -DTARGET_CPU=\"$(TARGET_CPU)\"
 
 OBJECTS  = $(addprefix $(OBJDIR)/, $(SOURCES:.cpp=.o))
+CUDA_OBJECTS = $(addprefix $(OBJDIR)/, $(CUDA_SOURCES:.cu=.o))
+OBJC_OBJECTS = $(addprefix $(OBJDIR)/, $(OBJC_SOURCES:.mm=.o))
 DEPENDS  = $(OBJECTS:.o=.d)
 
 all: clean $(TARGET)
 .PHONY : all normal evallearn tournament prof profgen profuse pgo clean
 
-$(TARGET): $(OBJECTS) $(LIBS)
-	$(COMPILER) -o $@ $^ $(LDFLAGS) $(CPPFLAGS)
+$(TARGET): $(OBJECTS) $(CUDA_OBJECTS) $(OBJC_OBJECTS)
+	$(COMPILER) -o $@ $^ $(LDFLAGS) $(CPPFLAGS) $(LIBS)
 
 $(OBJDIR)/%.o: %.cpp
 	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
 	$(COMPILER) $(CPPFLAGS) $(INCLUDE) -o $@ -c $<
+
+$(OBJDIR)/%.o: %.cu
+	nvcc $(NVCC_CPPFLAGS) $(INCLUDE) -o $@ $<
+
+$(OBJDIR)/%.o: %.mm
+	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
+	$(COMPILER) $(CPPFLAGS) -fobjc-arc $(INCLUDE) -o $@ -c $<
 
 # https://gcc.gnu.org/onlinedocs/gcc/x86-Options.html
 
@@ -575,11 +668,6 @@ evallearn:
 tournament:
 	$(MAKE) CPPFLAGS='$(CPPFLAGS) $(LTOFLAGS) -DFOR_TOURNAMENT' LDFLAGS='$(LDFLAGS) $(LTOFLAGS)' $(TARGET)
 
-# 教師棋譜生成用(開発用なので非公開) // currently private
-gensfen:
-	$(MAKE) CPPFLAGS='$(CPPFLAGS) $(LTOFLAGS) $(OPENMP) $(BLAS_CPPFLAGS) -DEVAL_LEARN -DGENSFEN2019' LDFLAGS='$(LDFLAGS) $(OPENMP_LDFLAGS) $(BLAS_LDFLAGS) $(LTOFLAGS)' $(TARGET)
-
-
 #　とりあえずPGOはAVX2とSSE4.2専用
 prof:
 	$(MAKE) CPPFLAGS='$(CPPFLAGS) -pg' tournament
@@ -597,6 +685,6 @@ pgo:
 	$(MAKE) profuse
 
 clean:
-	rm -f $(OBJECTS) $(DEPENDS) $(TARGET) ${OBJECTS:.o=.gcda}
+	rm -f $(OBJECTS) $(CUDA_OBJECTS) $(OBJC_OBJECTS) $(DEPENDS) $(TARGET) ${OBJECTS:.o=.gcda}
 
 -include $(DEPENDS)

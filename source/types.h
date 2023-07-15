@@ -19,7 +19,21 @@
 #include <iostream>     // iostreamに対する<<使うので仕方ない
 #include <string>       // std::string使うので仕方ない
 #include <algorithm>    // std::max()を使うので仕方ない
-#include <climits>		// INT_MAXがこのheaderで必要なので仕方ない
+#include <limits>		// std::numeric_limitsを使うので仕方ない
+
+// --------------------
+//  型の最小値・最大値
+// --------------------
+
+// "windows.h"をincludeしていると、maxがマクロによって置換され、そのためstd::max()がコンパイルエラーとなるので、
+// それを回避するために(std::max)() と書くテクニックがある。以下で、(std::...::max)() のように書いてあるのはそのため。
+
+constexpr int     int_max   = (std::numeric_limits<int>    ::max)();
+constexpr int     int_min   = (std::numeric_limits<int>    ::min)();
+constexpr int64_t int64_max = (std::numeric_limits<int64_t>::max)();
+constexpr int64_t int64_min = (std::numeric_limits<int64_t>::min)();
+constexpr size_t  size_max  = (std::numeric_limits<size_t> ::max)();
+constexpr size_t  size_min  = (std::numeric_limits<size_t> ::min)();
 
 // --------------------
 //      手番
@@ -184,8 +198,8 @@ constexpr Rank rank_of(Square sq) { /* return (Rank)(sq % 9); */ /*ASSERT_LV2(is
 // 筋(File)と段(Rank)から、それに対応する升(Square)を返す。
 constexpr Square operator | (File f, Rank r) { Square sq = (Square)(f * 9 + r); /* ASSERT_LV2(is_ok(sq));*/ return sq; }
 
-// ２つの升のfileの差、rankの差のうち大きいほうの距離を返す。sq1,sq2のどちらかが盤外ならINT_MAXが返る。
-constexpr int dist(Square sq1, Square sq2) { return (!is_ok(sq1) || !is_ok(sq2)) ? INT_MAX : std::max(abs(file_of(sq1) - file_of(sq2)), abs(rank_of(sq1) - rank_of(sq2))); }
+// ２つの升のfileの差、rankの差のうち大きいほうの距離を返す。sq1,sq2のどちらかが盤外ならint_maxが返る。
+constexpr int dist(Square sq1, Square sq2) { return (!is_ok(sq1) || !is_ok(sq2)) ? int_max : (std::max)(abs(file_of(sq1) - file_of(sq2)), abs(rank_of(sq1) - rank_of(sq2))); }
 
 // 移動元、もしくは移動先の升sqを与えたときに、そこが成れるかどうかを判定する。
 constexpr bool canPromote(const Color c, const Square fromOrTo) {
@@ -540,7 +554,8 @@ constexpr Piece make_promoted_piece(Piece pc) { return (Piece)(pc | PIECE_PROMOT
 constexpr bool has_long_effect(Piece pc) { return (type_of(pc) == LANCE) || (((pc+1) & 6)==6); }
 
 // Pieceの整合性の検査。assert用。
-constexpr bool is_ok(Piece pc) { return NO_PIECE <= pc && pc < PIECE_NB; }
+// Pieceはuintなので "NO_PIECE <= pc"は意味をなさない比較なのでコメントアウトしてある。(コンパイラの警告がでる)
+constexpr bool is_ok(Piece pc) { return /* NO_PIECE <= pc && */ pc < PIECE_NB; }
 
 // Pieceを綺麗に出力する(USI形式ではない) 先手の駒は大文字、後手の駒は小文字、成り駒は先頭に+がつく。盤面表示に使う。
 // "PRETTY_JP"をdefineしていれば、日本語文字での表示になる。
@@ -692,6 +707,17 @@ constexpr Move make_move_drop(PieceType pt, Square to , Color us ) { return (Mov
 // 大抵、悪影響しかない。
 // また、reverse_move()を用いるならば、ifの条件式に " && !is_drop(move)"が要ると思う。
 static Move16 reverse_move(Move m) { return make_move16(to_sq(m), from_sq(m)); }
+
+// 指し手を反転させる(盤面を180°回転させた指し手にする)
+// 駒打ちもちゃんと考慮する。mがMOVE_NONEでも良い。(MOVE_NONEが返る)
+static Move16 flip_move(Move16 m) {
+
+	return 
+		is_drop   (m)  ? make_move_drop16   (move_dropped_piece(m), Flip(to_sq(m))):
+        is_promote(m)  ? make_move_promote16(Flip(from_sq(m))     , Flip(to_sq(m))):
+					     make_move16        (Flip(from_sq(m))     , Flip(to_sq(m)));
+}
+
 
 // 指し手がおかしくないかをテストする
 // ただし、盤面のことは考慮していない。MOVE_NULLとMOVE_NONEであるとfalseが返る。
@@ -883,13 +909,21 @@ enum MOVE_GEN_TYPE
 	CAPTURES_PRO_PLUS,      // CAPTURES + 価値のかなりあると思われる成り(歩だけ)
 	NON_CAPTURES_PRO_MINUS, // NON_CAPTURES - 価値のかなりあると思われる成り(歩だけ)
 
+	CAPTURES_PRO_PLUS_ALL,      // CAPTURES_PRO_PLUS + 歩の不成、大駒の不成で駒を取る手も含む
+	NON_CAPTURES_PRO_MINUS_ALL, // NON_CAPTURES_PRO_MINUS + 大駒の不成で駒を取らない手も含む
+	// note : 歩の不成で駒を取らない指し手は後者に含まれるべきだが、指し手生成の実装が難しくなるので前者に含めることにした。
+	//        オーダリング(movepicker)でなんとかするだろうからそこまで悪くはならないだろうし、普段は
+	//		  GenerateAllLegalMovesがオンにして動かさないから良しとする。
+
 	// BonanzaではCAPTURESに銀以外の成りを含めていたが、Aperyでは歩の成り以外は含めない。
 	// あまり変な成りまで入れるとオーダリングを阻害する。
 	// 本ソースコードでは、NON_CAPTURESとCAPTURESは使わず、CAPTURES_PRO_PLUSとNON_CAPTURES_PRO_MINUSを使う。
 
 	// note : NON_CAPTURESとCAPTURESとの生成される指し手の集合は被覆していない。
+	// note : CAPTURES_PRO_PLUSとNON_CAPTURES_PRO_MINUSとの生成される指し手の集合も被覆していない。
+	// note : CAPTURES_PRO_PLUS_ALLとNON_CAPTURES_PRO_MINUS_ALLとの生成される指し手の集合も被覆していない。
 	// →　被覆させないことで、二段階に指し手生成を分解することが出来る。
-	
+
 	EVASIONS,              // 王手の回避(指し手生成元で王手されている局面であることがわかっているときはこちらを呼び出す)
 	EVASIONS_ALL,          // EVASIONS + 歩の不成なども含む。
 

@@ -33,11 +33,24 @@ namespace USI {
 	// 前回のOptions["EvalDir"]
 	std::string last_eval_dir;
 
+#if defined(__EMSCRIPTEN__) && defined(EVAL_NNUE)
+	// WASM NNUE
+	// 前回のOptions["EvalFile"]
+	std::string last_eval_file;
+#endif
+
 	// optionのdefault値を設定する。
 	void init(OptionsMap& o)
 	{
+#if !defined(__EMSCRIPTEN__)
 		// Hash上限。32bitモードなら2GB、64bitモードなら33TB
 		constexpr int MaxHashMB = Is64Bit ? 33554432 : 2048;
+#else
+		// yaneuraou.wasm
+		// メモリの調整
+		// stockfish.wasmの数値を基本的に使用している
+		constexpr int MaxHashMB = 2048;
+#endif
 
 		// 並列探索するときのスレッド数
 		// CPUの搭載コア数をデフォルトとすべきかも知れないが余計なお世話のような気もするのでしていない。
@@ -51,12 +64,19 @@ namespace USI {
 		// そもそもで言うとsetoptionに対してそんなに時間のかかることをするとGUI側がtimeoutになる懸念もある。
 		// Stockfishもこうすべきだと思う。
 
+#if !defined(__EMSCRIPTEN__)
 		o["Threads"] << Option(4, 1, 512, [](const Option& o) { /* Threads.set(o); */ });
+#else
+		// yaneuraou.wasm
+		// スレッド数などの調整
+		// stockfish.wasmの数値を基本的に使用している
+		o["Threads"] << Option(1, 1, 32, [](const Option& o) { /* Threads.set(o); */ });
+#endif
 #endif
 
 #if !defined(TANUKI_MATE_ENGINE) && !defined(YANEURAOU_MATE_ENGINE)
 		// 置換表のサイズ。[MB]で指定。
-		o["USI_Hash"] << Option(16, 1, MaxHashMB, [](const Option& o) { /* TT.resize(o); */ });
+		o["USI_Hash"] << Option(1024, 1, MaxHashMB, [](const Option& o) { /* TT.resize(o); */ });
 
 #if defined(USE_EVAL_HASH)
 		// 評価値用のcacheサイズ。[MB]で指定。
@@ -108,16 +128,19 @@ namespace USI {
 		o["MaxMovesToDraw"] << Option(0, 0, 100000);
 
 		// 探索深さ制限。0なら無制限。
-		o["DepthLimit"] << Option(0, 0, INT_MAX);
+		o["DepthLimit"] << Option(0, 0, int_max);
 
 		// 探索ノード制限。0なら無制限。
-		o["NodesLimit"] << Option(0, 0, INT64_MAX);
+		o["NodesLimit"] << Option(0, 0, int64_max);
 
 		// 評価関数フォルダ。これを変更したとき、評価関数を次のisreadyタイミングで読み直す必要がある。
 #if defined(EVAL_EMBEDDING)
 		const char* default_eval_dir = "<internal>";
-#else
+#elif !defined(__EMSCRIPTEN__)
 		const char* default_eval_dir = "eval";
+#else
+		// WASM
+		const char* default_eval_dir = ".";
 #endif
 		last_eval_dir = default_eval_dir;
 		o["EvalDir"] << Option(default_eval_dir, [](const USI::Option& o) {
@@ -128,11 +151,24 @@ namespace USI {
 				load_eval_finished = false;
 			}
 		});
+#if defined(__EMSCRIPTEN__) && defined(EVAL_NNUE)
+		// WASM NNUE
+		const char* default_eval_file = "nn.bin";
+		last_eval_file = default_eval_file;
+		o["EvalFile"] << Option(default_eval_file, [](const USI::Option& o) {
+			if (last_eval_file != string(o))
+			{
+				// 評価関数ファイル名の変更に際して、評価関数ファイルの読み込みフラグをクリアする。
+				last_eval_file = string(o);
+				load_eval_finished = false;
+			}
+		});
+#endif
 
 #else
 
 		// TANUKI_MATE_ENGINEのとき
-		o["USI_Hash"] << Option(4096, 1, MaxHashMB);
+		o["USI_Hash"] << Option(std::min(4096, MaxHashMB), 1, MaxHashMB);
 
 #endif // !defined(TANUKI_MATE_ENGINE) && !defined(YANEURAOU_MATE_ENGINE)
 

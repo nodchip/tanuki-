@@ -123,10 +123,15 @@ public:
 
 	// rootDepth      : 反復深化の深さ
 	//					Lazy SMPなのでスレッドごとにこの変数を保有している。
-	// 
+	//
 	// completedDepth : このスレッドに関して、終了した反復深化の深さ
 	//
 	Depth rootDepth, completedDepth;
+
+#if defined(__EMSCRIPTEN__)
+	// yaneuraou.wasm
+	std::atomic_bool threadStarted;
+#endif
 
 	// aspiration searchのrootでの beta - alpha
 	Value rootDelta;
@@ -166,9 +171,8 @@ public:
 	// 学習用の実行ファイルでは、スレッドごとに置換表を持ちたい。
 	TranspositionTable tt;
 #endif
-
 };
-  
+
 
 // 探索時のmainスレッド(これがmasterであり、これ以外はslaveとみなす)
 struct MainThread: public Thread
@@ -234,6 +238,10 @@ struct MainThread: public Thread
 	std::string last_go_cmd_string;
 	// Stochastic Ponderのために2手前に戻してしまっているかのフラグ
 	bool position_is_dirty = false;
+
+	// goコマンドの"wait_stop"フラグと関連して、↓と出力したかのフラグ。
+	// "info string time to return bestmove."
+	bool time_to_return_bestmove;
 };
 
 
@@ -284,7 +292,7 @@ struct ThreadPool: public std::vector<Thread*>
 	// main thread以外の探索スレッドがすべて終了しているか。
 	// すべて終了していればtrueが返る。
 	bool search_finished() const;
-	
+
 private:
 
 	// 現局面までのStateInfoのlist

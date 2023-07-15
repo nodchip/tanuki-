@@ -128,7 +128,7 @@ void USI::extra_option(USI::OptionsMap & o)
 #endif
 
 	// 検討モード用のPVを出力するモード
-	o["ConsiderationMode"] << Option(false);
+	o["ConsiderationMode"] << Option(true);
 
 	// fail low/highのときにPVを出力するかどうか。
 	o["OutputFailLHPV"] << Option(true);
@@ -157,6 +157,17 @@ void init_fv_scale() {
 
 // "isready"に対して探索パラメーターを動的にファイルから読み込んだりして初期化するための関数。
 void init_param();
+
+// "go"コマンドに"wait_stop"が指定されていて、かつ、いまbestmoveを返す準備ができたので
+// それをGUIに通知して、"stop"が送られてくるのを待つ。
+void output_time_to_return_bestmove()
+{
+	Threads.main()->time_to_return_bestmove = true;
+
+	// ここでPVを出力しておきたいが、rootでのalpha,betaが確定しないので出力できない。
+
+	sync_cout << "info string time to return bestmove." << sync_endl;
+}
 
 // -----------------------
 //   やねうら王2022探索部
@@ -421,6 +432,12 @@ void MainThread::search()
 	// root nodeにおける自分の手番
 	Color us = rootPos.side_to_move();
 
+	// --- 今回の思考時間の設定。
+	// これは、ponderhitした時にponderhitにパラメーターが付随していれば
+	// 再計算するする必要性があるので、いずれにせよ呼び出しておく必要がある。
+
+	Time.init(Limits, us, rootPos.game_ply());
+
 	// 今回、通常探索をしたかのフラグ(やねうら王独自拡張)
 	// このフラグがtrueなら(定跡にhitしたり1手詰めを発見したりしたので)探索をスキップした。
 	bool search_skipped = true;
@@ -462,7 +479,7 @@ void MainThread::search()
 	if (Limits.perft)
 	{
 		nodes = perft<true>(rootPos, Limits.perft);
-		sync_cout << "\nNodes searched: " << nodes << "\n" << sync_endl;
+		sync_cout << "\nNodes searched: " << nodes << ", time " << Time.elapsed() << "ms.\n" << sync_endl;
 		return;
 	}
 
@@ -547,10 +564,6 @@ void MainThread::search()
 	//    通常の思考処理
 	// ---------------------
 
-	// --- 今回の思考時間の設定。
-
-	Time.init(Limits, us, rootPos.game_ply());
-
 	// --- 置換表のTTEntryの世代を進める。
 
 	// main threadが開始されてからだと、slaveがすでに少し探索している。
@@ -630,6 +643,12 @@ SKIP_SEARCH:;
 		}
 	};
 
+	// ここで思考は完了したのでwait_stopの処理。
+	// まだ思考が完了したことを通知していないならば。
+
+	if (Limits.wait_stop && !Threads.main()->time_to_return_bestmove)
+		output_time_to_return_bestmove();
+
 	// 最大depth深さに到達したときに、ここまで実行が到達するが、
 	// まだThreads.stopが生じていない。しかし、ponder中や、go infiniteによる探索の場合、
 	// USI(UCI)プロトコルでは、"stop"や"ponderhit"コマンドをGUIから送られてくるまでbest moveを出力してはならない。
@@ -639,7 +658,7 @@ SKIP_SEARCH:;
 	// "go infinite"に対してはstopが送られてくるまで待つ。
 	// ちなみにStockfishのほう、ここのコードに長らく同期上のバグがあった。
 	// やねうら王のほうは、かなり早くからこの構造で書いていた。最近のStockfishではこの書き方に追随した。
-	while (!Threads.stop && (ponder || Limits.infinite))
+	while (!Threads.stop && (ponder || Limits.infinite || Limits.wait_stop))
 	{
 		//	こちらの思考は終わっているわけだから、ある程度細かく待っても問題ない。
 		// (思考のためには計算資源を使っていないので。)
@@ -3644,6 +3663,10 @@ void MainThread::check_time()
 	if (--callsCnt > 0)
 		return;
 
+	// "stop"待ちなので以降の判定不要。
+	if (Threads.main()->time_to_return_bestmove)
+		return ;
+
 	// Limits.nodesが指定されているときは、そのnodesの0.1%程度になるごとにチェック。
 	// さもなくばデフォルトの値を使う。
 	// このデフォルト値、ある程度小さくしておかないと、通信遅延分のマージンを削ったときに
@@ -3685,7 +3708,18 @@ void MainThread::check_time()
 		|| (Limits.movetime && elapsed >= Limits.movetime)
 		|| (Limits.nodes && Threads.nodes_searched() >= (uint64_t)Limits.nodes)
 		)
-		Threads.stop = true;
+	{
+		if (Limits.wait_stop)
+		{
+			// stopが来るまで待つので、Threads.stopは変化させない。
+			// 代わりに"info string time to return bestmove."と出力する。
+			output_time_to_return_bestmove();
+
+		} else {
+
+			Threads.stop = true;
+		}
+	}
 }
 
 // --- Stockfishの探索のコード、ここまで。
@@ -4004,11 +4038,16 @@ namespace Learner
 	// また引数で指定されたdepth == 0の時、qsearch、0未満の時、evaluateを呼び出すが、
 	// この時、rootMovesは得られない。
 	// 
+	// あと、multiPVで値を取り出したい時、
+	//   pos.this_thread()->rootMoves[N].value
+	// の値は、反復深化での今回のiterationでのupdateされていない場合、previous_scoreを用いないといけない。
+	// →　usi.cppの、読み筋の出力部のコードを読むこと。
+	// 
 	// 前提条件) pos.set_this_thread(Threads[thread_id])で探索スレッドが設定されていること。
 	// 　また、Threads.stopが来ると探索を中断してしまうので、そのときのPVは正しくない。
 	// 　search()から戻ったあと、Threads.stop == trueなら、その探索結果を用いてはならない。
 	// 　あと、呼び出し前は、Threads.stop == falseの状態で呼び出さないと、探索を中断して返ってしまうので注意。
-
+	//
 	ValueAndPV search(Position& pos, int depth_, size_t multiPV /* = 1 */, u64 nodesLimit /* = 0 */)
 	{
 		std::vector<Move> pvs;

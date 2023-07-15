@@ -73,10 +73,11 @@ void TTEntry::save_(TTEntry::KEY_TYPE key_for_ttentry, Value v, bool pv , Bound 
 // 置換表のサイズを確保しなおす。
 void TranspositionTable::resize(size_t mbSize) {
 
-#if defined(TANUKI_MATE_ENGINE) || defined(YANEURAOU_MATE_ENGINE)
-	// MateEngineではこの置換表は用いないので確保しない。
+#if defined(TANUKI_MATE_ENGINE) || defined(YANEURAOU_MATE_ENGINE) || defined(YANEURAOU_ENGINE_DEEP)
+	// これらのエンジンでは、この置換表は用いないので確保しない。
 	return;
 #endif
+
 	// Optionのoverrideによってスレッド初期化前にハンドラが呼び出された。これは無視する。
 	if (Threads.size() == 0)
 		return;
@@ -133,11 +134,14 @@ void TranspositionTable::clear()
 
 	auto size = clusterCount * sizeof(Cluster);
 
-#if !defined(EVAL_LEARN)
+#if !defined(EVAL_LEARN) && !defined(__EMSCRIPTEN__)
 	// 進捗を表示しながら並列化してゼロクリア
 	// Stockfishのここにあったコードは、独自の置換表を実装した時にも使いたいため、tt.cppに移動させた。
 	Tools::memclear("USI_Hash" , table, size);
 #else
+	// yaneuraou.wasm
+	// pthread_joinによってブラウザのメインスレッドがブロックされるため、単一スレッドでメモリをクリアする処理に変更
+
 	// LEARN版のときは、
 	// 単一スレッドでメモリをクリアする。(他のスレッドは仕事をしているので..)
 	// 教師生成を行う時は、対局の最初にスレッドごとのTTに対して、
@@ -196,10 +200,19 @@ TTEntry* TranspositionTable::probe(const Key key_for_index, const TTEntry::KEY_T
 	TTEntry* replace = tte;
 	for (int i = 1; i < ClusterSize; ++i)
 
-		// ・深い探索の結果であるものほど価値があるので残しておきたい。depth8 × 重み1.0
-		// ・generationがいまの探索generationに近いものほど価値があるので残しておきたい。geration(4ずつ増える)×重み 2.0
+		// ・深い探索の結果であるものほど価値があるので残しておきたい。すなわち、depth8 が高いほど良い探索結果だから残しておきたい。
+		// ・generationがいまの探索generationに近いものほど価値があるので残しておきたい。depth8 - generation のようにする。
+		// 　　gerationは、次の局面が来るごとに8ずつ増える。普通は2手先の局面が来る。
+		//     (新規対局時にはTTを丸ごとクリアしているから新規対局時のことは考えなくて良い)
+		// 　　すなわち2手前の局面の探索結果については、depth8 - 8 の深さで探索した結果であるとみなす。(depth8 - 2でもいいような気は少しするが、
+		// 　　この情報が現局面から到達可能な局面の情報とは限らないので、少し大きめのペナルティを加えているのだと思う。)
+		//
 		// 以上に基いてスコアリングする。
 		// 以上の合計が一番小さいTTEntryを使う。
+		//
+		// 詳しくは、以下のブログ記事に書いた。
+		//		https://yaneuraou.yaneu.com/2023/06/09/replacement-strategy-in-transposition-table/
+		// 
 
       // Due to our packed storage format for generation and its cyclic
       // nature we add GENERATION_CYCLE (256 is the modulus, plus what
@@ -270,7 +283,7 @@ int TranspositionTable::hashfull() const
 
 	// Stockfish11では、1000 Cluster(3000 TTEntry)についてサンプリングするように変更されたが、
 	// 計測時間がもったいないので、古いコードのままにしておく。
-	
+
 	int cnt = 0;
 	for (int i = 0; i < 1000 / ClusterSize; ++i)
 		for (int j = 0; j < ClusterSize; ++j)
@@ -297,7 +310,7 @@ void TranspositionTable::init_tt_per_thread()
 	// 1スレッドあたりのクラスター数(端数切捨て)
 	// clusterCountは2の倍数でないと駄目なので、端数を切り捨てるためにLSBを0にする。
 	size_t clusterCountPerThread = (clusterCount / thread_size) & ~(size_t)1;
-	 
+
 	ASSERT_LV3((clusterCountPerThread & 1) == 0);
 
 	// これを、自分が確保したglobalな置換表用メモリから切り分けて割当てる。

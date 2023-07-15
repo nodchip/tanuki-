@@ -349,6 +349,12 @@ const std::string config_info()
 		false;
 #endif
 
+	bool use_yo_cluster =
+#if defined(USE_YO_CLUSTER)
+		true;
+#else
+		false;
+#endif
 
 	config += o2("PRETTY_JP"                , pretty_jp          );
 	config += o2("FOR_TOURNAMENT"           , for_tournament     );
@@ -359,6 +365,7 @@ const std::string config_info()
 	config += o2("USE_GLOBAL_OPTIONS"       , global_options     );
 	config += o2("EVAL_LEARN"               , eval_learn         );
 	config += o2("USE_MATE_DFPN"            , use_mate_dfpn      );
+	config += o2("USE_YO_CLUSTER"           , use_yo_cluster     );
 	
 	// コンパイラ情報もついでに出力する。
 	//config += "\n\n" + compiler_info();
@@ -467,6 +474,8 @@ void* std_aligned_alloc(size_t alignment, size_t size) {
 	return posix_memalign(&mem, alignment, size) ? nullptr : mem;
 #elif defined(_WIN32)
 	return _mm_malloc(size, alignment);
+#elif defined(__EMSCRIPTEN__)
+	return aligned_alloc(alignment, size);
 #else
 	return std::aligned_alloc(alignment, size);
 #endif
@@ -1050,8 +1059,14 @@ namespace Tools
 	}
 
 	// size_ : 全件でいくらあるかを設定する。
-	ProgressBar::ProgressBar(u64 size_) : size(size_)
+	ProgressBar::ProgressBar(u64 size_)
 	{
+		reset(size_);
+	}
+
+	void ProgressBar::reset(u64 size_)
+	{
+		size = size_;
 		if (enable_)
 			cout << "0% [";
 		dots = 0;
@@ -1151,6 +1166,22 @@ namespace SystemIO
 			lines.emplace_back(line);
 
 		return Tools::Result::Ok();
+	}
+
+	// ファイルにすべての行を書き出す。
+	Tools::Result WriteAllLines(const std::string& filename, std::vector<std::string>& lines)
+	{
+		TextWriter writer;
+		if (writer.Open(filename).is_not_ok())
+			return Tools::ResultCode::FileOpenError;
+
+		for(auto& line : lines)
+		{
+			if (writer.WriteLine(line).is_not_ok())
+			return Tools::ResultCode::FileWriteError;
+		}
+
+		return Tools::ResultCode::Ok;
 	}
 
 	Tools::Result ReadFileToMemory(const std::string& filename, std::function<void* (size_t)> callback_func)
@@ -1908,13 +1939,33 @@ namespace Parser
 
 		// assert(token.empty());
 
+		// 解析開始位置から連続するスペースは読み飛ばす。
 		while (!raw_eol())
 		{
+			char c = line[pos];
+			if (c != ' ')
+				break;
+			pos++;
+		}
+
+		while (!raw_eol())
+		{
+			// スペースに遭遇するまで。
 			char c = line[pos++];
 			if (c == ' ')
 				break;
 			token += c;
 		}
+
+		// 次の文字先頭まで解析位置を進めておく。
+		while (!raw_eol())
+		{
+			char c = line[pos];
+			if (c != ' ')
+				break;
+			pos++;
+		}
+
 		return token;
 	}
 
@@ -1924,6 +1975,15 @@ namespace Parser
 		auto result = (!token.empty() ? token : peek_text());
 		token.clear();
 		return result;
+	}
+
+	// 現在のcursor位置から残りの文字列を取得する。
+	// peek_text()した分があるなら、それも先頭にくっつけて返す。
+	std::string LineScanner::get_rest()
+	{
+		return token.empty()
+			? line.substr(pos)
+			: token + " " + line.substr(pos);
 	}
 
 	// 次の文字列を数値化して返す。数値化できない時は引数の値がそのまま返る。

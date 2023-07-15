@@ -28,10 +28,6 @@ namespace Eval::dlshogi
 		Ort::SessionOptions session_options;
 		session_options.DisableMemPattern();
 		session_options.SetExecutionMode(ORT_SEQUENTIAL);
-#if defined(ORT_MKL)
-		session_options.SetInterOpNumThreads((int)Options["InterOpNumThreads"]);
-		session_options.SetIntraOpNumThreads((int)Options["IntraOpNumThreads"]);
-#endif
 #if defined(ORT_DML)
 		Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_DML(session_options, gpu_id));
 #elif defined(ORT_TRT)
@@ -70,9 +66,12 @@ namespace Eval::dlshogi
 #else
 	    Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CPU(session_options, true));
 #endif
+#if defined(_WIN32)
 		// Windows環境ではwstringでファイル名を渡す必要があるようだが？
 		std::wstring onnx_filename = MultiByteToWideChar(model_filename);
-		//std::string onnx_filename(filename);
+#else
+		std::string onnx_filename(model_filename);
+#endif
 
 		session.reset(new Ort::Session(env, onnx_filename.c_str(), session_options));
 
@@ -111,13 +110,13 @@ namespace Eval::dlshogi
 #endif
 		return device_count;
 #else
-		// ORT_CPU, ORT_MKL ではデバイス数を1とする
+		// ORT_CPU ではデバイス数を1とする
 		return 1;
 #endif
 	}
 
 	// NNによる推論
-	void NNOnnxRuntime::forward(const int batch_size, NN_Input1* x1, NN_Input2* x2, NN_Output_Policy* y1, NN_Output_Value* y2)
+	void NNOnnxRuntime::forward(const int batch_size, PType* p1, PType* p2, NN_Input1* x1, NN_Input2* x2, NN_Output_Policy* y1, NN_Output_Value* y2)
 	{
 		// input
 

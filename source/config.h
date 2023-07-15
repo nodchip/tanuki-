@@ -8,7 +8,7 @@
 
 // 思考エンジンのバージョンとしてUSIプロトコルの"usi"コマンドに応答するときの文字列。
 // ただし、この値を数値として使用することがあるので数値化できる文字列にしておく必要がある。
-#define ENGINE_VERSION "7.10"
+#define ENGINE_VERSION "7.63"
 
 // --------------------
 //  思考エンジンの種類
@@ -203,18 +203,14 @@
 // 速度低下はほぼないはず。
 //#define TT_CLUSTER_SIZE 3
 
-
 // ---------------------
 //  機械学習関連の設定
 // ---------------------
 
 // 評価関数を教師局面から学習させるときに使うときのモード
+// "learn"コマンドが使えるようになる。(教師局面からの評価関数パラメーターの学習ができるようになる。)
+// "gensfen"コマンドも使えるようになる。(教師局面の生成もできるようになる。)
 //#define EVAL_LEARN
-
-
-// 教師生成用の特殊コマンド"gensfen2019"を使えるようにするモード。
-// 教師生成用の探索パラメーターも別途用意するといいかも。
-//#define GENSFEN2019
 
 
 // sfenを256bitにpackする機能、unpackする機能を有効にする。
@@ -286,6 +282,9 @@
 // ふかうら王でTensorRTを使う時はこちら。
 //#define TENSOR_RT
 
+// ふかうら王でCore MLを使う時はこちら。
+// ※　Mac専用。
+//#define COREML
 
 // ---------------------
 // 探索パラメーターの自動調整用
@@ -299,6 +298,13 @@
 // "source/engine/yaneuraou-engine/yaneuraou-param.h"をそこに配置すること。
 //#define TUNING_SEARCH_PARAMETERS
 
+
+// ---------------------
+//  YO-Cluster : YaneuraOu The Cluster
+// ---------------------
+
+// YO-Clusterを使う時は、これをdefineする。
+//#define USE_YO_CLUSTER
 
 // ---------------------
 // デバッグに関する設定
@@ -681,6 +687,13 @@ constexpr bool pretty_jp = false;
 #endif
 
 
+// --- gensfen
+
+// LEARN版では"gensfen"コマンドが使えるようになる。
+#if defined(EVAL_LEARN)
+#define GENSFEN2019
+#endif
+
 // --- lastMove
 
 // KIF形式に変換するときにPositionクラスにその局面へ至る直前の指し手が保存されていないと
@@ -807,8 +820,6 @@ constexpr bool pretty_jp = false;
 			#define EVAL_TYPE_NAME "ORT_CPU-" << EVAL_DEEP
 		#elif defined(ORT_DML)
 			#define EVAL_TYPE_NAME "ORT_DML-" << EVAL_DEEP
-		#elif defined(ORT_MKL)
-			#define EVAL_TYPE_NAME "ORT_MKL-" << EVAL_DEEP
 		#elif defined(ORT_TRT)
 			#define EVAL_TYPE_NAME "ORT_TRT-" << EVAL_DEEP
 		#else
@@ -817,6 +828,8 @@ constexpr bool pretty_jp = false;
 	#elif defined(TENSOR_RT)
 		#include "NvInferRuntimeCommon.h"
 		#define EVAL_TYPE_NAME "TensorRT" << std::to_string(getInferLibVersion()) << "-" << EVAL_DEEP
+	#elif defined(COREML)
+		#define EVAL_TYPE_NAME "CoreML-" << EVAL_DEEP
 	#endif
 
 #else

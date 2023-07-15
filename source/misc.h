@@ -388,9 +388,10 @@ private:
 #endif
 
 private:
-	// 探索開始時間
+	// 探索開始時刻。
 	TimePoint startTime;
 
+	// reset()かreset_for_ponderhit()が呼び出された時刻。
 	TimePoint startTimeFromPonderhit;
 };
 
@@ -470,8 +471,13 @@ namespace Tools
 	class ProgressBar
 	{
 	public:
+		ProgressBar(){}
+
 		// size_ : 全件でいくらあるかを設定する。
 		ProgressBar(u64 size_);
+
+		// また0%に戻す。このインスタンスを再利用する時に用いる。
+		void reset(u64 size_);
 
 		// 進捗を出力する。
 		// current : 現在までに完了している件数
@@ -575,6 +581,9 @@ namespace SystemIO
 	// 引数で渡されるtrimはtrueを渡すと末尾のスペース、タブがトリムされる。
 	// 先頭のUTF-8のBOM(EF BB BF)は無視する。
 	extern Tools::Result ReadAllLines(const std::string& filename, std::vector<std::string>& lines, bool trim = false);
+
+	// ファイルにすべての行を書き出す。
+	extern Tools::Result WriteAllLines(const std::string& filename, std::vector<std::string>& lines);
 
 
 	// msys2、Windows Subsystem for Linuxなどのgcc/clangでコンパイルした場合、
@@ -899,6 +908,10 @@ namespace Parser
 
 		// 次のtokenを返す。
 		std::string get_text();
+
+		// 現在のcursor位置から残りの文字列を取得する。
+		// peek_text()した分があるなら、それも先頭にくっつけて返す。
+		std::string get_rest();
 
 		// 次の文字列を数値化して返す。
 		// 空の文字列である場合は引数の値がそのまま返る。

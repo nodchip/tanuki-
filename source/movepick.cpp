@@ -363,9 +363,7 @@ top:
 	case QCAPTURE_INIT:
 		cur = endBadCaptures = moves;
 
-		//endMoves = Search::Limits.generate_all_legal_moves ? generateMoves<CAPTURES_PRO_PLUS_ALL>(pos, cur) : generateMoves<CAPTURES_PRO_PLUS>(pos, cur);
-		// → Probcutとかでしか使わないから、CAPTURES_PRO_PLUS_ALLは廃止する。
-		endMoves = generateMoves<CAPTURES_PRO_PLUS>(pos, cur);
+		endMoves = Search::Limits.generate_all_legal_moves ? generateMoves<CAPTURES_PRO_PLUS_ALL>(pos, cur) : generateMoves<CAPTURES_PRO_PLUS>(pos, cur);
 
 		// 駒を捕獲する指し手に対してオーダリングのためのスコアをつける
 		score<CAPTURES>();
@@ -441,8 +439,7 @@ top:
 			cur = (ExtMove*)Math::align((size_t)cur, 32);
 #endif
 
-			//endMoves = Search::Limits.generate_all_legal_moves ? generateMoves<NON_CAPTURES_PRO_MINUS_ALL>(pos, cur) : generateMoves<NON_CAPTURES_PRO_MINUS>(pos, cur);
-			endMoves = generateMoves<NON_CAPTURES_PRO_MINUS>(pos, cur);
+			endMoves = Search::Limits.generate_all_legal_moves ? generateMoves<NON_CAPTURES_PRO_MINUS_ALL>(pos, cur) : generateMoves<NON_CAPTURES_PRO_MINUS>(pos, cur);
 
 			// 駒を捕獲しない指し手に対してオーダリングのためのスコアをつける
 			score<QUIETS>();
@@ -538,7 +535,7 @@ top:
 			return *(cur - 1);
 
 		// 指し手がなくて、depthが0(DEPTH_QS_CHECKS)より深いなら、これで終了
-		// depthが0のときは特別に、王手になる指し手も試す。ただし、他にcaptureの指し手がないなら、王手も試さない。
+		// depthが0のときは特別に、王手になる指し手も試す。
 		if (depth != DEPTH_QS_CHECKS)
 			return MOVE_NONE;
 

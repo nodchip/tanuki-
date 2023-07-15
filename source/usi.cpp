@@ -3,9 +3,17 @@
 #include "position.h"
 #include "search.h"
 #include "thread.h"
-#include "tt.h"
 #include "misc.h"
 #include "testcmd/unit_test.h"
+
+#if !defined(YANEURAOU_ENGINE_DEEP)
+#include "tt.h"
+#endif
+
+#if defined(__EMSCRIPTEN__)
+// yaneuraou.wasm
+#include <emscripten.h>
+#endif
 
 #include <filesystem>
 #include <queue>
@@ -136,12 +144,14 @@ void gameover_handler(const string& cmd);
 //     やねうら王 The Cluster
 // ----------------------------------
 
-#if defined(YANEURAOU_ENGINE_DEEP)
+#if defined(USE_YO_CLUSTER)
+#if defined(YANEURAOU_ENGINE_DEEP) || defined(YANEURAOU_ENGINE_NNUE)
 namespace YaneuraouTheCluster
 {
 	// cluster時のUSIメッセージの処理ループ
 	void cluster_usi_loop(Position& pos, std::istringstream& is);
 }
+#endif
 #endif
 
 namespace USI
@@ -153,9 +163,21 @@ namespace USI
 	// depth : iteration深さ
 	std::string pv(const Position& pos, Depth depth, Value alpha, Value beta)
 	{
-		std::stringstream ss;
-		TimePoint elapsed = Time.elapsed() + 1;
+#if defined(YANEURAOU_ENGINE_DEEP)
+		// ふかうら王では、この関数呼び出さないからまるっと要らない。
 
+		return string();
+#else
+		std::stringstream ss;
+
+		TimePoint elapsed = Time.elapsed() + 1;
+#if defined(__EMSCRIPTEN__)
+		// yaneuraou.wasm
+		// Time.elapsed()が-1を返すことがある
+		// https://github.com/lichess-org/stockfish.wasm/issues/5
+		// https://github.com/lichess-org/stockfish.wasm/commit/4f591186650ab9729705dc01dec1b2d099cd5e29
+		elapsed = std::max(elapsed, TimePoint(1));
+#endif
 		const auto& rootMoves = pos.this_thread()->rootMoves;
 		size_t pvIdx = pos.this_thread()->pvIdx;
 		size_t multiPV = std::min((size_t)Options["MultiPV"], rootMoves.size());
@@ -193,7 +215,7 @@ namespace USI
 				<< " seldepth " << rootMoves[i].selDepth
 #if defined(USE_PIECE_VALUE)
 				<< " score "    << USI::value(v)
-#endif				
+#endif
 				;
 
 			// これが現在探索中の指し手であるなら、それがlowerboundかupperboundかは表示させる
@@ -230,14 +252,14 @@ namespace USI
 				auto pos_ = const_cast<Position*>(&pos);
 				Move moves[MAX_PLY + 1];
 				StateInfo si[MAX_PLY];
-				int ply = 0;
+				size_t ply = 0;
 
 				while ( ply < MAX_PLY )
 				{
 					// 千日手はそこで終了。ただし初手はPVを出力。
 					// 千日手がベストのとき、置換表を更新していないので
 					// 置換表上はMOVE_NONEがベストの指し手になっている可能性があるので早めに検出する。
-					auto rep = pos.is_repetition(ply);
+					auto rep = pos.is_repetition(int(ply));
 					if (rep != REPETITION_NONE && ply >= 1)
 					{
 						// 千日手でPVを打ち切るときはその旨を表示
@@ -247,10 +269,10 @@ namespace USI
 
 					Move m;
 
-					// MultiPVを考慮して初手は置換表からではなくrootMovesから取得
-					// rootMovesには宣言勝ちも含まれるので注意。
-					if (ply == 0)
-						m = rootMoves[i].pv[0];
+					// まず、rootMoves.pvを辿れるところまで辿る。
+					// rootMoves[i].pv[0]は宣言勝ちの指し手(MOVE_WIN)の可能性があるので注意。
+					if (ply < rootMoves[i].pv.size())
+						m = rootMoves[i].pv[ply];
 					else
 					{
 						// 次の手を置換表から拾う。
@@ -264,6 +286,10 @@ namespace USI
 							break;
 
 						m = pos.to_move(tte->move());
+
+						// leaf nodeはわりと高い確率でMOVE_NONE
+						if (m == MOVE_NONE)
+							break;
 
 						// 置換表にはpsudo_legalではない指し手が含まれるのでそれを弾く。
 						// 宣言勝ちでないならこれが合法手であるかのチェックが必要。
@@ -309,6 +335,7 @@ namespace USI
 		}
 
 		return ss.str();
+#endif // defined(YANEURAOU_ENGINE_DEEP)
 	}
 }
 
@@ -328,6 +355,9 @@ void is_ready(bool skipCorruptCheck)
 
 	USI::read_engine_options(Path::Combine(Options["EvalDir"], "eval_options.txt"));
 
+	// yaneuraou.wasm
+	// ブラウザのメインスレッドをブロックしないよう、Keep Alive処理をコメントアウト
+#if !defined(__EMSCRIPTEN__)
 	// --- Keep Alive的な処理 ---
 
 	// "isready"を受け取ったあと、"readyok"を返すまで5秒ごとに改行を送るように修正する。(keep alive的な処理)
@@ -360,7 +390,7 @@ void is_ready(bool skipCorruptCheck)
 			if (++count >= 50 /* 5秒 */)
 			{
 				count = 0;
-				sync_cout << sync_endl; // 改行を送信する。	
+				sync_cout << sync_endl; // 改行を送信する。
 
 				// 定跡の読み込み部などで"info string.."で途中経過を出力する場合、
 				// sync_cout ～ sync_endlを用いて送信しないと、この改行を送るタイミングとかち合うと
@@ -375,6 +405,7 @@ void is_ready(bool skipCorruptCheck)
 		Tools::sleep(100);
 
 	// --- Keep Alive的な処理ここまで ---
+#endif
 
 	// スレッドを先に生成しないとUSI_Hashで確保したメモリクリアの並列化が行われなくて困る。
 
@@ -432,7 +463,11 @@ void is_ready(bool skipCorruptCheck)
 	// isreadyに対してはreadyokを返すまで次のコマンドが来ないことは約束されているので
 	// このタイミングで各種変数の初期化もしておく。
 
+#if defined(YANEURAOU_ENGINE_DEEP)
+	// ふかうら王では置換表は用いない。
+#else
 	TT.resize(size_t(Options["USI_Hash"]));
+#endif
 
 	Search::clear();
 
@@ -583,6 +618,7 @@ void go_cmd(const Position& pos, istringstream& is , StateListPtr& states , bool
 	bool ponderMode = false;
 
 	auto main_thread = Threads.main();
+
 	if (!states)
 	{
 		// 前回から"position"コマンドを処理せずに再度goが呼び出された。
@@ -600,7 +636,7 @@ void go_cmd(const Position& pos, istringstream& is , StateListPtr& states , bool
 
 	// 終局(引き分け)になるまでの手数
 	// 引き分けになるまでの手数。(Options["MaxMovesToDraw"]として与えられる。エンジンによってはこのオプションを持たないこともある。)
-	// 0のときは制限なしだが、これをINT_MAXにすると残り手数を計算するときに桁があふれかねないので100000を設定。
+	// 0のときは制限なしだが、これをint_maxにすると残り手数を計算するときに桁があふれかねないので100000を設定。
 
 	int max_game_ply = 0;
 	if (Options.count("MaxMovesToDraw"))
@@ -617,7 +653,7 @@ void go_cmd(const Position& pos, istringstream& is , StateListPtr& states , bool
 
 	// エンジンオプションによる探索制限(0なら無制限)
 	// このあと、depthもしくはnodesが指定されていたら、その値で上書きされる。(この値は無視される)
-	
+
 	limits.depth = Options.count("DepthLimit") ? (int)Options["DepthLimit"] : 0;
 	limits.nodes = Options.count("NodesLimit") ? (u64)Options["NodesLimit"] : 0;
 
@@ -677,20 +713,6 @@ void go_cmd(const Position& pos, istringstream& is , StateListPtr& states , bool
 				limits.mate = stoi(token);
 		}
 
-#if defined(TANUKI_MATE_ENGINE)
-		// MateEngineのデバッグ用コマンド: 詰将棋の特定の変化に対する解析を効率的に行うことが出来る。
-		//	cf.https ://github.com/yaneurao/YaneuraOu/pull/115
-
-		else if (token == "matedebug") {
-			string token="";
-			Move16 m;
-			limits.pv_check.clear();
-			while (is >> token && (m = USI::to_move16(token)) != MOVE_NONE){
-				limits.pv_check.push_back(m);
-			}
-		}
-#endif
-
 		// パフォーマンステスト(Stockfishにある、合法手N手で到達できる局面を求めるやつ)
 		// このあとposition～goコマンドを使うとパフォーマンステストモードに突入し、ここで設定した手数で到達できる局面数を求める
 		else if (token == "perft")		is >> limits.perft;
@@ -714,14 +736,35 @@ void go_cmd(const Position& pos, istringstream& is , StateListPtr& states , bool
 				main_thread->position_is_dirty = true;
 			}
 		}
+
+		// --- やねうら王独自拡張
+
+		// "wait_stop"指定。
+		else if (token == "wait_stop")
+			limits.wait_stop = true;
+
+#if defined(TANUKI_MATE_ENGINE)
+		// MateEngineのデバッグ用コマンド: 詰将棋の特定の変化に対する解析を効率的に行うことが出来る。
+		//	cf.https ://github.com/yaneurao/YaneuraOu/pull/115
+
+		else if (token == "matedebug") {
+			string token="";
+			Move16 m;
+			limits.pv_check.clear();
+			while (is >> token && (m = USI::to_move16(token)) != MOVE_NONE){
+				limits.pv_check.push_back(m);
+			}
+		}
+#endif
+
 	}
 
 	// goコマンド、デバッグ時に使うが、そのときに"go btime XXX wtime XXX byoyomi XXX"と毎回入力するのが面倒なので
 	// デフォルトで1秒読み状態で呼び出されて欲しい。
-	if (limits.byoyomi[BLACK] == 0 && limits.inc[BLACK] == 0 && limits.time[BLACK] == 0 && limits.rtime == 0)
-		limits.byoyomi[BLACK] = limits.byoyomi[WHITE] = 1000;
+	//if (limits.byoyomi[BLACK] == 0 && limits.inc[BLACK] == 0 && limits.time[BLACK] == 0 && limits.rtime == 0)
+	//	limits.byoyomi[BLACK] = limits.byoyomi[WHITE] = 1000;
 
-	limits.silent = Options["ForceSilent"];
+	// →　これやると、パラメーターなしで"go ponder"されて"ponderhit"したときに、byoyomi 1秒と錯覚する。
 
 	Threads.start_thinking(pos, states , limits , ponderMode);
 }
@@ -755,11 +798,6 @@ bool parse_ponderhit(istringstream& is)
 		else if (token == "byoyomi") {
 			TimePoint t = 0;
 			is >> t;
-
-			// USIプロトコルで送られてきた秒読み時間より少なめに思考する設定
-			// ※　通信ラグがあるときに、ここで少なめに思考しないとタイムアップになる可能性があるので。
-
-			// t = std::max(t - Options["ByoyomiMinus"], Time::point(0));
 
 			// USIプロトコルでは、これが先手後手同じ値だと解釈する。
 			limits.byoyomi[BLACK] = limits.byoyomi[WHITE] = t;
@@ -811,22 +849,11 @@ void search_cmd(Position& pos, istringstream& is)
 // --------------------
 
 // USI応答部本体
-void USI::loop(int argc, char* argv[])
+void usi_cmdexec(Position& pos, StateListPtr& states, string& cmd)
 {
-	// 探索開始局面(root)を格納するPositionクラス
-	// "position"コマンドで設定された局面が格納されている。
-	Position pos;
+	string token;
 
-	string cmd, token;
-
-	// 局面を遡るためのStateInfoのlist。
-	StateListPtr states(new StateList(1));
-
-	std_input.parse_args(argc,argv);
-
-	do
 	{
-		cmd = std_input.input();
 		istringstream is(cmd);
 
 		token.clear(); // getlineが空を返したときのためのクリア
@@ -913,10 +940,10 @@ void USI::loop(int argc, char* argv[])
 		// そもそもで言うと、"usinewgame"に対してはエンジン側は何ら応答を返さないので、
 		// GUI側は、エンジン側が処理中なのかどうかが判断できない。
 		// なのでここで長い時間のかかる処理はすべきではないと思うのだが。
-		else if (token == "usinewgame") continue;
+		else if (token == "usinewgame") return;
 
 		// 思考エンジンの準備が出来たかの確認
-		else if (token == "isready") is_ready_cmd(pos,states);
+		else if (token == "isready") is_ready_cmd(pos, states);
 
 		// 以下、デバッグのためのカスタムコマンド(非USIコマンド)
 		// 探索中には使わないようにすべし。
@@ -994,7 +1021,7 @@ void USI::loop(int argc, char* argv[])
 		else if (token == "mated") cout << pos.is_mated() << endl;
 
 		// この局面のhash keyの値を出力
-		else if (token == "key") cout << hex << pos.state()->key() << dec << endl;
+		else if (token == "key") cout << hex << pos.state()->hash_key() << dec << endl;
 
 		// 探索の終了を待機するコマンド("stop"は送らずに。goコマンドの終了を待機できて便利。)
 		else if (token == "wait") Threads.main()->wait_for_search_finished();
@@ -1006,7 +1033,7 @@ void USI::loop(int argc, char* argv[])
 		// この局面での1手詰め判定
 		else if (token == "mate1") cout << pos.mate1ply() << endl;
 #endif
-		
+
 #if defined (ENABLE_TEST_CMD)
 		// テストコマンド
 		else if (token == "test") Test::test_cmd(pos, is);
@@ -1031,7 +1058,8 @@ void USI::loop(int argc, char* argv[])
 
 #endif
 
-#if defined(YANEURAOU_ENGINE_DEEP)
+#if defined(USE_YO_CLUSTER)
+#if defined(YANEURAOU_ENGINE_DEEP) || defined(YANEURAOU_ENGINE_NNUE)
 		else if (token == "cluster")
 			// cluster時のUSIメッセージの処理ループ
 			YaneuraouTheCluster::cluster_usi_loop(pos, is);
@@ -1223,7 +1251,40 @@ void USI::loop(int argc, char* argv[])
 			OPTION_FOUND:;
 			}
 		}
+	}
+}
 
+// USI応答部ループ
+void USI::loop(int argc, char* argv[])
+{
+	// 探索開始局面(root)を格納するPositionクラス
+	// "position"コマンドで設定された局面が格納されている。
+	Position pos;
+
+	string cmd, token;
+
+	// 局面を遡るためのStateInfoのlist。
+	StateListPtr states(new StateList(1));
+
+	std_input.parse_args(argc,argv);
+
+	// このファイルがあれば、この内容を実行してやる。
+	const string startup = "startup.txt";
+	vector<string> lines;
+	if (SystemIO::ReadAllLines(startup, lines).is_ok())
+	{
+		for (auto& line : lines)
+			std_input.push(line);
+	}
+
+	do
+	{
+		cmd = std_input.input();
+		usi_cmdexec(pos, states, cmd);
+
+		// quit検知
+		istringstream is(cmd);
+		is >> skipws >> token;
 	} while (token != "quit");
 
 	// quitが来た時点ではまだ探索中かも知れないのでmain threadの停止を待つ。
@@ -1439,7 +1500,7 @@ void USI::UnitTest(Test::UnitTester& tester)
 				Move m = USI::to_move(pos,token);
 				if (m == MOVE_NONE)
 					fail = true;
-				
+
 				pos.do_move(m, si[pos.game_ply()]);
 			}
 
@@ -1449,3 +1510,27 @@ void USI::UnitTest(Test::UnitTester& tester)
 
 	}
 }
+
+#if defined(__EMSCRIPTEN__)
+// --------------------
+// EMSCRIPTEN support
+// --------------------
+static StateListPtr states(new StateList(1));
+
+// USI応答部 emscriptenインターフェース
+EMSCRIPTEN_KEEPALIVE extern "C" int usi_command(const char *c_cmd) {
+	std::string cmd(c_cmd);
+
+	static Position pos;
+	string token;
+
+	for (Thread* th : Threads) {
+		if (!th->threadStarted)
+			return 1;
+	}
+
+	usi_cmdexec(pos, states, cmd);
+
+	return 0;
+}
+#endif

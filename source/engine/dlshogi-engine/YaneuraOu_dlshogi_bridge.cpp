@@ -38,29 +38,32 @@ void USI::extra_option(USI::OptionsMap& o)
     (*this)["Min_Book_Score"]              = USIOption(-3000, -ScoreInfinite, ScoreInfinite);
     (*this)["USI_Ponder"]                  = USIOption(false);
     (*this)["Stochastic_Ponder"]           = USIOption(true);
-    (*this)["Time_Margin"]                 = USIOption(1000, 0, INT_MAX);
+    (*this)["Time_Margin"]                 = USIOption(1000, 0, int_max);
     (*this)["Mate_Root_Search"]            = USIOption(29, 0, 35);
     (*this)["DfPn_Hash"]                   = USIOption(2048, 64, 4096); // DfPnハッシュサイズ
-    (*this)["DfPn_Min_Search_Millisecs"]   = USIOption(300, 0, INT_MAX);
+    (*this)["DfPn_Min_Search_Millisecs"]   = USIOption(300, 0, int_max);
 #endif
 
-#ifdef MAKE_BOOK
+#if defined(MAKE_BOOK)
 	// 定跡を生成するときはPV出力は抑制したほうが良さげ。
-    o["PV_Interval"]                 << USI::Option(0, 0, INT_MAX);
-    o["Save_Book_Interval"]          << USI::Option(100, 0, INT_MAX);
+    o["PV_Interval"]                 << USI::Option(0, 0, int_max);
+    o["Save_Book_Interval"]          << USI::Option(100, 0, int_max);
 #else
-    o["PV_Interval"]                 << USI::Option(500, 0, INT_MAX);
-#endif // !MAKE_BOOK
+    o["PV_Interval"]                 << USI::Option(500, 0, int_max);
+#endif // defined(MAKE_BOOK)
+	
+	// UCTノードの上限(この値を10億以上にするならWIN_TYPE_DOUBLEをdefineしてコンパイルしないと
+	// MCTSする時の勝率の計算精度足りないし、あとメモリも2TBは載ってないと足りないと思う…)
+	o["UCT_NodeLimit"]				 << USI::Option(10000000, 10, 1000000000);
 
-	o["UCT_NodeLimit"]				 << USI::Option(10000000, 100000, 1000000000); // UCTノードの上限
-																				   // デバッグ用のメッセージ出力の有無
+	// デバッグ用のメッセージ出力の有無
 	o["DebugMessage"]                << USI::Option(false);
 
 	// ノードを再利用するか。
     o["ReuseSubtree"]                << USI::Option(true);
 
 	// 勝率を評価値に変換する時の定数。
-	o["Eval_Coef"]                   << USI::Option(756, 1, 10000);
+	o["Eval_Coef"]                   << USI::Option(285, 1, 10000);
 
 	// 投了値 : 1000分率で
 	o["Resign_Threshold"]            << USI::Option(0, 0, 1000);
@@ -68,7 +71,7 @@ void USI::extra_option(USI::OptionsMap& o)
 	// 引き分けの時の値 : 1000分率で
 	// 引き分けの局面では、この値とみなす。
 	// root color(探索開始局面の手番)に応じて、2通り。
-	
+
 	o["DrawValueBlack"]              << USI::Option(500, 0, 1000);
 	o["DrawValueWhite"]              << USI::Option(500, 0, 1000);
 
@@ -88,7 +91,7 @@ void USI::extra_option(USI::OptionsMap& o)
     o["C_base_root"]                 << USI::Option(25617, 10000, 100000);
 
 	// 探索のSoftmaxの温度
-	o["Softmax_Temperature"]		 << USI::Option( 1740 /* 方策分布を学習させた場合、1400から1500ぐらいが最適値らしいが… */ , 1, 5000);
+	o["Softmax_Temperature"]		 << USI::Option( 174 /* 方策分布を学習させた場合、1400から1500ぐらいが最適値らしいが… */ , 1, 500);
 
 	// 各GPU用のDNNモデル名と、そのGPU用のUCT探索のスレッド数と、そのGPUに一度に何個の局面をまとめて評価(推論)を行わせるのか。
 	// GPUは最大で8個まで扱える。
@@ -110,7 +113,12 @@ void USI::extra_option(USI::OptionsMap& o)
     o["UCT_Threads14"]                << USI::Option(0, 0, 256);
     o["UCT_Threads15"]                << USI::Option(0, 0, 256);
     o["UCT_Threads16"]                << USI::Option(0, 0, 256);
+#if defined(COREML)
+	// Core MLでは、ONNXではなく独自形式のモデルが必要。
+    o["DNN_Model1"]                  << USI::Option(R"(model.mlmodel)");
+#else
     o["DNN_Model1"]                  << USI::Option(R"(model.onnx)");
+#endif
     o["DNN_Model2"]                  << USI::Option("");
     o["DNN_Model3"]                  << USI::Option("");
     o["DNN_Model4"]                  << USI::Option("");
@@ -133,32 +141,27 @@ void USI::extra_option(USI::OptionsMap& o)
 #elif defined(ONNXRUNTIME)
 	// CPUを使っていることがあるので、default値、ちょっと少なめにしておく。
 	o["DNN_Batch_Size1"]             << USI::Option(32, 1, 1024);
+#elif defined(COREML)
+	// M1チップで8程度でスループットが飽和する。
+	o["DNN_Batch_Size1"]             << USI::Option(8, 1, 1024);
 #endif
-	o["DNN_Batch_Size2"]             << USI::Option(0, 0, 65536);
-    o["DNN_Batch_Size3"]             << USI::Option(0, 0, 65536);
-    o["DNN_Batch_Size4"]             << USI::Option(0, 0, 65536);
-    o["DNN_Batch_Size5"]             << USI::Option(0, 0, 65536);
-    o["DNN_Batch_Size6"]             << USI::Option(0, 0, 65536);
-    o["DNN_Batch_Size7"]             << USI::Option(0, 0, 65536);
-    o["DNN_Batch_Size8"]             << USI::Option(0, 0, 65536);
-    o["DNN_Batch_Size9"]             << USI::Option(0, 0, 65536);
-    o["DNN_Batch_Size10"]             << USI::Option(0, 0, 65536);
-    o["DNN_Batch_Size11"]             << USI::Option(0, 0, 65536);
-    o["DNN_Batch_Size12"]             << USI::Option(0, 0, 65536);
-    o["DNN_Batch_Size13"]             << USI::Option(0, 0, 65536);
-    o["DNN_Batch_Size14"]             << USI::Option(0, 0, 65536);
-    o["DNN_Batch_Size15"]             << USI::Option(0, 0, 65536);
-    o["DNN_Batch_Size16"]             << USI::Option(0, 0, 65536);
+	o["DNN_Batch_Size2"]             << USI::Option(0, 0, 1024);
+	o["DNN_Batch_Size3"]             << USI::Option(0, 0, 1024);
+	o["DNN_Batch_Size4"]             << USI::Option(0, 0, 1024);
+	o["DNN_Batch_Size5"]             << USI::Option(0, 0, 1024);
+	o["DNN_Batch_Size6"]             << USI::Option(0, 0, 1024);
+	o["DNN_Batch_Size7"]             << USI::Option(0, 0, 1024);
+	o["DNN_Batch_Size8"]             << USI::Option(0, 0, 1024);
+	o["DNN_Batch_Size9"]             << USI::Option(0, 0, 1024);
+	o["DNN_Batch_Size10"]             << USI::Option(0, 0, 1024);
+	o["DNN_Batch_Size11"]             << USI::Option(0, 0, 1024);
+	o["DNN_Batch_Size12"]             << USI::Option(0, 0, 1024);
+	o["DNN_Batch_Size13"]             << USI::Option(0, 0, 1024);
+	o["DNN_Batch_Size14"]             << USI::Option(0, 0, 1024);
+	o["DNN_Batch_Size15"]             << USI::Option(0, 0, 1024);
+	o["DNN_Batch_Size16"]             << USI::Option(0, 0, 1024);
 
-#if defined(ORT_MKL)
-	// nn_onnx_runtime.cpp の NNOnnxRuntime::load() で使用するオプション。 
-	// グラフ全体のスレッド数?（default値1）ORT_MKLでは効果が無いかもしれない。
-	o["InterOpNumThreads"]           << USI::Option(1, 1, 65536);
-	// ノード内の実行並列化の際のスレッド数設定（default値4、NNUE等でのThreads相当）
-	o["IntraOpNumThreads"]           << USI::Option(4, 1, 65536);
-#endif
-
-    //(*this)["Const_Playout"]               = USIOption(0, 0, INT_MAX);
+    //(*this)["Const_Playout"]               = USIOption(0, 0, int_max);
 	// →　Playout数固定。これはNodeLimitでできるので不要。
 
 	// → leaf nodeではdf-pnに変更。
@@ -251,12 +254,12 @@ void Search::clear()
 	search_options.c_base_root          = (NodeCountType)Options["C_base_root"         ];
 
 	// softmaxの時のボルツマン温度設定
-	// これは、dlshogiの"Softmax_Temperature"の値。(1740) = 1.740
-	// ※ dlshogiは100分率で指定する。ふかうら王では1000分率で指定する。
+	// これは、dlshogiの"Softmax_Temperature"の値。(174) = 1.74
+	// ※ 100分率で指定する。
 	// hcpe3から学習させたmodelの場合、1.40～1.50ぐらいにしないといけない。
 	// cf. https://tadaoyamaoka.hatenablog.com/entry/2021/04/05/215431
 
-	Eval::dlshogi::set_softmax_temperature(Options["Softmax_Temperature"] / 1000.0f);
+	Eval::dlshogi::set_softmax_temperature(Options["Softmax_Temperature"] / 100.0f);
 
 	searcher.SetDrawValue(
 		(int)Options["DrawValueBlack"],
@@ -303,11 +306,15 @@ void MainThread::search()
 	// これは、isreadyのあと、goの直前まで変更可能
 	searcher.search_options.multi_pv = (ChildNumType)Options["MultiPV"];
 
+	// "position"コマンドが送られずに"go"がきた。
+	if (game_root_sfen.empty())
+		game_root_sfen = SFEN_HIRATE;
+
 	Move ponderMove;
 	Move move = searcher.UctSearchGenmove(&rootPos, game_root_sfen , moves_from_game_root , ponderMove);
 
 	// ponder中であれば、呼び出し元で待機しなければならない。
-	
+
 	// 最大depth深さに到達したときに、ここまで実行が到達するが、
 	// まだThreads.stopが生じていない。しかし、ponder中や、go infiniteによる探索の場合、
 	// USI(UCI)プロトコルでは、"stop"や"ponderhit"コマンドをGUIから送られてくるまでbest moveを出力してはならない。
@@ -378,8 +385,7 @@ namespace dlshogi
 			Move m = child.move;
 			// move_count == 0であって欲しくはないのだが…。
 			float win = child.move_count == 0 ? child.nnrate : (float)child.win / child.move_count;
-//			result.emplace_back(std::pair<Move, float>(m, win));
-			result[i] = std::pair<Move, float>(m, win);
+			result.emplace_back(std::pair<Move, float>(m, win));
 		}
 	}
 
@@ -503,7 +509,9 @@ namespace dlshogi
 			Move          m          = child.move;
 
 			// n番目以上なのでこの訪問回数を追加する。
-			if (move_count >= tv.nth_nodes())
+			if (   move_count >= tv.nth_nodes()
+				&& node->child_nodes          != nullptr
+				&& node->child_nodes[i].get() != nullptr)
 			{
 				// このnodeを再帰的に辿る必要がある。
 				// move_count以下のものは辿らない、すなわち枝刈りする。

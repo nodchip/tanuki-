@@ -23,9 +23,6 @@
     <Filter Include="script">
       <UniqueIdentifier>{efb5b189-918a-4b2a-ba65-731c674603a7}</UniqueIdentifier>
     </Filter>
-    <Filter Include="docs">
-      <UniqueIdentifier>{8bb34244-8e89-49f6-a303-c043ef5d8647}</UniqueIdentifier>
-    </Filter>
     <Filter Include="リソース ファイル\eval\kppt">
       <UniqueIdentifier>{9199b172-8762-466b-aab3-debc3741c786}</UniqueIdentifier>
     </Filter>
@@ -82,6 +79,9 @@
     </Filter>
     <Filter Include="リソース ファイル\sqlite">
       <UniqueIdentifier>{62deb833-a9d0-4e89-8f1d-d2710c003a4a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="リソース ファイル\engine\yo-cluster">
+      <UniqueIdentifier>{81bfe4ec-70a8-412d-9241-496550d208fa}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -334,6 +334,9 @@
     <ClInclude Include="eval\deep\nn_types.h">
       <Filter>リソース ファイル\eval\deep</Filter>
     </ClInclude>
+    <ClInclude Include="eval\deep\unpack.cuh">
+      <Filter>リソース ファイル\eval\deep</Filter>
+    </ClInclude>
     <ClInclude Include="mate\mate.h">
       <Filter>リソース ファイル\mate</Filter>
     </ClInclude>
@@ -363,6 +366,21 @@
     </ClInclude>
     <ClInclude Include="engine\dlshogi-engine\dlshogi_min.h">
       <Filter>リソース ファイル\engine\dlshogi-engine</Filter>
+    </ClInclude>
+    <ClInclude Include="engine\yo-cluster\ProcessNegotiator.h">
+      <Filter>リソース ファイル\engine\yo-cluster</Filter>
+    </ClInclude>
+    <ClInclude Include="engine\yo-cluster\EngineNegotiator.h">
+      <Filter>リソース ファイル\engine\yo-cluster</Filter>
+    </ClInclude>
+    <ClInclude Include="engine\yo-cluster\ClusterCommon.h">
+      <Filter>リソース ファイル\engine\yo-cluster</Filter>
+    </ClInclude>
+    <ClInclude Include="engine\yo-cluster\ClusterStrategy.h">
+      <Filter>リソース ファイル\engine\yo-cluster</Filter>
+    </ClInclude>
+    <ClInclude Include="engine\yo-cluster\ClusterObserver.h">
+      <Filter>リソース ファイル\engine\yo-cluster</Filter>
     </ClInclude>
     <ClInclude Include="eval\nnue\architectures\halfkp_512x2-16-32.h">
       <Filter>リソース ファイル\eval\nnue\architectures</Filter>
@@ -606,31 +624,31 @@
     <ClCompile Include="eval\nnue\features\half_kp_vm.cpp">
       <Filter>リソース ファイル\eval\nnue\features</Filter>
     </ClCompile>
+    <ClCompile Include="engine\yo-cluster\ClusterObserver.cpp">
+      <Filter>リソース ファイル\engine\yo-cluster</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\yo-cluster\ProcessNegotiator.cpp">
+      <Filter>リソース ファイル\engine\yo-cluster</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\yo-cluster\EngineNegotiator.cpp">
+      <Filter>リソース ファイル\engine\yo-cluster</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\yo-cluster\ClusterCommon.cpp">
+      <Filter>リソース ファイル\engine\yo-cluster</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\yo-cluster\ClusterStrategy.cpp">
+      <Filter>リソース ファイル\engine\yo-cluster</Filter>
+    </ClCompile>
+    <ClCompile Include="book\makebook2023.cpp">
+      <Filter>リソース ファイル\book</Filter>
+    </ClCompile>
     <ClCompile Include="denryu2_investigation.cpp">
       <Filter>リソース ファイル</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="..\docs\USI拡張コマンド.txt">
-      <Filter>docs</Filter>
-    </Text>
-    <Text Include="..\docs\解説.txt">
-      <Filter>docs</Filter>
-    </Text>
-    <Text Include="..\docs\やねうら大定跡.txt">
-      <Filter>docs</Filter>
-    </Text>
-    <Text Include="..\docs\更新履歴.txt">
-      <Filter>docs</Filter>
-    </Text>
     <Text Include="..\script\readme.txt">
       <Filter>script</Filter>
-    </Text>
-    <Text Include="..\docs\最初に：やねうら王遊び方説明.txt">
-      <Filter>docs</Filter>
-    </Text>
-    <Text Include="..\docs\ふかうら王に関する資料.txt">
-      <Filter>docs</Filter>
     </Text>
   </ItemGroup>
   <ItemGroup>
@@ -649,10 +667,6 @@
     <None Include="..\script\engine_invoker5.py">
       <Filter>script</Filter>
     </None>
-    <None Include="..\docs\README2017.md">
-      <Filter>docs</Filter>
-    </None>
-    <None Include="packages.config" />
     <None Include="Makefile">
       <Filter>リソース ファイル</Filter>
     </None>
@@ -660,9 +674,15 @@
     <None Include="..\.editorconfig" />
     <None Include="..\.gitattributes" />
     <None Include="..\.gitignore" />
-    <None Include="..\README.md" />
     <None Include="..\script\bench.py">
       <Filter>script</Filter>
     </None>
+    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime.dll" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\onnxruntime_providers_shared.dll" />
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="eval\deep\unpack.cu">
+      <Filter>リソース ファイル\eval\deep</Filter>
+    </CustomBuild>
   </ItemGroup>
 </Project>

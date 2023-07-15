@@ -390,12 +390,104 @@ const std::string Position::sfen(int gamePly_) const
 		}
 
 	// 手駒がない場合はハイフンを出力
-	ss << (found ? " " : "- ");
+	if (!found)
+		ss << '-';
 
 	// --- 初期局面からの手数
-	ss << gamePly_;
+
+	// ※　裏技 : gamePlyが負なら、sfen文字列末尾の手数を出力しない。
+	if (gamePly_ >= 0)
+		ss << ' ' << gamePly_;
 
 	return ss.str();
+}
+
+// 盤面を先後反転させた時のsfen文字列を取得する。
+const std::string Position::flipped_sfen(int gamePly_) const
+{
+	std::ostringstream ss;
+
+	// --- 盤面
+	int emptyCnt;
+	for (Rank r = RANK_9; r >= RANK_1; --r)
+	{
+		for (File f = FILE_1; f <= FILE_9; ++f)
+		{
+			// それぞれの升に対して駒がないなら
+			// その段の、そのあとの駒のない升をカウントする
+			for (emptyCnt = 0; f <= FILE_9 && piece_on(f | r) == NO_PIECE; ++f)
+				++emptyCnt;
+
+			// 駒のなかった升の数を出力
+			if (emptyCnt)
+				ss << emptyCnt;
+
+			// 駒があったなら、それに対応する駒文字列を出力
+			if (f <= FILE_9)
+				// ※　flippedなのでこの駒、先後逆にしないといけないので PIECE_WHITEのbitを反転させる。
+				ss << Piece(piece_on(f | r) ^ PIECE_WHITE);
+		}
+
+		// 最下段以外では次の行があるのでセパレーターである'/'を出力する。
+		if (r > RANK_1)
+			ss << '/';
+	}
+
+	// --- 手番
+	// ※　flippedなのでsideToMoveの逆を出力
+	ss << (~sideToMove == WHITE ? " w " : " b ");
+
+	// --- 手駒(UCIプロトコルにはないがUSIプロトコルにはある)
+	int n;
+	bool found = false;
+	for (Color c = BLACK; c <= WHITE; ++c)
+		for (int pn = 0 ; pn < 7; ++ pn)
+		{
+			// 手駒の出力順はUSIプロトコルでは規定されていないが、
+			// USI原案によると、飛、角、金、銀、桂、香、歩の順である。
+			// sfen文字列を一意にしておかないと定跡データーをsfen文字列で書き出したときに
+			// 他のソフトで文字列が一致しなくて困るので、この順に倣うことにする。
+
+			const PieceType USI_Hand[7] = { ROOK,BISHOP,GOLD,SILVER,KNIGHT,LANCE,PAWN };
+			auto p = USI_Hand[pn];
+
+			// その種類の手駒の枚数
+			// ※ flippedなので、ここをcではなく~c側を見ればflipしたことになる。
+			n = hand_count(hand[~c], p);
+			// その種類の手駒を持っているか
+			if (n != 0)
+			{
+				// 手駒が1枚でも見つかった
+				found = true;
+
+				// その種類の駒の枚数。1ならば出力を省略
+				if (n != 1)
+					ss << n;
+
+				ss << PieceToCharBW[make_piece(c, p)];
+			}
+		}
+
+	// 手駒がない場合はハイフンを出力
+	if (!found)
+		ss << '-';
+
+	// --- 初期局面からの手数
+
+	// ※　裏技 : gamePlyが負なら、sfen文字列末尾の手数を出力しない。
+	if (gamePly_ >= 0)
+		ss << ' ' << gamePly_;
+
+	return ss.str();
+}
+
+// sfen文字列を先後反転したsfen文字列に変換する。
+const std::string Position::sfen_to_flipped_sfen(std::string sfen)
+{
+	Position pos;
+	StateInfo si;
+	pos.set(sfen,&si,Threads.main());
+	return pos.flipped_sfen();
 }
 
 void Position::set_state(StateInfo* si) const {
@@ -1161,7 +1253,7 @@ void Position::do_move_impl(Move m, StateInfo& new_st, bool givesCheck)
 		const HASH_KEY key = k + h;
 		prefetch(TT.first_entry(key));
 #if defined(USE_EVAL_HASH)
-		Eval::prefetch_evalhash(key);
+		Eval::prefetch_evalhash(hash_key_to_key(key));
 #endif
 
 		put_piece(to, pc);
@@ -1326,7 +1418,7 @@ void Position::do_move_impl(Move m, StateInfo& new_st, bool givesCheck)
 		const HASH_KEY key = k + h;
 		prefetch(TT.first_entry(key));
 #if defined(USE_EVAL_HASH)
-		Eval::prefetch_evalhash(key);
+		Eval::prefetch_evalhash(hash_key_to_key(key));
 #endif
 
 		// put_piece()などを用いたのでupdateする。
@@ -2213,6 +2305,8 @@ Move Position::DeclarationWin() const
 	}
 }
 
+
+
 // ----------------------------------
 //      内部情報の正当性のテスト
 // ----------------------------------
@@ -2419,8 +2513,7 @@ void Position::UnitTest(Test::UnitTester& tester)
 	{
 		auto section2 = tester.section("is_repetition");
 
-		std::vector<StateInfo> sis;
-		sis.reserve(MAX_PLY);
+		std::deque<StateInfo> sis;
 
 		// 4手前の局面に戻っているパターン
 		BookTools::feed_position_string(pos, "startpos moves 5i5h 5a5b 5h5i 5b5a", sis);
@@ -2501,46 +2594,13 @@ void Position::UnitTest(Test::UnitTester& tester)
 	}
 
 	{
-		// 深いdepthのperftのテストが通っていれば、利きの計算、指し手生成はおおよそ間違っていないと言える。
-
-		auto section2 = tester.section("Perft");
-
-		{
-			auto section3 = tester.section("hirate");
-			hirate_init();
-			const s64 p_nodes[] = { 0 , 30 , 900, 25470, 719731, 19861490, 547581517 };
-
-			for (Depth d = 1; d <= 6; ++d)
-			{
-				u64 nodes = perft(pos, d);
-				u64 pn = p_nodes[d];
-				tester.test("depth " + to_string(d) + " = " + to_string(pn), nodes == pn);
-			}
-		}
-
-		{
-			auto section3 = tester.section("matsuri");
-			matsuri_init();
-
-			const s64 p_nodes[] = { 0 , 207 , 28684, 4809015, 516925165};
-
-			for (Depth d = 1; d <= 4; ++d)
-			{
-				u64 nodes = perft(pos, d);
-				u64 pn = p_nodes[d];
-				tester.test("depth " + to_string(d) + " = " + to_string(nodes), nodes == pn);
-			}
-		}
-	}
-
-	{
 		// 指し手生成のテスト
 		auto section2 = tester.section("GenMove");
 
 		{
 			// 23歩不成ができ、かつ、23歩不成では駒の捕獲にはならない局面。
 			pos_init("lnsgk1snl/1r4g2/p1ppppb1p/6pP1/7R1/2P6/P2PPPP1P/1SG6/LN2KGSNL b BP2p 21");
-			Move move1 = make_move(SQ_24, SQ_23,B_PAWN);
+			Move move1 = make_move        (SQ_24, SQ_23,B_PAWN);
 			Move move2 = make_move_promote(SQ_24, SQ_23,B_PAWN);
 
 			ExtMove move_buf[MAX_MOVES] , *move_last;
@@ -2578,14 +2638,101 @@ void Position::UnitTest(Test::UnitTester& tester)
 			all &= !find_move(move1);
 			all &=  find_move(move2);
 
+			move_last = generateMoves<CAPTURES_PRO_PLUS_ALL>(pos, move_buf);
+			all &=  find_move(move1); // 歩の不成はこちらに含めることになった。(movegenの実装の修正が難しいので)
+			all &=  find_move(move2);
+
 			move_last = generateMoves<NON_CAPTURES_PRO_MINUS>(pos, move_buf);
 			all &= !find_move(move1);
 			all &= !find_move(move2);
 
+			move_last = generateMoves<NON_CAPTURES_PRO_MINUS_ALL>(pos, move_buf);
+			all &= !find_move(move1); // 歩の不成はこちらには含まれていないので注意。
+			all &= !find_move(move2);
+
 			tester.test("pawn's unpromoted move", all);
+
+			// 23角不成で5手詰め
+			// https://github.com/yaneurao/YaneuraOu/issues/257
+			pos_init("5B1n1/8k/6Rpp/9/9/9/1+p7/9/K8 b rb4g4s3n4l15p 1");
+			// 23角不成(41)と23角成(41)
+			move1 = make_move        (SQ_41, SQ_23, B_BISHOP);
+			move2 = make_move_promote(SQ_41, SQ_23, B_BISHOP);
+			all = true;
+
+			move_last = generateMoves<LEGAL_ALL>(pos, move_buf);
+			all &=  find_move(move1);
+			all &=  find_move(move2);
+
+			move_last = generateMoves<CAPTURES_PRO_PLUS>(pos, move_buf);
+			all &= !find_move(move1);
+			all &=  find_move(move2);
+
+			move_last = generateMoves<NON_CAPTURES_PRO_MINUS>(pos, move_buf);
+			all &= !find_move(move1);
+			all &= !find_move(move2);
+
+			move_last = generateMoves<CAPTURES_PRO_PLUS>(pos, move_buf);
+			all &= !find_move(move1);
+			all &=  find_move(move2);
+
+			move_last = generateMoves<NON_CAPTURES_PRO_MINUS_ALL>(pos, move_buf);
+			all &= !find_move(move1);
+			all &= !find_move(move2);
+
+			move_last = generateMoves<CAPTURES_PRO_PLUS_ALL>(pos, move_buf);
+			all &=  find_move(move1);
+			all &=  find_move(move2);
+
+			tester.test("bishop's unpromoted move",all);
 		}
 	}
 
+	{
+		// それ以外のテスト
+		auto section = tester.section("misc");
+		{
+			// 盤面の反転
+
+			// 23歩不成ができ、かつ、23歩不成では駒の捕獲にはならない局面。
+			pos_init("lnsgk1snl/1r4g2/p1ppppb1p/6pP1/7R1/2P6/P2PPPP1P/1SG6/LN2KGSNL b BP2p 21");
+			auto flipped = pos.flipped_sfen();
+			tester.test("flip sfen", flipped=="lnsgk2nl/6gs1/p1pppp2p/6p2/1r7/1pP6/P1BPPPP1P/2G4R1/LNS1KGSNL w 2Pbp 21");
+		}
+	}
+
+	{
+		// 深いdepthのperftのテストが通っていれば、利きの計算、指し手生成はおおよそ間違っていないと言える。
+
+		auto section2 = tester.section("Perft");
+
+		{
+			auto section3 = tester.section("hirate");
+			hirate_init();
+			const s64 p_nodes[] = { 0 , 30 , 900, 25470, 719731, 19861490, 547581517 };
+
+			for (Depth d = 1; d <= 6; ++d)
+			{
+				u64 nodes = perft(pos, d);
+				u64 pn = p_nodes[d];
+				tester.test("depth " + to_string(d) + " = " + to_string(pn), nodes == pn);
+			}
+		}
+
+		{
+			auto section3 = tester.section("matsuri");
+			matsuri_init();
+
+			const s64 p_nodes[] = { 0 , 207 , 28684, 4809015, 516925165};
+
+			for (Depth d = 1; d <= 4; ++d)
+			{
+				u64 nodes = perft(pos, d);
+				u64 pn = p_nodes[d];
+				tester.test("depth " + to_string(d) + " = " + to_string(nodes), nodes == pn);
+			}
+		}
+	}
 
 #if 0
 	// ランダムプレイヤーでの対局

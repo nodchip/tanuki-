@@ -107,6 +107,7 @@ namespace Search {
 			silent = bench = consideration_mode = outout_fail_lh_pv = false;
 			pv_interval = 0;
 			generate_all_legal_moves = true;
+			wait_stop = false;
 		}
 
 		// 時間制御を行うのか。
@@ -135,9 +136,11 @@ namespace Search {
 		//		時間制限なしであれば、INT32_MAXが入っている。
 		// perft    : perft(performance test)中であるかのフラグ。非0なら、perft時の深さが入る。
 		// infinite : 思考時間無制限かどうかのフラグ。非0なら無制限。
-		int depth , mate, perft, infinite;
+		int depth, mate, perft, infinite;
 
-		// 今回のgoコマンドでの探索ノード数
+		// 今回のgoコマンドでの指定されていた"nodes"(探索ノード数)の値。
+		// これは、USIプロトコルで規定されているものの将棋所では送ってこない。ShogiGUIはたぶん送ってくる。
+		// goコマンドで"nodes"が指定されていない場合は、"エンジンオプションの"NodesLimit"の値。
 		int64_t nodes;
 
 		// -- やねうら王が将棋用に追加したメンバー
@@ -147,7 +150,7 @@ namespace Search {
 
 		// この手数で引き分けとなる。256なら256手目を指したあとに引き分け。
 		// USIのoption["MaxMovesToDraw"]の値。0が設定されていたら、引き分けなしだからmax_game_ply = 100000が代入されることになっている。
-		// (残り手数を計算する時に桁あふれすると良くないのでINT_MAXにはしていない)
+		// (残り手数を計算する時に桁あふれすると良くないのでint_maxにはしていない)
 		// この値が0なら引き分けルールはなし(無効)。
 		// ※　この変数の値が設定されるタイミングは、"go"コマンドに対してなので、
 		//     "go"コマンドが呼び出される前にはこの値は不定であるから用いないこと。
@@ -180,6 +183,7 @@ namespace Search {
 		bool silent;
 
 		// 検討モード用のPVを出力するのか
+		// ※ やねうら王のみ , ふかうら王は未対応。
 		bool consideration_mode;
 
 		// fail low/highのときのPVを出力するのか
@@ -197,6 +201,12 @@ namespace Search {
 		// Position::pseudo_legal()も、このフラグに応じてどこまでをpseudo-legalとみなすかが変わる。
 		// (このフラグがfalseなら歩の不成は非合法手扱い)
 		bool generate_all_legal_moves;
+
+		// "go"コマンドに"wait_stop"がついていたかのフラグ。
+		// これがついていると、stopが送られてくるまで思考しつづける。
+		// 本来の"bestmove"を返すタイミングになると、"info string time to return bestmove."と出力する。
+		// この機能は、Clusterのworkerで、持時間制御はworker側にさせたいが、思考は継続させたい時に用いる。
+		bool wait_stop;
 
 #if defined(TANUKI_MATE_ENGINE)
 		std::vector<Move16> pv_check;

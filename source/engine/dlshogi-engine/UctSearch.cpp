@@ -243,7 +243,7 @@ namespace dlshogi
 		// 現在の局面に出現している特徴量を設定する。
 		// current_policy_value_batch_indexは、UctSearchThreadごとに持っているのでlock不要
 
-		make_input_features(*pos, &features1[current_policy_value_batch_index], &features2[current_policy_value_batch_index]);
+		make_input_features(*pos, current_policy_value_batch_index, packed_features1, packed_features2);
 
 		// 現在のNodeと手番を保存しておく。
 		policy_value_batch[current_policy_value_batch_index] = { node, pos->side_to_move() /* , pos->key() */ , value_win};
@@ -364,13 +364,13 @@ namespace dlshogi
 		StateInfo si;
 		for (int i = 0; i < policy_value_batch_maxsize; ++i) {
 			pos.set(dummy_sfen((u32)i), &si, Threads.main());
-			make_input_features(pos, &features1[i], &features2[i]);
+			make_input_features(pos, i, packed_features1, packed_features2);
 		}
 		// このスレッドとGPUとを紐付ける。
 		grp->set_device();
 		// 最大バッチサイズ(policy_value_batch_maxsize) と 最小バッチサイズ(1) でそれぞれ推論を実行しておく
-		grp->nn_forward(policy_value_batch_maxsize, features1, features2, y1, y2);
-		grp->nn_forward(1, features1, features2, y1, y2);
+		grp->nn_forward(policy_value_batch_maxsize, packed_features1, packed_features2, features1, features2, y1, y2);
+		grp->nn_forward(1, packed_features1, packed_features2, features1, features2, y1, y2);
 		// ダミー局面推論終了時間
 		TimePoint tpforwardend = now();
 
@@ -737,17 +737,6 @@ namespace dlshogi
 	{
 		// nodeはlockされているので、atomicは不要なはず。
 
-		// 訪問回数が多いなら、そう簡単に子ノードは変化しないのでしばらくは前回と同じbest_childを返す。
-		if (current->select_interval)
-		{
-			--current->select_interval;
-			return current->last_best_child;
-		}
-
-		// 訪問回数に応じてチェックの回数を減らす。root付近でのnodeのlock時間を減らす考え。
-		// A100×8とかでnpsが少し改善するかも…。(GeForce RTX 3090×1だとやらないほうがマシレベル…)
-		current->select_interval = (u16)std::min(current->move_count / 16384, (NodeCountType)7);
-
 		auto ds = grp->get_dlsearcher();
 		auto& options = ds->search_options;
 
@@ -802,9 +791,6 @@ namespace dlshogi
 				// 子ノードに一つでも負けがあれば、自ノードを勝ちにできる
 				if (parent != nullptr)
 					parent->SetWin();
-
-				// 勝ちが確定しているため、親からは、この子ノードを選択する
-				current->last_best_child = i;
 				return i;
 			}
 
@@ -880,9 +866,6 @@ namespace dlshogi
 			atomic_fetch_add(&current->visited_nnrate, uct_child[max_child].nnrate);
 		}
 
-		// 次に訪問するときのために選択した子のindexを保存しておく。
-		current->last_best_child = max_child;
-
 		return max_child;
 	}
 
@@ -911,7 +894,7 @@ namespace dlshogi
 
 		// predict
 		// policy_value_batch_sizeの数だけまとめて局面を評価する
-		grp->nn_forward(policy_value_batch_size, features1, features2, y1, y2);
+		grp->nn_forward(policy_value_batch_size, packed_features1, packed_features2, features1, features2, y1, y2);
 
 		//cout << *y2 << endl;
 
