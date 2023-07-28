@@ -4,6 +4,7 @@
 #include "misc.h"
 
 #include "tanuki_book.h"
+#include "tanuki_kifu_filter.h"
 #include "tanuki_kifu_generator.h"
 #include "tanuki_kifu_reader.h"
 #include "tanuki_kifu_shuffler.h"
@@ -236,6 +237,7 @@ namespace USI {
 		Tanuki::KifuReader::Initialize(o);
 		Tanuki::KifuWriter::Initialize(o);
 		Tanuki::Progress::Initialize(o);
+		Tanuki::InitializeFilter(o);
 
 		o["ForceSilent"] << Option(false);
 #endif

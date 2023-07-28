@@ -19,13 +19,14 @@
 #include <queue>
 #include <sstream>
 
+#include "denryu2_investigation.h"
 #include "tanuki_analysis.h"
 #include "tanuki_book.h"
 #include "tanuki_filesystem.h"
+#include "tanuki_kifu_filter.h"
 #include "tanuki_kifu_generator.h"
 #include "tanuki_kifu_shuffler.h"
 #include "tanuki_progress.h"
-#include "denryu2_investigation.h"
 
 using namespace std;
 
@@ -1221,6 +1222,10 @@ void usi_cmdexec(Position& pos, StateListPtr& states, string& cmd)
 
 		else if (token == "denryu2_calculate_move_match_ratio2") {
 			Denryu2::CalculateMoveMatchRatio2(pos);
+		}
+
+		else if (token == "filter_bishop_exchange") {
+			Tanuki::FilterBishopExchange();
 		}
 #endif
 

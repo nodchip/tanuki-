@@ -669,6 +669,7 @@
     <ClInclude Include="sqlite\sqlite3.h" />
     <ClInclude Include="sqlite\sqlite3ext.h" />
     <ClInclude Include="tanuki_filesystem.h" />
+    <ClInclude Include="tanuki_kifu_filter.h" />
     <ClInclude Include="testcmd\unit_test.h" />
     <ClInclude Include="thread_win32_osx.h" />
     <ClInclude Include="tanuki_analysis.h" />
@@ -750,6 +751,7 @@
     <ClCompile Include="movegen.cpp" />
     <ClCompile Include="movepick.cpp" />
     <ClCompile Include="sqlite\sqlite3.c" />
+    <ClCompile Include="tanuki_kifu_filter.cpp" />
     <ClCompile Include="testcmd\benchmark.cpp" />
     <ClCompile Include="testcmd\mate_test_cmd.cpp" />
     <ClCompile Include="testcmd\normal_test_cmd.cpp" />
