@@ -1,4 +1,4 @@
-#include "tanuki_analysis.h"
+﻿#include "tanuki_analysis.h"
 #include "config.h"
 
 #include "tanuki_kifu_reader.h"
@@ -50,6 +50,21 @@ void Tanuki::AnalyzeProgress()
 			count[i] / static_cast<double>(num_positions),
 			count[i] ? sum_abs_value[i] / static_cast<double>(count[i]) : 0.0);
 	}
+}
+
+void Tanuki::AnalyzeTrainingDataScore() {
+	auto kifu_folder_path = Options["KifuDir"];
+	KifuReader reader(kifu_folder_path, 1);
+
+	Learner::PackedSfenValue packed_sfen_value;
+	auto& position = Threads[0]->rootPos;
+	int num_positions = 0;
+	double sum_abs_score = 0.0;
+	for (; num_positions < kNumPositions && reader.Read(packed_sfen_value); ++num_positions) {
+		sum_abs_score += std::abs(static_cast<double>(packed_sfen_value.score));
+	}
+
+	sync_cout << sum_abs_score / num_positions << sync_endl;
 }
 
 #endif

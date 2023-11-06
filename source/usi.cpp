@@ -1208,6 +1208,10 @@ void usi_cmdexec(Position& pos, StateListPtr& states, string& cmd)
 			Tanuki::AnalyzeProgress();
 		}
 
+		else if (token == "analyze_training_data_score") {
+			Tanuki::AnalyzeTrainingDataScore();
+		}
+
 		else if (token == "denryu2_time") {
 			Denryu2::ExtractTime();
 		}
