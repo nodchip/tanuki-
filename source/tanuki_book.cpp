@@ -423,11 +423,11 @@ bool Tanuki::MergeBook() {
 	sync_cout << "info string input_file_list=" << input_file_list << sync_endl;
 	sync_cout << "info string output_file=" << output_file << sync_endl;
 
-	BookMoveSelector output_book;
+	MemoryBook output_book;
 	sync_cout << "Reading output book file: " << output_file << sync_endl;
-	output_book.get_body().read_book("book/" + output_file);
+	output_book.read_book("book/" + output_file);
 	sync_cout << "done..." << sync_endl;
-	sync_cout << "|output_book|=" << output_book.get_body().get_body().size() << sync_endl;
+	sync_cout << "|output_book|=" << output_book.get_body().size() << sync_endl;
 
 	std::vector<std::string> input_files;
 	{
@@ -442,30 +442,17 @@ bool Tanuki::MergeBook() {
 		sync_cout << (input_file_index + 1) << " / " << input_files.size() << sync_endl;
 
 		const auto& input_file = input_files[input_file_index];
-		BookMoveSelector input_book;
+		MemoryBook input_book;
 		sync_cout << "Reading input book file: " << input_file << sync_endl;
-		input_book.get_body().read_book(input_file);
+		input_book.read_book("book/" + input_file);
 		sync_cout << "done..." << sync_endl;
-		sync_cout << "|input_book|=" << input_book.get_body().get_body().size() << sync_endl;
+		sync_cout << "|input_book|=" << input_book.get_body().size() << sync_endl;
 
-		for (const auto& book_type : input_book.get_body().get_body()) {
+		for (const auto& book_type : input_book.get_body()) {
 			const auto& sfen = book_type.first;
 			const auto& pos_move_list = book_type.second;
 
-			uint64_t max_move_count = 0;
-			for (const auto& pos_move : *pos_move_list) {
-				max_move_count = std::max(max_move_count, pos_move.move_count);
-			}
-
-			for (const auto& pos_move : *pos_move_list) {
-				if (max_move_count > 0 && pos_move.move_count == 0) {
-					// 採択回数が設定されており、この手の採択回数が0の場合、
-					// 手動でこの手を指さないよう調整されている。
-					// そのような手はスキップする。
-					continue;
-				}
-				output_book.get_body().insert(sfen, pos_move, false);
-			}
+			output_book.get_body()[sfen] = pos_move_list;
 		}
 	}
 
