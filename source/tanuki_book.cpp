@@ -124,13 +124,20 @@ namespace {
 	};
 
 	bool ReadStrongPlayers(std::vector<Player>& strong_players) {
+		sync_cout << "ReadStrongPlayers()" << sync_endl;
 		std::map<std::string, int> name_to_rate;
-		for (const auto& entry : std::filesystem::directory_iterator("../players-floodgate/wdoor.c.u-tokyo.ac.jp/shogi/logs/logs/LATEST/rating")) {
+		int processed = 0;
+		for (const auto& entry : std::filesystem::directory_iterator("../rating")) {
 			auto file_path = entry.path().string();
-			if (file_path.find("players-floodgate-2021") == std::string::npos &&
+			if (file_path.find("players-floodgate-2020") == std::string::npos &&
+				file_path.find("players-floodgate-2021") == std::string::npos &&
 				file_path.find("players-floodgate-2022") == std::string::npos &&
 				file_path.find("players-floodgate-2023") == std::string::npos) {
 				continue;
+			}
+
+			if (++processed % 100 == 0) {
+				sync_cout << processed << sync_endl;
 			}
 
 			std::ifstream ifs(file_path);
@@ -2494,6 +2501,7 @@ bool Tanuki::CreateTayayanBook2() {
 	RemoveBadMove(internal_book);
 	RemoveBadMove2(csa_folder, internal_book);
 
+	sync_cout << "Reading csa files..." << sync_endl;
 	for (auto& [sfen, best16_to_book_move] : internal_book) {
 		for (auto& [best16, book_move] : best16_to_book_move) {
 			auto move = book_move.move;
