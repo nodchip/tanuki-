@@ -452,6 +452,15 @@ bool Tanuki::MergeBook() {
 			const auto& sfen = book_type.first;
 			const auto& pos_move_list = book_type.second;
 
+			//if (input_file_index == 1) {
+			//	Position& position = Threads[0]->rootPos;
+			//	StateInfo state_info;
+			//	position.set(sfen, &state_info, Threads[0]);
+			//	if (position.side_to_move() == WHITE) {
+			//		continue;
+			//	}
+			//}
+
 			output_book.get_body()[sfen] = pos_move_list;
 		}
 	}
