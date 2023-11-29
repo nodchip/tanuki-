@@ -2333,6 +2333,8 @@ namespace {
 		{"lnsgkgsnl/1r5b1/ppppppppp/9/9/7P1/PPPPPPP1P/1B5R1/LNSGKGSNL w - 2", "8c8d"},
 		{"lnsgk1snl/1r4gb1/p1ppppppp/9/1p5P1/2P6/PP1PPPP1P/1BG4R1/LNS1KGSNL w - 8", "7a6b"},
 		{"lnsgkgsnl/1r5b1/p1ppppppp/1p7/7P1/9/PPPPPPP1P/1B5R1/LNSGKGSNL w - 4", "8d8e"},
+		// ikariさんに指摘された局面
+		{"lnsgkgsnl/1r5b1/p1pppp1pp/6p2/1p5P1/2P6/PP1PPPP1P/1BG4R1/LNS1KGSNL w - 8", "4a3b"},
 	};
 
 	void AddGoodMove(InternalBook& internal_book, int minimum_count) {
