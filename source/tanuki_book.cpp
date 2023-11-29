@@ -2245,11 +2245,6 @@ namespace {
 		{"ln5nl/1r2gkg2/3ppp1p1/p4sp1p/1ps4P1/3PSPP2/PPS1P1N1P/2GK1G3/LN5RL b BPbp 37", "4f4e"},
 		// 第3回世界将棋AI電竜戦本戦【予選リーグ】 9回戦 ●Joyful Believer ― 〇dlshogi with HEROZ 30b
 		{"ln1gk2nl/1r4g2/3ppps1p/6pp1/pps4PP/2pP1SP2/PPS1PP3/2G4R1/LN2KG1NL b Bbp 35", "7g6h"},
-		// 後手角換わりを拒否する指し手
-		{"lnsgkgsnl/1r5b1/ppppppppp/9/9/2P6/PP1PPPPPP/1B5R1/LNSGKGSNL w - 2", "8c8d"},
-		{"lnsgkgsnl/1r5b1/p1ppppppp/1p7/9/2P4P1/PP1PPPP1P/1B5R1/LNSGKGSNL w - 4", "8d8e"},
-		{"lnsgkgsnl/1r5b1/p1ppppppp/9/1p5P1/2P6/PP1PPPP1P/1B5R1/LNSGKGSNL w - 6", "4a3b"},
-		{"lnsgkgsnl/1r5b1/ppppppppp/9/9/7P1/PPPPPPP1P/1B5R1/LNSGKGSNL w - 2", "3c3d"},
 	};
 
 	void RemoveBadMove(InternalBook& internal_book) {
@@ -2331,17 +2326,28 @@ namespace {
 
 	static const std::vector<BadMove> GoodMoves = {
 		{"lr5nl/3gk1g2/2n1ppsp1/p1pps3p/1P4SP1/P1PP4P/2SGPP3/2G4R1/LNK4NL w B3Pb 43", "8a8e"},
+		// 後手角換わりを拒否する指し手
+		{"lnsgkgsnl/1r5b1/ppppppppp/9/9/2P6/PP1PPPPPP/1B5R1/LNSGKGSNL w - 2", "3c3d"},
+		{"lnsgkgsnl/1r5b1/p1ppppppp/1p7/9/2P4P1/PP1PPPP1P/1B5R1/LNSGKGSNL w - 4", "3c3d"},
+		{"lnsgkgsnl/1r5b1/p1ppppppp/9/1p5P1/2P6/PP1PPPP1P/1B5R1/LNSGKGSNL w - 6", "3c3d"},
+		{"lnsgkgsnl/1r5b1/ppppppppp/9/9/7P1/PPPPPPP1P/1B5R1/LNSGKGSNL w - 2", "8c8d"},
+		{"lnsgk1snl/1r4gb1/p1ppppppp/9/1p5P1/2P6/PP1PPPP1P/1BG4R1/LNS1KGSNL w - 8", "7a6b"},
+		{"lnsgkgsnl/1r5b1/p1ppppppp/1p7/7P1/9/PPPPPPP1P/1B5R1/LNSGKGSNL w - 4", "8d8e"},
 	};
 
-	void AddGoodMove(InternalBook& internal_book) {
+	void AddGoodMove(InternalBook& internal_book, int minimum_count) {
 		sync_cout << "AddGoodMove()" << sync_endl;
 		for (auto& [sfen, move_string] : GoodMoves) {
 			Move16 move16 = USI::to_move16(move_string);
 
-			auto& internal_book_move = internal_book[sfen][move16.to_u16()];
+			auto& internal_book_moves = internal_book[sfen];
+			internal_book_moves.clear();
+			auto& internal_book_move = internal_book_moves[move16.to_u16()];
 			internal_book_move.move = move16;
 			internal_book_move.ponder = Move::MOVE_NONE;
-			++internal_book_move.num_win;
+			internal_book_move.num_win += minimum_count;
+
+			sync_cout << "Added a good move. sfen=" << sfen << " move=" << move_string << sync_endl;
 		}
 	}
 
@@ -2501,6 +2507,7 @@ bool Tanuki::CreateTayayanBook2() {
 	ParseTanukiColiseumResultFiles(tanuki_coliseum_log_folder, internal_book);
 	RemoveBadMove(internal_book);
 	RemoveBadMove2(csa_folder, internal_book);
+	AddGoodMove(internal_book, minimum_count);
 
 	sync_cout << "Reading csa files..." << sync_endl;
 	for (auto& [sfen, best16_to_book_move] : internal_book) {
