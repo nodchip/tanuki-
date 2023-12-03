@@ -2335,6 +2335,12 @@ namespace {
 		{"lnsgkgsnl/1r5b1/p1ppppppp/1p7/7P1/9/PPPPPPP1P/1B5R1/LNSGKGSNL w - 4", "8d8e"},
 		// ikariさんに指摘された局面
 		{"lnsgkgsnl/1r5b1/p1pppp1pp/6p2/1p5P1/2P6/PP1PPPP1P/1BG4R1/LNS1KGSNL w - 8", "4a3b"},
+		// 電竜戦 - 棋譜中継 https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-7-top_4_wanderer_tanuki-600-2F+wanderer+tanuki+20231202170029/26
+		// 7四歩
+		{"ln1g3nl/1r1s1kgs1/p1ppppb2/6R1p/1p7/2P5P/PPBPPPP2/1SG1K4/LN3GSNL w 2Pp 22", "7c7d"},
+		// 電竜戦 - 棋譜中継 https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-2-bottom_4_nibanshibori_tanuki-600-2F+nibanshibori+tanuki+20231202113050/10
+		// 1四歩
+		//{"lnsgkgsnl/1r5b1/p1ppppppp/9/1p5P1/2P6/PP1PPPP1P/1B5R1/LNSGKGSNL w - 6", "1c1d"},
 	};
 
 	void AddGoodMove(InternalBook& internal_book, int minimum_count) {
