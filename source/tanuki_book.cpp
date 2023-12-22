@@ -72,14 +72,18 @@ namespace {
 		{"ln1g3nl/1r1s1kgs1/p1ppppb2/6R1p/1p7/2P5P/PPBPPPP2/1SG1K4/LN3GSNL w 2Pp 22", "7c7d"},
 		// 電竜戦 - 棋譜中継 https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-2-bottom_4_nibanshibori_tanuki-600-2F+nibanshibori+tanuki+20231202113050/10
 		// 1四歩
-		//{"lnsgkgsnl/1r5b1/p1ppppppp/9/1p5P1/2P6/PP1PPPP1P/1B5R1/LNSGKGSNL w - 6", "1c1d"},
+		{"lnsgkgsnl/1r5b1/p1ppppppp/9/1p5P1/2P6/PP1PPPP1P/1B5R1/LNSGKGSNL w - 6", "1c1d"},
 
 		//20231222 ikari追加
 		{"lnsgk1snl/1r4gb1/p1pppp2p/6pR1/1p7/2P6/PP1PPPP1P/1BG6/LNS1KGSNL w Pp 1", "8e8f"}, //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-2-bottom_4_nibanshibori_tanuki-600-2F+nibanshibori+tanuki+20231202113050/16 
 		{"lnsgk1snl/1r4gb1/p1pppp3/6pRp/1p7/2P6/PPBPPPP1P/9/LNSGKGSNL b Pp 1", "7i8h"}, //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-5-bottom_4_tanuki_dlshogi-600-2F+tanuki+dlshogi+20231202153201/17
 		{"ln1g3nl/1r1s1kgs1/p1pppp3/6R2/1p6P/2P6/PPSPPPP2/2G1K4/LN3GSNL w B3Pbp 1", "P*1h"}, //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-7-top_4_wanderer_tanuki-600-2F+wanderer+tanuki+20231202170029/30
 		{"lnsgkgsnl/1r5b1/pppppp1pp/6p2/9/2P4P1/PP1PPPP1P/1B5R1/LNSGKGSNL w - 1", "8d8e"}, //振り飛車拒否
-		{"ln1g3nl/1r3kgs1/p2p1p3/3s1b2p/1pP1p4/2p3P1P/PP1PPPS2/1SGBK2R1/LN3G1NL w 3P 1", "6d7e"} //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4a-9-top_4_wanderer_tanuki-600-2F+wanderer+tanuki+20231203185014/46
+		{"ln1g3nl/1r3kgs1/p2p1p3/3s1b2p/1pP1p4/2p3P1P/PP1PPPS2/1SGBK2R1/LN3G1NL w 3P 1", "6d7e"}, //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4a-9-top_4_wanderer_tanuki-600-2F+wanderer+tanuki+20231203185014/46
+		// 竜王戦3組ランキング戦、阿久津八段対大橋七段戦
+		{"lr5nl/3g1kgs1/2n1p2p1/3Ps1P1p/P4P1P1/2S1S3P/1G2P4/1K3G3/LN5RL b B6Pbn2p 0", "P*8f"},
+		// 【#電竜戦 最終日午後 水匠視点】2日日午後！目指せ連覇！将棋AI界最強の座！！【将棋AI水匠／たややん】 - YouTube https://www.youtube.com/watch?v=wiqNmUq00kk
+		{"l4rknl/3g2g2/2n1p1sp1/p1ppspp1p/1p3P1P1/P1PPS1P1P/1PS1P1N2/1KG2G3/LN5RL b Bb 1", "2e2d"},
 	};
 
 	void WriteBook(Book::MemoryBook& book, const std::filesystem::path& output_book_file_path) {
