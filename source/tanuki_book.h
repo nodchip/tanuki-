@@ -9,20 +9,8 @@
 
 namespace Tanuki {
 	bool InitializeBook(USI::OptionsMap& o);
-	bool CreateRawBook();
-	bool CreateScoredBook();
 	bool MergeBook();
-	bool SetScoreToMove();
-	bool PropagateLeafNodeValuesToRoot();
-	bool ExtractTargetPositions();
-	bool AddTargetPositions();
-	bool CreateFromTanukiColiseum();
-	bool Create18Book();
-	bool CreateTayayanBook();
 	bool CreateTayayanBook2();
-	bool CreateInternalBookFromFloodgateRecords();
-	bool CreateUctBook();
-	bool ConvertInternalBookToYaneuraOuBook();
 }
 
 #endif

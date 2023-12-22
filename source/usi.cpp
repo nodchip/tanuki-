@@ -1068,118 +1068,12 @@ void usi_cmdexec(Position& pos, StateListPtr& states, string& cmd)
 #endif
 
 #ifdef EVAL_LEARN
-		else if (token == "create_raw_book") Tanuki::CreateRawBook();
-
-		else if (token == "create_scored_book") Tanuki::CreateScoredBook();
-
 		else if (token == "merge_book") {
 			Tanuki::MergeBook();
 			return;
 		}
 
-		else if (token == "set_score_to_move") {
-			Tanuki::SetScoreToMove();
-			return;
-		}
-
-		else if (token == "propagate_leaf_node_values_to_root") {
-			Tanuki::PropagateLeafNodeValuesToRoot();
-			return;
-		}
-
-		else if (token == "extract_target_positions") {
-			Tanuki::ExtractTargetPositions();
-			return;
-		}
-
-		else if (token == "add_target_positions") {
-			Tanuki::AddTargetPositions();
-			return;
-		}
-
-		else if (token == "endless_tera_shock") {
-			namespace fs = std::filesystem;
-			std::string input_book_file = Options["BookInputFile"];
-			std::string output_book_file = Options["BookOutputFile"];
-			constexpr const char* kExtractTargetPositionsBookInputFile = "extract_target_positions_book_input_file.db";
-			constexpr const char* kExtractTargetPositionsBookOutputFile = "extract_target_positions_book_output_file.db";
-			constexpr const char* kAddTargetPositionsBookInputFile = "add_target_positions_book_input_file.db";
-			constexpr const char* kAddTargetPositionsBookOutputFile = "add_target_positions_book_output_file.db";
-			constexpr const char* kPropagateLeafNodeValuesToRootBookInputFile = "propagate_leaf_node_values_to_root_book_input_file.db";
-			constexpr const char* kPropagateLeafNodeValuesToRootBookOutputFile = "propagate_leaf_node_values_to_root_book_output_file.db";
-			constexpr const char* kExtractTargetPositionsTxt = "extract_target_positions.txt";
-
-			std::string book_folder = "book/";
-			std::string input_book_file_path = book_folder + input_book_file;
-			std::string output_book_file_path = book_folder + output_book_file;
-			std::string extract_target_positions_book_input_file = book_folder + kExtractTargetPositionsBookInputFile;
-			std::string extract_target_positions_book_output_file = book_folder + kExtractTargetPositionsBookOutputFile;
-			std::string add_target_positions_book_input_file = book_folder + kAddTargetPositionsBookInputFile;
-			std::string add_target_positions_book_output_file = book_folder + kAddTargetPositionsBookOutputFile;
-			std::string propagate_leaf_node_values_to_root_book_input_file = book_folder + kPropagateLeafNodeValuesToRootBookInputFile;
-			std::string propagate_leaf_node_values_to_root_book_output_file = book_folder + kPropagateLeafNodeValuesToRootBookOutputFile;
-
-			Options["BookTargetSfensFile"] = std::string(kExtractTargetPositionsTxt);
-
-			// ループの初めに出力ファイルをextract_target_positionsの入力とするため、
-			// 入力ファイルを出力ファイルにコピーしておく。
-			if (Tanuki::IsRegularFile(input_book_file_path)) {
-				Tanuki::CopyFile(input_book_file_path, output_book_file_path);
-			}
-
-			for (;;) {
-				// ループするため、出力ファイルをextract_target_positionsの入力ファイルにコピーする
-				sync_cout << "Tanuki::ExtractTargetPositions();" << sync_endl;
-				if (Tanuki::IsRegularFile(output_book_file_path)) {
-					Tanuki::CopyFile(output_book_file_path, extract_target_positions_book_input_file);
-				}
-				Options["BookInputFile"] = std::string(kExtractTargetPositionsBookInputFile);
-				Tanuki::ExtractTargetPositions();
-				sync_cout << sync_endl;
-
-				// AMD Ryzen Threadripper 3990Xにおいて、カーネル時間が全体の80%を占める問題に対するハック。
-				std::this_thread::sleep_for(std::chrono::minutes(1));
-
-				sync_cout << "Tanuki::AddTargetPositions();" << sync_endl;
-				if (Tanuki::IsRegularFile(extract_target_positions_book_input_file)) {
-					Tanuki::CopyFile(extract_target_positions_book_input_file, add_target_positions_book_input_file);
-					Tanuki::CopyFile(extract_target_positions_book_input_file, add_target_positions_book_output_file);
-				}
-				Options["BookInputFile"] = std::string(kAddTargetPositionsBookInputFile);
-				Options["BookOutputFile"] = std::string(kAddTargetPositionsBookOutputFile);
-				Tanuki::AddTargetPositions();
-				sync_cout << sync_endl;
-
-				std::this_thread::sleep_for(std::chrono::minutes(1));
-
-				sync_cout << "Tanuki::PropagateLeafNodeValuesToRoot();" << sync_endl;
-				Tanuki::CopyFile(add_target_positions_book_output_file, propagate_leaf_node_values_to_root_book_input_file);
-				Options["BookInputFile"] = std::string(kPropagateLeafNodeValuesToRootBookInputFile);
-				Options["BookOutputFile"] = std::string(kPropagateLeafNodeValuesToRootBookOutputFile);
-				Tanuki::PropagateLeafNodeValuesToRoot();
-				Tanuki::CopyFile(propagate_leaf_node_values_to_root_book_output_file, output_book_file_path);
-				Tanuki::CopyFile(propagate_leaf_node_values_to_root_book_output_file, output_book_file_path + std::to_string(std::chrono::system_clock::now().time_since_epoch().count()));
-				sync_cout << sync_endl;
-
-				std::this_thread::sleep_for(std::chrono::minutes(1));
-
-				TT.new_search();
-			}
-		}
-
-		else if (token == "create_from_tanuki_coliseum") Tanuki::CreateFromTanukiColiseum();
-
-		else if (token == "create_18_book") Tanuki::Create18Book();
-
-		else if (token == "create_tayayan_book") Tanuki::CreateTayayanBook();
-
 		else if (token == "create_tayayan_book2") Tanuki::CreateTayayanBook2();
-
-		else if (token == "create_internal_book_from_floodgate_records") Tanuki::CreateInternalBookFromFloodgateRecords();
-
-		else if (token == "create_uct_book") Tanuki::CreateUctBook();
-
-		else if (token == "convert_internal_book_to_yaneura_ou_book") Tanuki::ConvertInternalBookToYaneuraOuBook();
 
 		else if (token == "generate_kifu") Tanuki::GenerateKifu();
 
