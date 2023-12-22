@@ -77,9 +77,6 @@
     <Filter Include="リソース ファイル\testcmd">
       <UniqueIdentifier>{f54ef520-240b-40a2-be3a-0c6c3df35b0b}</UniqueIdentifier>
     </Filter>
-    <Filter Include="リソース ファイル\sqlite">
-      <UniqueIdentifier>{62deb833-a9d0-4e89-8f1d-d2710c003a4a}</UniqueIdentifier>
-    </Filter>
     <Filter Include="リソース ファイル\engine\yo-cluster">
       <UniqueIdentifier>{81bfe4ec-70a8-412d-9241-496550d208fa}</UniqueIdentifier>
     </Filter>
@@ -346,12 +343,6 @@
     <ClInclude Include="csa.h">
       <Filter>リソース ファイル</Filter>
     </ClInclude>
-    <ClInclude Include="sqlite\sqlite3.h">
-      <Filter>リソース ファイル\sqlite</Filter>
-    </ClInclude>
-    <ClInclude Include="sqlite\sqlite3ext.h">
-      <Filter>リソース ファイル\sqlite</Filter>
-    </ClInclude>
     <ClInclude Include="testcmd\unit_test.h">
       <Filter>リソース ファイル\testcmd</Filter>
     </ClInclude>
@@ -614,9 +605,6 @@
     </ClCompile>
     <ClCompile Include="csa.cpp">
       <Filter>リソース ファイル</Filter>
-    </ClCompile>
-    <ClCompile Include="sqlite\sqlite3.c">
-      <Filter>リソース ファイル\sqlite</Filter>
     </ClCompile>
     <ClCompile Include="testcmd\unit_test.cpp">
       <Filter>リソース ファイル\testcmd</Filter>
