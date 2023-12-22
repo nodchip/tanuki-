@@ -11,6 +11,9 @@ namespace Tanuki {
 	bool InitializeBook(USI::OptionsMap& o);
 	bool MergeBook();
 	bool CreateTayayanBook2();
+	void RemoveBadMove();
+	void RemoveBadMove2();
+	void AddGoodMove();
 }
 
 #endif

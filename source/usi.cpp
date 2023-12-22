@@ -1075,6 +1075,12 @@ void usi_cmdexec(Position& pos, StateListPtr& states, string& cmd)
 
 		else if (token == "create_tayayan_book2") Tanuki::CreateTayayanBook2();
 
+		else if (token == "remove_bad_move") Tanuki::RemoveBadMove();
+
+		else if (token == "remove_bad_move2") Tanuki::RemoveBadMove2();
+
+		else if (token == "add_good_move") Tanuki::AddGoodMove();
+
 		else if (token == "generate_kifu") Tanuki::GenerateKifu();
 
 		else if (token == "convert_sfen_to_learning_data") Tanuki::ConvertSfenToLearningData();

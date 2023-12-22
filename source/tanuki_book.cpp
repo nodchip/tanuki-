@@ -41,10 +41,45 @@ namespace {
 	constexpr const char* kBookMinimumCount = "BookMinimumCount";
 	constexpr const char* kBookMinimumRating = "BookMinimumRating";
 
-	struct SfenAndMove {
-		std::string sfen;
-		Move best_move;
-		Move next_move;
+	using BadMove = std::pair<std::string, std::string>;
+	static const std::vector<BadMove> BadMoves = {
+		{"lnsgk1snl/1r4gb1/p1pppp1pp/1p4p2/7P1/2P6/PP1PPPP1P/1BG4R1/LNS1KGSNL w - 8", "8d8e"},
+		{"lnsgkgsnl/1r5b1/p1pppp1pp/1p4p2/7P1/2P6/PP1PPPP1P/1B5R1/LNSGKGSNL w - 6", "8d8e"},
+		{"lnsgkgsnl/1r5b1/ppppppppp/9/9/7P1/PPPPPPP1P/1B5R1/LNSGKGSNL w - 2", "4a3b"},
+		{"ln5nl/1r2gkg2/3ppp1p1/p2s1sp1p/1pp4P1/2PPSPP2/PPS1P1N1P/2GK1G3/LN5RL b Bb 35", "7f7e"},
+		{"ln5nl/4gkg2/4ppsp1/p2p2p1p/5P1P1/1rPPS1P2/P3P1N1P/2GK1G3/LN5RL b BSPbs2p 49", "P*8g"},
+		{"ln5nl/1r2gkg2/3ppp1p1/p4sp1p/1ps4P1/3PSPP2/PPS1P1N1P/2GK1G3/LN5RL b BPbp 37", "4f4e"},
+		// 第3回世界将棋AI電竜戦本戦【予選リーグ】 9回戦 ●Joyful Believer ― 〇dlshogi with HEROZ 30b
+		{"ln1gk2nl/1r4g2/3ppps1p/6pp1/pps4PP/2pP1SP2/PPS1PP3/2G4R1/LN2KG1NL b Bbp 35", "7g6h"},
+		//20231222 ikari追加
+		{"ln1g3nl/1rs2kgs1/2pppp3/p6Rp/1p3+b3/P1P5P/1PSPPPP2/2G1K1S2/LN3G1NL w B2Pp 1", "P*2c"}, //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4a-8-bottom_4_suishoo_tanuki-600-2F+suishoo+tanuki+20231203181535/34
+	};
+
+	using GoodMove = std::pair<std::string, std::string>;
+	static const std::vector<GoodMove> GoodMoves = {
+		{"lr5nl/3gk1g2/2n1ppsp1/p1pps3p/1P4SP1/P1PP4P/2SGPP3/2G4R1/LNK4NL w B3Pb 43", "8a8e"},
+		// 後手角換わりを拒否する指し手
+		{"lnsgkgsnl/1r5b1/ppppppppp/9/9/2P6/PP1PPPPPP/1B5R1/LNSGKGSNL w - 2", "3c3d"},
+		{"lnsgkgsnl/1r5b1/p1ppppppp/1p7/9/2P4P1/PP1PPPP1P/1B5R1/LNSGKGSNL w - 4", "3c3d"},
+		{"lnsgkgsnl/1r5b1/p1ppppppp/9/1p5P1/2P6/PP1PPPP1P/1B5R1/LNSGKGSNL w - 6", "3c3d"},
+		{"lnsgkgsnl/1r5b1/ppppppppp/9/9/7P1/PPPPPPP1P/1B5R1/LNSGKGSNL w - 2", "8c8d"},
+		{"lnsgk1snl/1r4gb1/p1ppppppp/9/1p5P1/2P6/PP1PPPP1P/1BG4R1/LNS1KGSNL w - 8", "7a6b"},
+		{"lnsgkgsnl/1r5b1/p1ppppppp/1p7/7P1/9/PPPPPPP1P/1B5R1/LNSGKGSNL w - 4", "8d8e"},
+		// ikariさんに指摘された局面
+		{"lnsgkgsnl/1r5b1/p1pppp1pp/6p2/1p5P1/2P6/PP1PPPP1P/1BG4R1/LNS1KGSNL w - 8", "4a3b"},
+		// 電竜戦 - 棋譜中継 https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-7-top_4_wanderer_tanuki-600-2F+wanderer+tanuki+20231202170029/26
+		// 7四歩
+		{"ln1g3nl/1r1s1kgs1/p1ppppb2/6R1p/1p7/2P5P/PPBPPPP2/1SG1K4/LN3GSNL w 2Pp 22", "7c7d"},
+		// 電竜戦 - 棋譜中継 https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-2-bottom_4_nibanshibori_tanuki-600-2F+nibanshibori+tanuki+20231202113050/10
+		// 1四歩
+		//{"lnsgkgsnl/1r5b1/p1ppppppp/9/1p5P1/2P6/PP1PPPP1P/1B5R1/LNSGKGSNL w - 6", "1c1d"},
+
+		//20231222 ikari追加
+		{"lnsgk1snl/1r4gb1/p1pppp2p/6pR1/1p7/2P6/PP1PPPP1P/1BG6/LNS1KGSNL w Pp 1", "8e8f"}, //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-2-bottom_4_nibanshibori_tanuki-600-2F+nibanshibori+tanuki+20231202113050/16 
+		{"lnsgk1snl/1r4gb1/p1pppp3/6pRp/1p7/2P6/PPBPPPP1P/9/LNSGKGSNL b Pp 1", "7i8h"}, //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-5-bottom_4_tanuki_dlshogi-600-2F+tanuki+dlshogi+20231202153201/17
+		{"ln1g3nl/1r1s1kgs1/p1pppp3/6R2/1p6P/2P6/PPSPPPP2/2G1K4/LN3GSNL w B3Pbp 1", "P*1h"}, //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-7-top_4_wanderer_tanuki-600-2F+wanderer+tanuki+20231202170029/30
+		{"lnsgkgsnl/1r5b1/pppppp1pp/6p2/9/2P4P1/PP1PPPP1P/1B5R1/LNSGKGSNL w - 1", "8d8e"}, //振り飛車拒否
+		{"ln1g3nl/1r3kgs1/p2p1p3/3s1b2p/1pP1p4/2p3P1P/PP1PPPS2/1SGBK2R1/LN3G1NL w 3P 1", "6d7e"} //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4a-9-top_4_wanderer_tanuki-600-2F+wanderer+tanuki+20231203185014/46
 	};
 
 	void WriteBook(Book::MemoryBook& book, const std::filesystem::path& output_book_file_path) {
@@ -143,9 +178,11 @@ bool Tanuki::InitializeBook(USI::OptionsMap& o) {
 }
 
 // 複数の定跡をマージする
-// BookInputFileには「;」区切りで定跡データベースの古パースを指定する
+// BookInputFileには「;」区切りで定跡データベースのフルパスを指定する
 // BookOutputFileにはbook以下のファイル名を指定する
 bool Tanuki::MergeBook() {
+	sync_cout << "MergeBook()" << sync_endl;
+
 	std::string input_file_list = Options[kBookInputFile];
 	std::string output_file = Options[kBookOutputFile];
 
@@ -181,14 +218,14 @@ bool Tanuki::MergeBook() {
 			const auto& sfen = book_type.first;
 			const auto& pos_move_list = book_type.second;
 
-			//if (input_file_index == 1) {
-			//	Position& position = Threads[0]->rootPos;
-			//	StateInfo state_info;
-			//	position.set(sfen, &state_info, Threads[0]);
-			//	if (position.side_to_move() == WHITE) {
-			//		continue;
-			//	}
-			//}
+			if (input_file_index == 1) {
+				Position& position = Threads[0]->rootPos;
+				StateInfo state_info;
+				position.set(sfen, &state_info, Threads[0]);
+				if (position.side_to_move() == WHITE) {
+					continue;
+				}
+			}
 
 			output_book.get_body()[sfen] = pos_move_list;
 		}
@@ -354,96 +391,6 @@ namespace {
 		return USI::to_move16(str).to_u16();
 	}
 
-	struct InternalMove {
-		u16 best;
-		u16 next;
-		int value;
-		int book;
-		int depth;
-	};
-
-	using BadMove = std::pair<std::string, std::string>;
-	static const std::vector<BadMove> BadMoves = {
-		{"lnsgk1snl/1r4gb1/p1pppp1pp/1p4p2/7P1/2P6/PP1PPPP1P/1BG4R1/LNS1KGSNL w - 8", "8d8e"},
-		{"lnsgkgsnl/1r5b1/p1pppp1pp/1p4p2/7P1/2P6/PP1PPPP1P/1B5R1/LNSGKGSNL w - 6", "8d8e"},
-		{"lnsgkgsnl/1r5b1/ppppppppp/9/9/7P1/PPPPPPP1P/1B5R1/LNSGKGSNL w - 2", "4a3b"},
-		{"ln5nl/1r2gkg2/3ppp1p1/p2s1sp1p/1pp4P1/2PPSPP2/PPS1P1N1P/2GK1G3/LN5RL b Bb 35", "7f7e"},
-		{"ln5nl/4gkg2/4ppsp1/p2p2p1p/5P1P1/1rPPS1P2/P3P1N1P/2GK1G3/LN5RL b BSPbs2p 49", "P*8g"},
-		{"ln5nl/1r2gkg2/3ppp1p1/p4sp1p/1ps4P1/3PSPP2/PPS1P1N1P/2GK1G3/LN5RL b BPbp 37", "4f4e"},
-		// 第3回世界将棋AI電竜戦本戦【予選リーグ】 9回戦 ●Joyful Believer ― 〇dlshogi with HEROZ 30b
-		{"ln1gk2nl/1r4g2/3ppps1p/6pp1/pps4PP/2pP1SP2/PPS1PP3/2G4R1/LN2KG1NL b Bbp 35", "7g6h"},
-		//20231222 ikari追加
-		{"ln1g3nl/1rs2kgs1/2pppp3/p6Rp/1p3+b3/P1P5P/1PSPPPP2/2G1K1S2/LN3G1NL w B2Pp 1", "P*2c"}, //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4a-8-bottom_4_suishoo_tanuki-600-2F+suishoo+tanuki+20231203181535/34
-	};
-
-	void RemoveBadMove(InternalBook& internal_book) {
-		sync_cout << "RemoveBadMove()" << sync_endl;
-		for (auto& [sfen, move_string] : BadMoves) {
-			auto it = internal_book.find(sfen);
-			if (it == internal_book.end()) {
-				sync_cout << "Falied to remove a bad move. Position was not found. sfen=" << sfen << " move=" << move_string << sync_endl;
-				continue;
-			}
-
-			u16 move16 = USI::to_move16(move_string).to_u16();
-			auto jt = it->second.find(move16);
-			if (jt == it->second.end()) {
-				sync_cout << "Falied to remove a bad move. Move was not found. sfen=" << sfen << " move=" << move_string << sync_endl;
-				continue;
-			}
-
-			it->second.erase(jt);
-
-			if (it->second.empty()) {
-				internal_book.erase(it);
-			}
-
-			sync_cout << "Removed a bad move. sfen=" << sfen << " move=" << move_string << sync_endl;
-		}
-	}
-
-	static const std::vector<BadMove> GoodMoves = {
-		{"lr5nl/3gk1g2/2n1ppsp1/p1pps3p/1P4SP1/P1PP4P/2SGPP3/2G4R1/LNK4NL w B3Pb 43", "8a8e"},
-		// 後手角換わりを拒否する指し手
-		{"lnsgkgsnl/1r5b1/ppppppppp/9/9/2P6/PP1PPPPPP/1B5R1/LNSGKGSNL w - 2", "3c3d"},
-		{"lnsgkgsnl/1r5b1/p1ppppppp/1p7/9/2P4P1/PP1PPPP1P/1B5R1/LNSGKGSNL w - 4", "3c3d"},
-		{"lnsgkgsnl/1r5b1/p1ppppppp/9/1p5P1/2P6/PP1PPPP1P/1B5R1/LNSGKGSNL w - 6", "3c3d"},
-		{"lnsgkgsnl/1r5b1/ppppppppp/9/9/7P1/PPPPPPP1P/1B5R1/LNSGKGSNL w - 2", "8c8d"},
-		{"lnsgk1snl/1r4gb1/p1ppppppp/9/1p5P1/2P6/PP1PPPP1P/1BG4R1/LNS1KGSNL w - 8", "7a6b"},
-		{"lnsgkgsnl/1r5b1/p1ppppppp/1p7/7P1/9/PPPPPPP1P/1B5R1/LNSGKGSNL w - 4", "8d8e"},
-		// ikariさんに指摘された局面
-		{"lnsgkgsnl/1r5b1/p1pppp1pp/6p2/1p5P1/2P6/PP1PPPP1P/1BG4R1/LNS1KGSNL w - 8", "4a3b"},
-		// 電竜戦 - 棋譜中継 https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-7-top_4_wanderer_tanuki-600-2F+wanderer+tanuki+20231202170029/26
-		// 7四歩
-		{"ln1g3nl/1r1s1kgs1/p1ppppb2/6R1p/1p7/2P5P/PPBPPPP2/1SG1K4/LN3GSNL w 2Pp 22", "7c7d"},
-		// 電竜戦 - 棋譜中継 https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-2-bottom_4_nibanshibori_tanuki-600-2F+nibanshibori+tanuki+20231202113050/10
-		// 1四歩
-		//{"lnsgkgsnl/1r5b1/p1ppppppp/9/1p5P1/2P6/PP1PPPP1P/1B5R1/LNSGKGSNL w - 6", "1c1d"},
-
-		//20231222 ikari追加
-		{"lnsgk1snl/1r4gb1/p1pppp2p/6pR1/1p7/2P6/PP1PPPP1P/1BG6/LNS1KGSNL w Pp 1", "8e8f"}, //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-2-bottom_4_nibanshibori_tanuki-600-2F+nibanshibori+tanuki+20231202113050/16 
-		{"lnsgk1snl/1r4gb1/p1pppp3/6pRp/1p7/2P6/PPBPPPP1P/9/LNSGKGSNL b Pp 1", "7i8h"}, //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-5-bottom_4_tanuki_dlshogi-600-2F+tanuki+dlshogi+20231202153201/17
-		{"ln1g3nl/1r1s1kgs1/p1pppp3/6R2/1p6P/2P6/PPSPPPP2/2G1K4/LN3GSNL w B3Pbp 1", "P*1h"}, //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-7-top_4_wanderer_tanuki-600-2F+wanderer+tanuki+20231202170029/30
-		{"lnsgkgsnl/1r5b1/pppppp1pp/6p2/9/2P4P1/PP1PPPP1P/1B5R1/LNSGKGSNL w - 1", "8d8e"}, //振り飛車拒否
-		{"ln1g3nl/1r3kgs1/p2p1p3/3s1b2p/1pP1p4/2p3P1P/PP1PPPS2/1SGBK2R1/LN3G1NL w 3P 1", "6d7e"} //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4a-9-top_4_wanderer_tanuki-600-2F+wanderer+tanuki+20231203185014/46
-	};
-
-	void AddGoodMove(InternalBook& internal_book, int minimum_count) {
-		sync_cout << "AddGoodMove()" << sync_endl;
-		for (auto& [sfen, move_string] : GoodMoves) {
-			Move16 move16 = USI::to_move16(move_string);
-
-			auto& internal_book_moves = internal_book[sfen];
-			internal_book_moves.clear();
-			auto& internal_book_move = internal_book_moves[move16.to_u16()];
-			internal_book_move.move = move16;
-			internal_book_move.ponder = Move::MOVE_NONE;
-			internal_book_move.num_win += minimum_count;
-
-			sync_cout << "Added a good move. sfen=" << sfen << " move=" << move_string << sync_endl;
-		}
-	}
-
 	void ReadInternalBook(const std::filesystem::path& file_path, InternalBook& internal_book) {
 		sync_cout << "ReadInternalBook(): file_path=" << file_path << sync_endl;
 		int counter = 0;
@@ -519,8 +466,9 @@ namespace {
 }
 
 bool Tanuki::CreateTayayanBook2() {
+	sync_cout << "CreateTayayanBook2()" << sync_endl;
+
 	std::string csa_folder = Options[kBookCsaFolder];
-	std::string tanuki_coliseum_log_folder = Options[kBookTanukiColiseumLogFolder];
 	std::string output_book_file = Options[kBookOutputFile];
 	int minimum_winning_percentage = static_cast<int>(Options[kBookMinimumWinningPercentage]);
 	int black_minimum_value = static_cast<int>(Options[kBookBlackMinimumValue]);
@@ -529,9 +477,8 @@ bool Tanuki::CreateTayayanBook2() {
 	int minimum_rating = static_cast<int>(Options[kBookMinimumRating]);
 
 	MemoryBook output_book;
-	output_book_file = "book/" + output_book_file;
 	sync_cout << "Reading output book file: " << output_book_file << sync_endl;
-	output_book.read_book(output_book_file);
+	output_book.read_book("book/" + output_book_file);
 	sync_cout << "done..." << sync_endl;
 	sync_cout << "|output_book|=" << output_book.get_body().size() << sync_endl;
 
@@ -543,8 +490,6 @@ bool Tanuki::CreateTayayanBook2() {
 
 	InternalBook internal_book;
 	ParseFloodgateCsaFiles(csa_folder, strong_players, minimum_rating, internal_book);
-	RemoveBadMove(internal_book);
-	AddGoodMove(internal_book, minimum_count);
 
 	sync_cout << "Reading csa files..." << sync_endl;
 	for (auto& [sfen, best16_to_book_move] : internal_book) {
@@ -585,9 +530,149 @@ bool Tanuki::CreateTayayanBook2() {
 		}
 	}
 
-	WriteBook(output_book, output_book_file);
+	WriteBook(output_book, "book/" + output_book_file);
 
 	return true;
+}
+
+namespace {
+	void RemoveMoveAndMaybePosition(Book::BookType& book, const std::string& sfen, const std::string& move_string) {
+		auto position_and_book_moves = book.find(sfen);
+		if (position_and_book_moves == book.end()) {
+			sync_cout << "Falied to remove a bad move. Position was not found. sfen=" << sfen << " move=" << move_string << sync_endl;
+			return;
+		}
+
+		// 指し手を削除する
+		u16 move16 = USI::to_move16(move_string).to_u16();
+		auto& book_moves = position_and_book_moves->second;
+		auto find_book_move = [move16](const Book::BookMove& move) {
+			return move.move == move16;
+		};
+		auto book_move = std::find_if(book_moves->begin(), book_moves->end(), find_book_move);
+		bool found = false;
+		while (book_move != book_moves->end()) {
+			found = true;
+			sync_cout << "Removed a bad move. sfen=" << sfen << " move=" << move_string << sync_endl;
+			book_moves->erase(book_move, book_move + 1);
+			book_move = std::find_if(book_moves->begin(), book_moves->end(), find_book_move);
+		}
+
+		if (!found) {
+			sync_cout << "Falied to remove a bad move. Move was not found. sfen=" << sfen << " move=" << move_string << sync_endl;
+		}
+
+		// 指し手が空になった局面を削除する。
+		if (book_moves->size() == 0) {
+			book.erase(position_and_book_moves);
+			sync_cout << "Removed a position. sfen=" << sfen << sync_endl;
+		}
+	}
+}
+
+/// <summary>
+/// 悪い指し手を削除する。
+/// </summary>
+void Tanuki::RemoveBadMove() {
+	sync_cout << "RemoveBadMove()" << sync_endl;
+
+	std::string input_book_file = Options[kBookInputFile];
+	std::string output_book_file = Options[kBookOutputFile];
+
+	MemoryBook book;
+	sync_cout << "Reading input book file: " << input_book_file << sync_endl;
+	book.read_book("book/" + input_book_file);
+	sync_cout << "done..." << sync_endl;
+	sync_cout << "|input_book|=" << book.get_body().size() << sync_endl;
+
+	// typedef std::shared_ptr<BookMoves> BookMovesPtr;
+	// typedef std::unordered_map<std::string /* sfen */, BookMovesPtr > BookType;
+	for (const auto& [sfen, move_string] : BadMoves) {
+		RemoveMoveAndMaybePosition(book.get_body(), sfen, move_string);
+	}
+
+	sync_cout << "Writing output book file: " << output_book_file << sync_endl;
+	WriteBook(book, "book/" + output_book_file);
+	sync_cout << "done..." << sync_endl;
+	sync_cout << "|output_book|=" << book.get_body().size() << sync_endl;
+}
+
+void Tanuki::RemoveBadMove2() {
+	sync_cout << "RemoveBadMove2()" << sync_endl;
+
+	std::string csa_folder = Options[kBookCsaFolder];
+	std::string input_book_file = Options[kBookInputFile];
+	std::string output_book_file = Options[kBookOutputFile];
+
+	MemoryBook book;
+	sync_cout << "Reading input book file: " << input_book_file << sync_endl;
+	book.read_book("book/" + input_book_file);
+	sync_cout << "done..." << sync_endl;
+	sync_cout << "|input_book|=" << book.get_body().size() << sync_endl;
+
+	std::ifstream ifs("bad_moves.txt");
+	std::string url;
+	int target_play;
+	while (ifs >> url >> target_play) {
+		int offset = static_cast<int>(url.find_last_of("/"));
+		std::string file_name = url.substr(offset + 1);
+		std::string file_path = csa_folder + "\\wdoor2021\\2021\\" + file_name;
+
+		std::vector<Move> moves;
+		bool toryo = false;
+		int winner_offset = 0;
+		if (!ReadCsaFile(file_path, moves, toryo, winner_offset)) {
+			sync_cout << "Failed to read a csa file. file_path" << file_path << sync_endl;
+			continue;
+		}
+
+		auto& pos = Threads[0]->rootPos;
+		std::vector<StateInfo> state_info(512);
+		pos.set_hirate(&state_info[0], Threads[0]);
+		for (int play = 0; play + 1 < target_play; ++play) {
+			pos.do_move(moves[play], state_info[pos.game_ply()]);
+		}
+
+		u16 move16 = moves[target_play - 1];
+		std::string move_string = USI::move({ moves[target_play - 1] });
+		std::string sfen = pos.sfen();
+
+		RemoveMoveAndMaybePosition(book.get_body(), sfen, move_string);
+	}
+
+	sync_cout << "Writing output book file: " << output_book_file << sync_endl;
+	WriteBook(book, "book/" + output_book_file);
+	sync_cout << "done..." << sync_endl;
+	sync_cout << "|output_book|=" << book.get_body().size() << sync_endl;
+}
+
+
+void Tanuki::AddGoodMove() {
+	sync_cout << "AddGoodMove()" << sync_endl;
+
+	std::string input_book_file = Options[kBookInputFile];
+	std::string output_book_file = Options[kBookOutputFile];
+
+	MemoryBook book;
+	sync_cout << "Reading input book file: " << input_book_file << sync_endl;
+	book.read_book("book/" + input_book_file);
+	sync_cout << "done..." << sync_endl;
+	sync_cout << "|input_book|=" << book.get_body().size() << sync_endl;
+
+	for (auto& [sfen, move_string] : GoodMoves) {
+		if (book.get_body().erase(sfen) > 0) {
+			sync_cout << "Removed a position. sfen=" << sfen << sync_endl;
+		}
+		Move16 move16 = USI::to_move16(move_string);
+		book.insert(sfen, Book::BookMove(move16, Move::MOVE_NONE, 0, 0, 1));
+
+		sync_cout << "Added a good move. sfen=" << sfen << " move=" << move_string << sync_endl;
+	}
+
+	sync_cout << "Writing output book file: " << output_book_file << sync_endl;
+	WriteBook(book, "book/" + output_book_file);
+	sync_cout << "done..." << sync_endl;
+	sync_cout << "|output_book|=" << book.get_body().size() << sync_endl;
 }
 
 #endif
