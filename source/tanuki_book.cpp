@@ -2245,6 +2245,8 @@ namespace {
 		{"ln5nl/1r2gkg2/3ppp1p1/p4sp1p/1ps4P1/3PSPP2/PPS1P1N1P/2GK1G3/LN5RL b BPbp 37", "4f4e"},
 		// 第3回世界将棋AI電竜戦本戦【予選リーグ】 9回戦 ●Joyful Believer ― 〇dlshogi with HEROZ 30b
 		{"ln1gk2nl/1r4g2/3ppps1p/6pp1/pps4PP/2pP1SP2/PPS1PP3/2G4R1/LN2KG1NL b Bbp 35", "7g6h"},
+		//20231222 ikari追加
+		{"ln1g3nl/1rs2kgs1/2pppp3/p6Rp/1p3+b3/P1P5P/1PSPPPP2/2G1K1S2/LN3G1NL w B2Pp 1", "P*2c"}, //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4a-8-bottom_4_suishoo_tanuki-600-2F+suishoo+tanuki+20231203181535/34
 	};
 
 	void RemoveBadMove(InternalBook& internal_book) {
@@ -2341,6 +2343,13 @@ namespace {
 		// 電竜戦 - 棋譜中継 https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-2-bottom_4_nibanshibori_tanuki-600-2F+nibanshibori+tanuki+20231202113050/10
 		// 1四歩
 		//{"lnsgkgsnl/1r5b1/p1ppppppp/9/1p5P1/2P6/PP1PPPP1P/1B5R1/LNSGKGSNL w - 6", "1c1d"},
+
+		//20231222 ikari追加
+		{"lnsgk1snl/1r4gb1/p1pppp2p/6pR1/1p7/2P6/PP1PPPP1P/1BG6/LNS1KGSNL w Pp 1", "8e8f"}, //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-2-bottom_4_nibanshibori_tanuki-600-2F+nibanshibori+tanuki+20231202113050/16 
+		{"lnsgk1snl/1r4gb1/p1pppp3/6pRp/1p7/2P6/PPBPPPP1P/9/LNSGKGSNL b Pp 1", "7i8h"}, //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-5-bottom_4_tanuki_dlshogi-600-2F+tanuki+dlshogi+20231202153201/17
+		{"ln1g3nl/1r1s1kgs1/p1pppp3/6R2/1p6P/2P6/PPSPPPP2/2G1K4/LN3GSNL w B3Pbp 1", "P*1h"}, //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-7-top_4_wanderer_tanuki-600-2F+wanderer+tanuki+20231202170029/30
+		{"lnsgkgsnl/1r5b1/pppppp1pp/6p2/9/2P4P1/PP1PPPP1P/1B5R1/LNSGKGSNL w - 1", "8d8e"}, //振り飛車拒否
+		{"ln1g3nl/1r3kgs1/p2p1p3/3s1b2p/1pP1p4/2p3P1P/PP1PPPS2/1SGBK2R1/LN3G1NL w 3P 1", "6d7e"} //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4a-9-top_4_wanderer_tanuki-600-2F+wanderer+tanuki+20231203185014/46
 	};
 
 	void AddGoodMove(InternalBook& internal_book, int minimum_count) {
