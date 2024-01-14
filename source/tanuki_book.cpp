@@ -118,7 +118,8 @@ namespace {
 			if (file_path.find("players-floodgate-2020") == std::string::npos &&
 				file_path.find("players-floodgate-2021") == std::string::npos &&
 				file_path.find("players-floodgate-2022") == std::string::npos &&
-				file_path.find("players-floodgate-2023") == std::string::npos) {
+				file_path.find("players-floodgate-2023") == std::string::npos &&
+				file_path.find("players-floodgate-2024") == std::string::npos) {
 				continue;
 			}
 
