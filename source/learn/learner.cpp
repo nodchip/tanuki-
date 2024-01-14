@@ -1315,44 +1315,38 @@ struct SfenReader
 	// [ASYNC] スレッドバッファに局面をある程度読み込む。
 	bool read_to_thread_buffer_impl(size_t thread_id)
 	{
-		while (true)
 		{
-			{
-				std::unique_lock<std::mutex> lk(mutex);
-				// ファイルバッファから充填できたなら、それで良し。
-				if (packed_sfens_pool.size() != 0)
-				{
-					// 充填可能なようなので充填して終了。
+			std::unique_lock<std::mutex> lk(mutex);
 
-					packed_sfens[thread_id] = packed_sfens_pool.front();
-					packed_sfens_pool.pop_front();
+			// sfenが貯まるか停止するまで待つ。
+            not_empty.wait(lk, [this] { return !packed_sfens_pool.empty() || stop_flag; });
 
-					total_read += THREAD_BUFFER_SIZE;
-
-					return true;
-				}
+			if (stop_flag) {
+				return false;
 			}
 
-			// もうすでに読み込むファイルは無くなっている。もうダメぽ。
-			if (end_of_files)
-				return false;
+			// 充填可能なようなので充填して終了。
 
-			// file workerがpacked_sfens_poolに充填してくれるのを待っている。
-			// mutexはlockしていないのでいずれ充填してくれるはずだ。
-			Tools::sleep(1);
+			packed_sfens[thread_id] = packed_sfens_pool.front();
+			packed_sfens_pool.pop_front();
+
+			not_full.notify_all();
 		}
 
+		total_read += THREAD_BUFFER_SIZE;
+
+		return true;
 	}
 	
 	// 局面ファイルをバックグラウンドで読み込むスレッドを起動する。
 	void start_file_read_worker()
 	{
 		file_worker_thread = std::thread([&] {
-			// プロセッサーグループが複数ある環境で、負荷が片方のプロセッサーグループに偏るのを防ぐ。
+                // プロセッサーグループが複数ある環境で、負荷が片方のプロセッサーグループに偏るのを防ぐ。
 			WinProcGroup::bindThisThread(0);
-			this->file_read_worker();
-			});
-	}
+                this->file_read_worker();
+                });
+		}
 
 	// ファイルの読み込み専用スレッド用
 	void file_read_worker()
@@ -1385,13 +1379,6 @@ struct SfenReader
 
 		while (true)
 		{
-			// バッファが減ってくるのを待つ。
-			// このsize()の読み取りはread onlyなのでlockしなくていいだろう。
-			while (!stop_flag && packed_sfens_pool.size() >= SFEN_READ_SIZE / THREAD_BUFFER_SIZE)
-				Tools::sleep(100);
-			if (stop_flag)
-				return;
-
 			PSVector sfens(SFEN_READ_SIZE);
 			// 次にこの位置から読み込む。
 			int sfens_read_offset = 0;
@@ -1447,13 +1434,28 @@ struct SfenReader
 			{
 				std::unique_lock<std::mutex> lk(mutex);
 
+				// sfenが少なくなるか停止するまで待つ。
+				not_full.wait(lk, [this] { return packed_sfens_pool.size() < SFEN_READ_SIZE / THREAD_BUFFER_SIZE || stop_flag; });
+
+				if (stop_flag) {
+					return;
+				}
+
 				// ポインタをコピーするだけなのでこの時間は無視できるはず…。
 				// packed_sfens_poolの内容を変更するのでmutexのlockが必要。
 
 				for (size_t i = 0; i < size; ++i)
 					packed_sfens_pool.push_back(ptrs[i]);
+
+				not_empty.notify_all();
 			}
 		}
+	}
+
+	void stop() {
+		stop_flag = true;
+		not_full.notify_all();
+		not_empty.notify_all();
 	}
 
 	// sfenファイル群
@@ -1476,8 +1478,6 @@ struct SfenReader
 	// 局面読み込み時のシャッフルを行わない。
 	bool no_shuffle;
 
-	bool stop_flag;
-
 	// rmseの計算用の局面であるかどうかを判定する。
 	// (rmseの計算用の局面は学習のために使うべきではない。)
 	bool is_for_rmse(Key key) const
@@ -1495,6 +1495,8 @@ struct SfenReader
 	PSVector sfen_for_mse;
 
 protected:
+
+	atomic_bool stop_flag;
 
 	// fileをバックグラウンドで読み込みしているworker thread
 	std::thread file_worker_thread;
@@ -1515,6 +1517,14 @@ protected:
 
 	// packed_sfens_poolにアクセスするときのmutex
 	std::mutex mutex;
+
+	// packed_sfens_poolにアクセスするときのcondition_variable
+	// packed_sfens_poolに十分なsfenが貯まっている場合に待機する。
+	std::condition_variable not_full;
+
+	// packed_sfens_poolにアクセスするときのcondition_variable
+	// packed_sfens_poolにsfenが存在しない場合に待機する。
+	std::condition_variable not_empty;
 
 	// sfenのpool。fileから読み込むworker threadはここに補充する。
 	// 各worker threadはここから自分のpacked_sfens[thread_id]に充填する。
@@ -1938,7 +1948,7 @@ void LearnerThink::thread_worker(size_t thread_id)
 				// 最大epochを超えたら停止する。
 				if (epoch >= max_epochs) {
 					stop_flag = true;
-					sr.stop_flag = true;
+					sr.stop();
 					break;
 				}
 
@@ -1954,7 +1964,7 @@ void LearnerThink::thread_worker(size_t thread_id)
 					if (converged)
 					{
 						stop_flag = true;
-						sr.stop_flag = true;
+						sr.stop();
 						break;
 					}
 				}
