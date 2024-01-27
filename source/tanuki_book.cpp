@@ -59,12 +59,15 @@ namespace {
 	static const std::vector<GoodMove> GoodMoves = {
 		{"lr5nl/3gk1g2/2n1ppsp1/p1pps3p/1P4SP1/P1PP4P/2SGPP3/2G4R1/LNK4NL w B3Pb 43", "8a8e"},
 		// 後手角換わりを拒否する指し手
-		{"lnsgkgsnl/1r5b1/ppppppppp/9/9/2P6/PP1PPPPPP/1B5R1/LNSGKGSNL w - 2", "3c3d"},
-		{"lnsgkgsnl/1r5b1/p1ppppppp/1p7/9/2P4P1/PP1PPPP1P/1B5R1/LNSGKGSNL w - 4", "3c3d"},
-		{"lnsgkgsnl/1r5b1/p1ppppppp/9/1p5P1/2P6/PP1PPPP1P/1B5R1/LNSGKGSNL w - 6", "3c3d"},
+		//{"lnsgkgsnl/1r5b1/ppppppppp/9/9/2P6/PP1PPPPPP/1B5R1/LNSGKGSNL w - 2", "3c3d"}, 横歩取りなのでやめる
+		{"lnsgkgsnl/1r5b1/ppppppppp/9/9/2P6/PP1PPPPPP/1B5R1/LNSGKGSNL w - 2", "8c8d"}, //矢倉or角換わり
+		//{"lnsgkgsnl/1r5b1/p1ppppppp/1p7/9/2P4P1/PP1PPPP1P/1B5R1/LNSGKGSNL w - 4", "3c3d"}, 横歩取りなのでやめる
+		{"lnsgkgsnl/1r5b1/p1ppppppp/1p7/9/2P4P1/PP1PPPP1P/1B5R1/LNSGKGSNL w - 4", "8d8e"}, //矢倉or角換わり
+		//{"lnsgkgsnl/1r5b1/p1ppppppp/9/1p5P1/2P6/PP1PPPP1P/1B5R1/LNSGKGSNL w - 6", "3c3d"}, 横歩取りなのでやめる
+		{"lnsgkgsnl/1r5b1/p1ppppppp/9/1p5P1/2P6/PP1PPPP1P/1B5R1/LNSGKGSNL w - 6", "4a3b"}, //横歩取りは回避できるが、角換わりは回避できない
 		{"lnsgkgsnl/1r5b1/ppppppppp/9/9/7P1/PPPPPPP1P/1B5R1/LNSGKGSNL w - 2", "8c8d"},
-		{"lnsgk1snl/1r4gb1/p1ppppppp/9/1p5P1/2P6/PP1PPPP1P/1BG4R1/LNS1KGSNL w - 8", "7a6b"},
-		{"lnsgkgsnl/1r5b1/p1ppppppp/1p7/7P1/9/PPPPPPP1P/1B5R1/LNSGKGSNL w - 4", "8d8e"},
+		{"lnsgk1snl/1r4gb1/p1ppppppp/9/1p5P1/2P6/PP1PPPP1P/1BG4R1/LNS1KGSNL w - 8", "7a6b"}, 
+		{"lnsgkgsnl/1r5b1/p1ppppppp/1p7/7P1/9/PPPPPPP1P/1B5R1/LNSGKGSNL w - 4", "8d8e"}, 
 		// ikariさんに指摘された局面
 		{"lnsgkgsnl/1r5b1/p1pppp1pp/6p2/1p5P1/2P6/PP1PPPP1P/1BG4R1/LNS1KGSNL w - 8", "4a3b"},
 		// 電竜戦 - 棋譜中継 https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-7-top_4_wanderer_tanuki-600-2F+wanderer+tanuki+20231202170029/26
@@ -84,6 +87,9 @@ namespace {
 		{"lr5nl/3g1kgs1/2n1p2p1/3Ps1P1p/P4P1P1/2S1S3P/1G2P4/1K3G3/LN5RL b B6Pbn2p 0", "P*8f"},
 		// 【#電竜戦 最終日午後 水匠視点】2日日午後！目指せ連覇！将棋AI界最強の座！！【将棋AI水匠／たややん】 - YouTube https://www.youtube.com/watch?v=wiqNmUq00kk
 		{"l4rknl/3g2g2/2n1p1sp1/p1ppspp1p/1p3P1P1/P1PPS1P1P/1PS1P1N2/1KG2G3/LN5RL b Bb 1", "2e2d"},
+
+		//20240127 ikari追加
+		{"lnsgkgsnl/1r5b1/p1pppp1pp/6p2/1p7/2P4P1/PPBPPPP1P/3S3R1/LN1GKGSNL w - 1", "4c4d"}, //https://denryu-sen.jp/denryusen/dr4_production/dist/#/dr4prd+buoy_blackbid300_dr4y-1-bottom_4_strategist_suishoo-600-2F+strategist+suishoo+20231202103034/11 水匠の矢倉志向の手、無理矢理矢倉の順になるが雁木の含みもあるので良いということだろう
 	};
 
 	void WriteBook(Book::MemoryBook& book, const std::filesystem::path& output_book_file_path) {
