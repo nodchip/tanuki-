@@ -264,7 +264,7 @@ namespace {
 
 	bool ReadCsaFile(const std::string& file_path, std::vector<Move>& moves, bool& toryo, int& winner_offset) {
 		auto& pos = Threads[0]->rootPos;
-		StateInfo state_info[512];
+		StateInfo state_info[1024];
 		pos.set_hirate(&state_info[0], Threads[0]);
 
 		FILE* file = std::fopen(file_path.c_str(), "r");
@@ -370,7 +370,7 @@ namespace {
 			}
 
 			auto& pos = Threads[0]->rootPos;
-			StateInfo state_info[512];
+			StateInfo state_info[1024];
 			pos.set_hirate(&state_info[0], Threads[0]);
 
 			for (int play = 0; play < static_cast<int>(moves.size()); ++play) {
