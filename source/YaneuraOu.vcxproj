@@ -581,6 +581,7 @@
   <ItemDefinitionGroup>
     <ClCompile>
       <AdditionalOptions>/source-charset:utf-8 /execution-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <MultiProcessorCompilation Condition="'$(Configuration)|$(Platform)'=='Debug-NNUE-LEARN|x64'">true</MultiProcessorCompilation>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
