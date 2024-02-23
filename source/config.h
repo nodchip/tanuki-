@@ -411,7 +411,7 @@ constexpr int MAX_PLY_NUM = 246;
 
 #if defined(YANEURAOU_ENGINE_KPPT) || defined(YANEURAOU_ENGINE_KPP_KKPT) || defined(YANEURAOU_ENGINE_NNUE) || defined(YANEURAOU_ENGINE_MATERIAL)
 
-	#define ENGINE_NAME "YaneuraOu"
+	#define ENGINE_NAME "tanuki-hd2"
 
 	// 通常のやねうら王探索部(Stockfishっぽいやつ)を用いる。
 	#define YANEURAOU_ENGINE
