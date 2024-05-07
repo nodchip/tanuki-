@@ -616,6 +616,7 @@
     <ClInclude Include="eval\kppt\evaluate_kppt.h" />
     <ClInclude Include="eval\kpp_kkpt\evaluate_kpp_kkpt.h" />
     <ClInclude Include="eval\nnue\architectures\halfkpe9_256x2-32-32.h" />
+    <ClInclude Include="eval\nnue\architectures\halfkp_1024x2-8-128.h" />
     <ClInclude Include="eval\nnue\architectures\halfkp_1024x2-8-32.h" />
     <ClInclude Include="eval\nnue\architectures\halfkp_1024x2-8-64.h" />
     <ClInclude Include="eval\nnue\architectures\halfkp_1024x2-8-96.h" />
