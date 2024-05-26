@@ -624,6 +624,7 @@
     <ClInclude Include="eval\nnue\architectures\halfkp_1536x2-8-96.h" />
     <ClInclude Include="eval\nnue\architectures\halfkp_256x2-32-32.h" />
     <ClInclude Include="eval\nnue\architectures\halfkp_512x2-16-32.h" />
+    <ClInclude Include="eval\nnue\architectures\halfkp_512x2-8-96.h" />
     <ClInclude Include="eval\nnue\architectures\halfkp_768x2-8-96.h" />
     <ClInclude Include="eval\nnue\architectures\halfkp_vm_256x2-32-32.h" />
     <ClInclude Include="eval\nnue\architectures\k-p_256x2-32-32.h" />

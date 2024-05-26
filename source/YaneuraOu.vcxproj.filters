@@ -367,6 +367,9 @@
     <ClInclude Include="eval\nnue\architectures\halfkp_768x2-8-96.h">
       <Filter>リソース ファイル\eval\nnue\architectures</Filter>
     </ClInclude>
+    <ClInclude Include="eval\nnue\architectures\halfkp_512x2-8-96.h">
+      <Filter>リソース ファイル\eval\nnue\architectures</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="movegen.cpp">
