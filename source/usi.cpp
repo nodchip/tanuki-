@@ -18,6 +18,8 @@
 #include <sstream>
 #include <queue>
 
+#include "tanuki_training_data.h"
+
 using namespace std;
 
 // ----------------------------------
@@ -877,6 +879,9 @@ void usi_cmdexec(Position& pos, StateListPtr& states, string& cmd)
 #endif
 #endif
 
+		else if (token == "rescore") {
+			Tanuki::Rescore();
+		}
 		else
 		{
 			//    簡略表現として、

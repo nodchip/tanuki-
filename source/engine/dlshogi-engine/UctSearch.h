@@ -303,6 +303,7 @@ namespace dlshogi
 		// コンストラクタで渡された、このスレッドが扱う、NNへのbatchの個数。
 		int policy_value_batch_maxsize;
 
+    public:
 		// これは、policy_value_batch_maxsize分、事前に確保されている。
 		Eval::dlshogi::PType* packed_features1;
 		Eval::dlshogi::PType* packed_features2;
@@ -311,6 +312,7 @@ namespace dlshogi
 
 		Eval::dlshogi::NN_Output_Policy* y1;
 		Eval::dlshogi::NN_Output_Value * y2;
+    private:
 
 		// EvalNode()ごとにどのNodeとColorから呼び出されたのかを記録しておく配列
 		// NNから返し値がもらえた時に、ここに記録されているNodeについて、その情報を更新する。

@@ -387,6 +387,8 @@ namespace dlshogi
 		PolicyBook policy_book;
 #endif
 
+		const std::unique_ptr<UctSearcherGroup[]>& GetSearchGroups() const { return search_groups; }
+
 	private:
 
 		// Root Node(探索開始局面)を展開する。

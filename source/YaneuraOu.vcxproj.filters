@@ -370,9 +370,6 @@
     <ClInclude Include="numa.h">
       <Filter>リソース ファイル</Filter>
     </ClInclude>
-    <ClInclude Include="engine.h">
-      <Filter>リソース ファイル</Filter>
-    </ClInclude>
     <ClInclude Include="usi_option.h">
       <Filter>リソース ファイル</Filter>
     </ClInclude>
@@ -594,11 +591,11 @@
     <ClCompile Include="memory.cpp">
       <Filter>リソース ファイル</Filter>
     </ClCompile>
-    <ClCompile Include="engine.cpp">
-      <Filter>リソース ファイル</Filter>
-    </ClCompile>
     <ClCompile Include="book\policybook.cpp">
       <Filter>リソース ファイル\book</Filter>
+    </ClCompile>
+    <ClCompile Include="tanuki_training_data.cpp">
+      <Filter>リソース ファイル</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -631,6 +628,9 @@
     <None Include="..\.gitignore" />
     <None Include="..\script\bench.py">
       <Filter>script</Filter>
+    </None>
+    <None Include="tanuki_training_data.h">
+      <Filter>リソース ファイル</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
