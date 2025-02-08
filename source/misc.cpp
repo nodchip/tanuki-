@@ -203,7 +203,7 @@ const string engine_info() {
 #endif
 			<< endl
 #if !defined(YANEURAOU_ENGINE_DEEP)
-			<< "id author by yaneurao" << std::endl;
+			<< "id author by yaneurao, nodchip" << std::endl;
 #else
 			<< "id author by Tadao Yamaoka , yaneurao" << std::endl;
 #endif
