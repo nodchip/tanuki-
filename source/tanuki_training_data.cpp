@@ -61,9 +61,9 @@ void Tanuki::Rescore()
 	Options["DNN_Batch_Size1"] = std::to_string(batch_size);
 
 	is_ready();
-
-	std::string input_file_path = R"(C:\home\nodchip\tanuki-.nnue-pytorch-2024-07-30.1\kifu.tag=train.depth=9.num_positions=1000000000.start_time=1722714224.thread_index=000.bin)";
-	std::string output_file_path = R"(C:\home\nodchip\tanuki-.nnue-pytorch-2024-07-30.1\kifu.tag=train.depth=9.num_positions=1000000000.start_time=1722714224.thread_index=000.rescored.bin)";
+	
+	std::string input_file_path = R"(D:\hnoda\shogi\training_data\tanuki-.nnue-pytorch-2024-07-30.1.shuffled\shuffled.bin)";
+	std::string output_file_path = R"(D:\hnoda\shogi\training_data\tanuki-.nnue-pytorch-2024-07-30.1.shuffled\shuffled.20240329_153000_model_resnet30x384_relu_027.bin)";
 	int gpu_id = 0;
 
 	UctSearcherGroup& grp = searcher.GetSearchGroups()[0];
@@ -107,7 +107,7 @@ void Tanuki::Rescore()
 			packed_sfens[sample_index].score = static_cast<s16>(value);
 		}
 
-		std::fwrite(&packed_sfens[0], sizeof(PackedSfen), num_samples, output_file);
+		std::fwrite(&packed_sfens[0], sizeof(PackedSfenValue), num_samples, output_file);
 
 		num_processed += num_samples;
 		if (next_progress < num_processed) {
@@ -115,6 +115,8 @@ void Tanuki::Rescore()
 			next_progress += progress_duration;
 		}
 	}
+
+	std::cout << "Finished." << std::endl;
 
 	std::fclose(output_file);
 	output_file = nullptr;
