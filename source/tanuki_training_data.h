@@ -1,9 +1,10 @@
-#ifndef _TANUKI_TRAINING_DATA_H_INCLUDED_
+﻿#ifndef _TANUKI_TRAINING_DATA_H_INCLUDED_
 #define _TANUKI_TRAINING_DATA_H_INCLUDED_
 
 namespace Tanuki
 {
-  void Rescore();
+	void Rescore();
+	void Ensemble();
 }
 
 #endif

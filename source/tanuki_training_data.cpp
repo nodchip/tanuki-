@@ -40,6 +40,8 @@ namespace
 
 		// 32 + 2 + 2 + 2 + 1 + 1 = 40bytes
 	};
+
+	static constexpr size_t BUFFER_SIZE = 1024 * 1024 * 1024;
 }
 
 using dlshogi::UctSearcherGroup;
@@ -78,10 +80,10 @@ void Tanuki::Rescore()
 	NN_Output_Value* y2 = searcher->y2;
 
 	FILE* input_file = std::fopen(input_file_path.c_str(), "rb");
-	std::setvbuf(input_file, nullptr, _IOFBF, 1024 * 1024 * 1024);
+	std::setvbuf(input_file, nullptr, _IOFBF, BUFFER_SIZE);
 
 	FILE* output_file = std::fopen(output_file_path.c_str(), "wb");
-	std::setvbuf(output_file, nullptr, _IOFBF, 1024 * 1024 * 1024);
+	std::setvbuf(output_file, nullptr, _IOFBF, BUFFER_SIZE);
 
 	int64_t num_processed = 0;
 	int64_t progress_duration = 1000000;
@@ -123,4 +125,71 @@ void Tanuki::Rescore()
 
 	std::fclose(input_file);
 	input_file = nullptr;
+}
+
+void Tanuki::Ensemble()
+{
+	static constexpr int batch_size = 1024 * 1024;
+ 
+	std::vector<std::string> input_file_paths = {
+		R"(D:\hnoda\shogi\training_data\tanuki-.nnue-pytorch-2024-07-30.1.shuffled\shuffled.bin)",
+		R"(D:\hnoda\shogi\training_data\tanuki-.nnue-pytorch-2024-07-30.1.shuffled\shuffled.bin)",
+	};
+	std::string output_file_path = R"(D:\hnoda\shogi\training_data\tanuki-.nnue-pytorch-2024-07-30.1.shuffled\shuffled.bin)";
+
+	std::vector<FILE*> input_files;
+	for (const auto& input_file_path : input_file_paths) {
+		input_files.push_back(std::fopen(input_file_path.c_str(), "rb"));
+		std::setvbuf(input_files.back(), nullptr, _IOFBF, BUFFER_SIZE);
+	}
+
+	FILE* output_file = std::fopen(output_file_path.c_str(), "wb");
+	std::setvbuf(output_file, nullptr, _IOFBF, BUFFER_SIZE);
+
+	int64_t num_processed = 0;
+	int64_t progress_duration = 1000000;
+	int64_t next_progress = progress_duration;
+	int num_input_files = static_cast<int>(input_file_paths.size());
+	std::vector<std::vector<PackedSfenValue>> input_packed_sfens(
+		num_input_files, std::vector<PackedSfenValue>(batch_size));
+	while (!std::feof(input_files[0])) {
+		size_t min_num_samples = std::numeric_limits<size_t>::max();
+		for (int input_file_index = 0; input_file_index < static_cast<int>(num_input_files);
+			++input_file_index) {
+			size_t num_samples = std::fread(
+				&input_packed_sfens[input_file_index][0], sizeof(PackedSfenValue), batch_size,
+				input_files[input_file_index]);
+			min_num_samples = std::min(min_num_samples, num_samples);
+		}
+
+		std::vector<PackedSfenValue> output_packed_sfens = input_packed_sfens[0];
+		for (int position_index = 0; position_index < static_cast<int>(min_num_samples);
+			++position_index) {
+			int sum_scores = 0;
+			for (int input_file_index = 0; input_file_index < static_cast<int>(num_input_files);
+				++input_file_index) {
+				sum_scores += input_packed_sfens[input_file_index][position_index].score;
+			}
+
+			output_packed_sfens[position_index].score = sum_scores / num_input_files;
+		}
+
+		std::fwrite(&output_packed_sfens[0], sizeof(PackedSfenValue), min_num_samples, output_file);
+
+		num_processed += min_num_samples;
+		if (next_progress < num_processed) {
+			std::cout << num_processed << std::endl;
+			next_progress += progress_duration;
+		}
+	}
+
+	std::cout << "Finished." << std::endl;
+
+	std::fclose(output_file);
+	output_file = nullptr;
+
+	for (auto& input_file : input_files) {
+		std::fclose(input_file);
+		input_file = nullptr;
+	}
 }

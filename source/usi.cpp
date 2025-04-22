@@ -882,6 +882,9 @@ void usi_cmdexec(Position& pos, StateListPtr& states, string& cmd)
 		else if (token == "rescore") {
 			Tanuki::Rescore();
 		}
+		else if (token == "ensemble") {
+			Tanuki::Ensemble();
+		}
 		else
 		{
 			//    簡略表現として、
