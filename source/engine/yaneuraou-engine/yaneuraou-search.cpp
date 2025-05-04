@@ -136,7 +136,7 @@ void USI::extra_option(USI::OptionsMap & o)
 
 #if defined(YANEURAOU_ENGINE_NNUE)
 	// NNUEのFV_SCALEの値
-	o["FV_SCALE"] << Option(16, 1, 128);
+	o["FV_SCALE"] << Option(40, 1, 128);
 #endif
 
 	// Stockfishには、Eloレーティングを指定して棋力調整するためのエンジンオプションがあるようだが…。
