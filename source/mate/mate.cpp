@@ -23,7 +23,7 @@ namespace Mate
 	// ---------------------
 
 	// 利きのある場所への取れない近接王手からの3手詰め
-	Move weak_mate_3ply(const Position& pos, int ply)
+	Move weak_mate_3ply(const Position& pos, int ply, TranspositionTable& tt)
 	{
 		// 1手詰めであるならこれを返す
 		Move m = Mate::mate_1ply(pos);
@@ -74,7 +74,7 @@ namespace Mate
 
 				ASSERT_LV3(pos.gives_check(m));
 
-				This->do_move(m, si, true);
+				This->do_move(m, si, true, tt);
 
 				ASSERT_LV3(pos.in_check());
 
@@ -88,11 +88,11 @@ namespace Mate
 					if (pos.gives_check(m2))
 						goto NEXT_CHECK;
 
-					This->do_move(m2, si2, false);
+					This->do_move(m2, si2, false, tt);
 
 					ASSERT_LV3(!pos.in_check());
 
-					if (!weak_mate_3ply(pos, ply - 2))
+					if (!weak_mate_3ply(pos, ply - 2, tt))
 					{
 						// 詰んでないので、m2で詰みを逃れている。
 						This->undo_move(m2);

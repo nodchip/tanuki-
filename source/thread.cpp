@@ -6,9 +6,13 @@
 #include "usi.h"
 #include "tt.h"
 
-ThreadPool Threads;		// Global object
-
-Thread::Thread(size_t n) : idx(n) , stdThread(&Thread::idle_loop, this)
+Thread::Thread(Search::SharedState& sharedState,
+	std::unique_ptr<Search::ISearchManager> sm,
+	size_t n) :
+	worker(std::make_unique<Search::Worker>(sharedState, std::move(sm), n)),
+	idx(n),
+	nthreads(sharedState.options["Threads"]),
+	stdThread(&Thread::idle_loop, this)
 {
 #if !defined(__EMSCRIPTEN__)
 	// スレッドはsearching == trueで開始するので、このままworkerのほう待機状態にさせておく
@@ -40,48 +44,6 @@ Thread::~Thread()
 	stdThread.join();
 }
 
-// このクラスが保持している探索で必要なテーブル(historyなど)をクリアする。
-void Thread::clear()
-{
-#if defined(USE_MOVE_PICKER)
-	mainHistory.fill(0);
-	captureHistory.fill(-758);
-#if defined(ENABLE_PAWN_HISTORY)
-	pawnHistory.fill(-1158);
-	pawnCorrectionHistory.fill(0);
-	materialCorrectionHistory.fill(0);
-	majorPieceCorrectionHistory.fill(0);
-	minorPieceCorrectionHistory.fill(0);
-	nonPawnCorrectionHistory[WHITE].fill(0);
-	nonPawnCorrectionHistory[BLACK].fill(0);
-
-	for (auto& to : continuationCorrectionHistory)
-		for (auto& h : to)
-			h->fill(0);
-#endif
-
-	// ここは、未初期化のときに[NO_PIECE][SQ_ZERO]を指すので、ここを-1で初期化しておくことによって、
-	// history > 0 を条件にすれば自ずと未初期化のときは除外されるようになる。
-
-	// ほとんどの履歴エントリがいずれにせよ後で負になるため、
-	// 開始値を「正しい」方向に少しシフトさせるため、-71で埋めている。
-	// この効果は、深度が深くなるほど薄れるので、長時間思考させる時には
-	// あまり意味がないが、無駄ではないらしい。
-	// Tweak history initialization : https://github.com/official-stockfish/Stockfish/commit/7d44b43b3ceb2eebc756709432a0e291f885a1d2
-
-	for (bool inCheck : { false, true })
-		for (StatsType c : { NoCaptures, Captures })
-			//for (auto& to : continuationHistory[inCheck][c])
-			//	for (auto& h : to)
-			//		h->fill(-675);
-
-			// ↑この初期化コードは、ContinuationHistory::fill()に移動させた。
-
-			continuationHistory[inCheck][c].fill(-645);
-
-#endif
-}
-
 // 待機していたスレッドを起こして探索を開始させる
 void Thread::start_searching()
 {
@@ -111,7 +73,7 @@ void Thread::idle_loop() {
 
 #if !defined(FORCE_BIND_THIS_THREAD)
 	// "Threads"というオプションがない時は、強制的にbindThisThread()しておいていいと思う。(使うスレッド数がここではわからないので..)
-	if (Options.count("Threads")==0 || Options["Threads"] > 8)
+	if (nthreads > 8)
 #endif
 		WinProcGroup::bindThisThread(idx);
 		// このifを有効にすると何故かNUMA環境のマルチスレッド時に弱くなることがある気がする。
@@ -141,7 +103,7 @@ void Thread::idle_loop() {
 }
 
 // スレッド数を変更する。
-void ThreadPool::set(size_t requested)
+void ThreadPool::set(Search::SharedState sharedState)
 {
 	// bindThreadの都合があるので、スレッドをいったんすべて解体して、再度作り直す。
 	// ただし、__EMSCRIPTEN__の時は、スレッド数がrequestedと同じならスレッドを作り直さず、
@@ -156,7 +118,7 @@ void ThreadPool::set(size_t requested)
 #endif
 
 	if (threads.size() > 0) { // いったんすべてのスレッドを解体(NUMA対策)
-		main()->wait_for_search_finished();
+		main_thread()->wait_for_search_finished();
 
 #if !defined(__EMSCRIPTEN__)
 		while (threads.size() > 0)
@@ -167,6 +129,18 @@ void ThreadPool::set(size_t requested)
 			delete threads.back(), threads.pop_back();
 #endif
 	}
+
+#if defined(YANEURAOU_ENGINE_DEEP)
+
+	// ここ、max_gpu == 8固定として扱っている。あとで修正する。(かも)
+	int threads_num =
+		(int)Options["UCT_Threads1"] + (int)Options["UCT_Threads2"] + (int)Options["UCT_Threads3"] + (int)Options["UCT_Threads4"] +
+		(int)Options["UCT_Threads5"] + (int)Options["UCT_Threads6"] + (int)Options["UCT_Threads7"] + (int)Options["UCT_Threads8"];
+
+	const size_t requested = std::max(threads_num, 1);
+#else
+	const size_t requested = sharedState.options["Threads"];
+#endif
 
 	if (requested > 0) { // 要求された数だけのスレッドを生成
 #if !defined(__EMSCRIPTEN__)

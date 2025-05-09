@@ -33,26 +33,15 @@ int main(int argc, char* argv[])
 	Bitboards::init();
 	Position::init();
 
-	USIEngine engine(argc,argv);
+	USI usi(argc,argv);
 
-	USI::init(Options);
-	Search::init();
-
-	// エンジンオプションの"Threads"があるとは限らないので…。
-	size_t thread_num = Options.count("Threads") ? (size_t)Options["Threads"] : 1;
-	Threads.set(thread_num);
-
-	//Search::clear();
 	Eval::init();
 
 #if !defined(__EMSCRIPTEN__)
 	// USIコマンドの応答部
 
-	USI::loop(argc, argv);
+	usi.loop(argc, argv);
 
-	// 生成して、待機させていたスレッドの停止
-
-	Threads.set(0);
 #else
 	// yaneuraOu.wasm
 	// ここでループしてしまうと、ブラウザのメインスレッドがブロックされてしまうため、コメントアウト

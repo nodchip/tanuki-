@@ -904,7 +904,7 @@ ExtMove* generateChecksMoves(const Position& pos, ExtMove* mlist)
 
 // 一般的な指し手生成
 template<MOVE_GEN_TYPE GenType>
-ExtMove* generateMoves(const Position& pos, ExtMove* mlist, Square recapSq)
+ExtMove* generateMoves(const Position& pos, ExtMove* mlist, Square recapSq, Search::LimitsType& limits)
 {
 	// 歩の不成などを含め、すべての指し手を生成するのか。
 	// GenTypeの末尾に"ALL"とついているものがその対象。
@@ -942,7 +942,7 @@ ExtMove* generateMoves(const Position& pos, ExtMove* mlist, Square recapSq)
 		if (pos.in_check())
 			while (mlist != last)
 			{
-				if (!pos.pseudo_legal(*mlist))
+				if (!pos.pseudo_legal(*mlist, limits))
 					*mlist = *(--last);
 				else
 					++mlist;

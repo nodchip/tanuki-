@@ -20,15 +20,16 @@
 #include <cmath>	// std::log(),std::pow(),std::round()
 #include <cstring>	// memset()
 
-#include "../../position.h"
-#include "../../thread.h"
-#include "../../misc.h"
-#include "../../tt.h"
 #include "../../book/book.h"
-#include "../../movepick.h"
-#include "../../usi.h"
 #include "../../learn/learn.h"
 #include "../../mate/mate.h"
+#include "../../misc.h"
+#include "../../movepick.h"
+#include "../../position.h"
+#include "../../thread.h"
+#include "../../tt.h"
+#include "../../usi.h"
+#include "../../usi_option.h"
 
 // -------------------
 // やねうら王独自追加
@@ -66,7 +67,7 @@ Book::BookMoveSelector book;
 
 // USIに追加オプションを設定したいときは、この関数を定義すること。
 // USI::init()のなかからコールバックされる。
-void USI::extra_option(USI::OptionsMap & o)
+void USI::extra_option(OptionsMap & o)
 {
 	//   定跡設定
 
@@ -154,8 +155,8 @@ void gameover_handler([[maybe_unused]] const std::string& cmd)
 }
 
 #if defined(YANEURAOU_ENGINE_NNUE)
-void init_fv_scale() {
-	Eval::NNUE::FV_SCALE = (int)Options["FV_SCALE"];
+void init_fv_scale(OptionsMap& options) {
+	Eval::NNUE::FV_SCALE = (int)options["FV_SCALE"];
 }
 #endif
 
@@ -165,9 +166,9 @@ void init_param();
 
 // "go"コマンドに"wait_stop"が指定されていて、かつ、いまbestmoveを返す準備ができたので
 // それをGUIに通知して、"stop"が送られてくるのを待つ。
-void output_time_to_return_bestmove()
+void output_time_to_return_bestmove(Search::SearchManager* manager)
 {
-	Threads.main()->time_to_return_bestmove = true;
+	manager->time_to_return_bestmove = true;
 
 	// ここでPVを出力しておきたいが、rootでのalpha,betaが確定しないので出力できない。
 
@@ -265,29 +266,6 @@ int stat_bonus(Depth d) { return std::min(168 * d - 100, 1718); }
 // TODO : あとで
 int stat_malus(Depth d) { return std::min(768 * d - 257, 2351); }
 
-// 【計測資料 30.】　Reductionのコード、Stockfish 9と10での比較
-
-// Reductions lookup table initialized at startup
-// 探索深さを減らすためのReductionテーブル。起動時に初期化する。
-std::array<int, MAX_MOVES> reductions; // [depth or moveNumber]
-
-// 残り探索深さをこの深さだけ減らす。
-// 注意 : Stockfish 17(2024.11)で、1024倍して返すことになった。
-//
-// 引数の意味
-//   d  : depth
-//   mn : move_count
-//   i  : improving , 評価値が2手前から上がっているかのフラグ。
-//                    上がっていないなら悪化していく局面なので深く読んでも仕方ないからreduction量を心もち増やす。
-//   delta, rootDelta : staticEvalとchildのeval(value)の差が一貫して低い時にreduction量を増やしたいので、
-//                   そのためのフラグ。(これがtrueだとreduction量が1増える)
-Depth reduction(bool i, Depth d, int mn, Value delta, Value rootDelta) {
-	int reductionScale = reductions[d] * reductions[mn];
-	return (reductionScale + PARAM_REDUCTION_ALPHA - delta * PARAM_REDUCTION_GAMMA / rootDelta)
-		+ (!i && reductionScale > PARAM_REDUCTION_BETA) * 1135;
-	// PARAM_REDUCTION_BETAの値、将棋ではもう少し小さくして、reductionの適用範囲を広げた方がいいかも？
-}
-
 #if 0
 // チェスでは、引き分けが0.5勝扱いなので引き分け回避のための工夫がしてあって、
 // 以下のようにvalue_drawに揺らぎを加算することによって探索を固定化しない(同じnodeを
@@ -362,23 +340,6 @@ struct Skill {
 // →　比較したところ、64より32の方がわずかに良かったので、とりあえず32にしておく。(V7.73mとV7.73m2との比較)
 constexpr int MAX_QUIETS_SEARCHED = 32 /*32*/;
 
-template <NodeType nodeType>
-Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, bool cutNode);
-
-template <NodeType nodeType>
-Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth = 0);
-
-Value value_to_tt(Value v, int ply);
-Value value_from_tt(Value v, int ply /*,int r50c */);
-void update_pv(Move* pv, Move move, const Move* childPv);
-void update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus);
-void update_quiet_histories(const Position& pos, Stack* ss, /*WorkerThread&*/ Thread& workerThread, Move move, int bonus);
-void update_all_stats(const Position& pos, Stack* ss, Move bestMove, Value bestValue, Value beta, Square prevSq,
-	ValueList<Move, MAX_QUIETS_SEARCHED>& quietsSearched,
-	ValueList<Move, MAX_QUIETS_SEARCHED>& capturesSearched,
-	Depth depth);
-
-
 // Utility to verify move generation. All the leaf nodes up
 // to the given depth are generated and counted, and the sum is returned.
 // 
@@ -387,7 +348,7 @@ void update_all_stats(const Position& pos, Stack* ss, Move bestMove, Value bestV
 // 指し手生成が正常に行われているかや、生成速度等のテストとして有用。
 
 template<bool Root>
-uint64_t perft(Position& pos, Depth depth) {
+uint64_t perft(Position& pos, Depth depth, TranspositionTable& tt) {
 
 	StateInfo st;
 	uint64_t cnt, nodes = 0;
@@ -399,8 +360,8 @@ uint64_t perft(Position& pos, Depth depth) {
 			cnt = 1, nodes++;
 		else
 		{
-			pos.do_move(m, st);
-			cnt = leaf ? MoveList<LEGAL_ALL>(pos).size() : perft<false>(pos, depth - 1);
+			pos.do_move(m, st, tt);
+			cnt = leaf ? MoveList<LEGAL_ALL>(pos).size() : perft<false>(pos, depth - 1, tt);
 			nodes += cnt;
 			pos.undo_move(m);
 		}
@@ -412,29 +373,23 @@ uint64_t perft(Position& pos, Depth depth) {
 
 } // namespace 
 
-
-// Search::init() is called at startup to initialize various lookup tables
-// 起動時に呼び出される。時間のかからない探索関係の初期化処理はここに書くこと。
-void Search::init()
-{
-	// 時間がかかるものは、"isready"応答(Search::clear())でやるべき。
-	// また、スレッド数など、起動時には决定しておらず、"isready"のタイミングでしか決定していないものも
-	// "isready"応答でやるべき。
-
-	//for (int i = 1; i < MAX_MOVES; ++i)
-	//	Reductions[i] = int((20.37 + std::log(Threads.size()) / 2) * std::log(i));
-	// →
-	// 　このReductionsテーブルの初期化は、Threads.size()に依存するから、
-	// 　Search::clear()に移動させた。
-}
+Value value_to_tt(Value v, int ply);
+Value value_from_tt(Value v, int ply /*,int r50c */);
+void update_pv(Move* pv, Move move, const Move* childPv);
+void update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus);
+void update_quiet_histories(const Position& pos, Stack* ss, Search::Worker& workerThread, Move move, int bonus);
+void update_all_stats(const Position& pos, Stack* ss, Search::Worker& workerThread, Move bestMove, Value bestValue, Value beta, Square prevSq,
+	ValueList<Move, MAX_QUIETS_SEARCHED>& quietsSearched,
+	ValueList<Move, MAX_QUIETS_SEARCHED>& capturesSearched,
+	Depth depth);
 
 // Search::clear() resets search state to its initial value
 // isreadyコマンドの応答中に呼び出される。時間のかかる処理はここに書くこと。
-void Search::clear()
+void Search::clear(OptionsMap& options, ThreadPool& threads, TranspositionTable& tt)
 {
 	// 前の探索の終了を待たないと、"bestmove"応答を受け取る前に次のisreadyコマンドを送ってくる不埒なGUIがあるとも限らない。
 	// 実際、"bestmove"を受け取るのを待つコードを書くと受信側のコードが複雑化するので、ここで一つ前の探索の終了を待ってあげるのは良いコード。
-	Threads.main()->wait_for_search_finished();
+	threads.main_thread()->wait_for_search_finished();
 
 	// -----------------------
 	//   探索パラメーターの初期化
@@ -450,48 +405,18 @@ void Search::clear()
 	// テーブルの初期化は、↑で探索パラメーターを読み込んだあとに行われなければならない。
 
 	// -----------------------
-	//   テーブルの初期化
-	// -----------------------
-
-	// LMRで使うreduction tableの初期化
-	//
-	// pvとnon pvのときのreduction定数
-	// 0.05とか変更するだけで勝率えらく変わる
-
-	// EVAL_LEARNの時は、1スレで探索しないといけないので、1スレで最強になるように枝刈りを甘くする必要がある。
-	// つまりは、この時、Threads.size() == 1と見做す必要がある。
-
-	//for (int i = 1; i < MAX_MOVES; ++i)
-	//	Reductions[i] = int(20.81 * std::log(i));
-
-	size_t THREAD_SIZE =
-	#if defined(EVAL_LEARN)
-		1
-	#else
-		Threads.size()
-	#endif
-		;
-
-	for (size_t i = 1; i < reductions.size(); ++i)
-		reductions[i] = int((PARAM_REDUCTIONS_PARAM1 / 100.0 /*(100で割ったあとの数値が)19.43*/
-						+ std::log(THREAD_SIZE) / 2) * std::log(i));
-		// TODO あとで
-
-	// ここ、log(THREAD_SIZE)/2 の /2 のところ、何か良さげな係数を掛けて調整すべきだと思う。
-
-	// -----------------------
 	//   定跡の読み込み
 	// -----------------------
 
-	book.read_book();
+	book.read_book(options);
 
 	// -----------------------
 	//   置換表のクリアなど
 	// -----------------------
 
 	//	Time.availableNodes = 0;
-	TT.clear();
-	Threads.clear();
+	tt.clear();
+	threads.clear();
 	//	Tablebases::init(Options["SyzygyPath"]); // Free up mapped files
 
 	// -----------------------
@@ -500,9 +425,21 @@ void Search::clear()
 
 #if defined(YANEURAOU_ENGINE_NNUE)
 	// エンジンオプションのFV_SCALEでEval::NNUE::FV_SCALEを初期化する。
-	init_fv_scale();
+	init_fv_scale(options);
 #endif
 
+}
+
+Search::Worker::Worker(SharedState& sharedState,
+	std::unique_ptr<ISearchManager> sm,
+	size_t                          thread_id) :
+	// Unpack the SharedState struct into member variables
+	thread_idx(thread_id),
+	manager(std::move(sm)),
+	options(sharedState.options),
+	threads(sharedState.threads),
+	tt(sharedState.tt) {
+	clear();
 }
 
 // MainThread::search() is started when the program receives the UCI 'go'
@@ -511,16 +448,23 @@ void Search::clear()
 // この関数内で初期化を終わらせ、slaveスレッドを起動してThread::search()を呼び出す。
 // そのあとslaveスレッドを終了させ、ベストな指し手を返すこと。
 
-void MainThread::search()
+void Search::Worker::start_searching()
 {
+	// Non-main threads go directly to iterative_deepening()
+	if (!is_mainthread())
+	{
+		iterative_deepening();
+		return;
+	}
+
 	// ---------------------
 	// perft(performance test)
 	// ---------------------
 
-	if (Limits.perft)
+	if (limits.perft)
 	{
-		nodes = perft<true>(rootPos, Limits.perft);
-		sync_cout << "\nNodes searched: " << nodes << ", time " << Time.elapsed() << "ms.\n" << sync_endl;
+		nodes = perft<true>(rootPos, limits.perft, tt);
+		sync_cout << "\nNodes searched: " << nodes << ", time " << main_manager()->tm.elapsed() << "ms.\n" << sync_endl;
 		return;
 	}
 
@@ -531,7 +475,7 @@ void MainThread::search()
 	// これは、ponderhitした時にponderhitにパラメーターが付随していれば
 	// 再計算するする必要性があるので、いずれにせよ呼び出しておく必要がある。
 
-	Time.init(Limits, us, rootPos.game_ply());
+	main_manager()->tm.init(limits, us, rootPos.game_ply(), options);
 
 	// ---------------------
 	// やねうら王固有の初期化
@@ -543,35 +487,24 @@ void MainThread::search()
 	// このフラグがtrueなら(定跡にhitしたり1手詰めを発見したりしたので)探索をスキップした。
 	bool search_skipped = true;
 
-	// 検討モード用のPVを出力するのか。
-	Limits.consideration_mode = Options["ConsiderationMode"];
-
-	// fail low/highのときにPVを出力するかどうか。
-	Limits.outout_fail_lh_pv = Options["OutputFailLHPV"];
-
 	// PVが詰まるのを抑制するために、前回出力時刻を記録しておく。
-	lastPvInfoTime = 0;
+	main_manager()->lastPvInfoTime = 0;
 
 	// ponder用の指し手の初期化
 	// やねうら王では、ponderの指し手がないとき、一つ前のiterationのときのPV上の(相手の)指し手を用いるという独自仕様。
 	// Stockfish本家もこうするべきだと思う。
-	ponder_candidate = Move::none();
+	main_manager()->ponder_candidate = Move::none();
 
 	// --- contempt factor(引き分けのスコア)
 
 	// 引き分け時の値として現在の手番に応じた値を設定してやる。
 
-	int draw_value = (int)((us == BLACK ? Options["DrawValueBlack"] : Options["DrawValueWhite"]) * PawnValue / 100);
+	int draw_value = (int)((us == BLACK ? options["DrawValueBlack"] : options["DrawValueWhite"]) * PawnValue / 100);
 
 	// 探索のleaf nodeでは、相手番(root_color != side_to_move)である場合、 +draw_valueではなく、-draw_valueを設定してやらないと非対称な探索となって良くない。
 	// 例) 自分は引き分けを勝ち扱いだと思って探索しているなら、相手は、引き分けを負けとみなしてくれないと非対称になる。
 	drawValueTable[REPETITION_DRAW][ us] = +draw_value;
 	drawValueTable[REPETITION_DRAW][~us] = -draw_value;
-
-	// PVの出力間隔[ms]
-	// go infiniteはShogiGUIなどの検討モードで動作させていると考えられるので
-	// この場合は、PVを毎回出力しないと読み筋が出力されないことがある。
-	Limits.pv_interval = (Limits.infinite || Limits.consideration_mode) ? 0 : (int)Options["PvInterval"];
 
 #if defined(SHOGI24)
 	// ---------------------
@@ -640,7 +573,7 @@ void MainThread::search()
 	//     定跡の選択部
 	// ---------------------
 
-	if (book.probe(*this, Limits))
+	if (book.probe(*this, options, limits, tt))
 		goto SKIP_SEARCH;
 
 	// ---------------------
@@ -654,7 +587,7 @@ void MainThread::search()
 		// 1手詰めは、ここでは判定しない。
 		// (MultiPVのときに1手詰めを見つけたからと言って探索を終了したくないから。)
 
-		auto bestMove = rootPos.DeclarationWin();
+		auto bestMove = rootPos.DeclarationWin(limits);
 		if (bestMove != Move::none())
 		{
 			// root movesの集合に突っ込んであるはず。
@@ -691,7 +624,7 @@ void MainThread::search()
 	// よってslaveが動く前であるこのタイミングで置換表の世代を進めるべきである。
 	// cf. Call TT.new_search() earlier.  : https://github.com/official-stockfish/Stockfish/commit/ebc563059c5fc103ca6d79edb04bb6d5f182eaf5
 
-	TT.new_search();
+	tt.new_search();
 
 	// Stockfishでは評価関数の正常性のチェック、ここにあるが…。
 	// isreadyに対する応答でやっているのでここはコメントアウトしておく。
@@ -712,8 +645,8 @@ void MainThread::search()
     //else
     //{
 
-	Threads.start_searching(); // main以外のthreadを開始する
-	Thread::search();          // main thread(このスレッド)も探索に参加する。
+	threads.start_searching(); // main以外のthreadを開始する
+	iterative_deepening();     // main thread(このスレッド)も探索に参加する。
 
 	//}
 
@@ -728,7 +661,7 @@ SKIP_SEARCH:;
 	// Lazy SMPの結果を取り出す
 	// ---------------------
 
-	Thread* bestThread = this;
+	Worker* bestThread = this;
 
 	// 最終的なPVを出力する。
 	// ponder中/go infinite中であっても、ここに抜けてきている以上、全探索スレッドの停止が確認できた時点でPVは出力すべき。
@@ -739,18 +672,18 @@ SKIP_SEARCH:;
 	bool output_final_pv_done = false;
 
 	// final PVの出力を行うlambda。
-	auto output_final_pv = [&]()
+	auto output_final_pv = [&, this]()
 	{
 		if (!output_final_pv_done)
 		{
-			//Skill skill = Skill(Options["SkillLevel"], Options["USI_LimitStrength"] ? int(Options["USI_Elo"]) : 0);
+			//Skill skill = Skill(options["SkillLevel"], options["USI_LimitStrength"] ? int(options["USI_Elo"]) : 0);
 			// ↑これでエンジンオプション2つも増えるのやだな…。気が向いたらサポートすることにする。
 
-			Skill skill = Skill(/*(int)Options["SkillLevel"]*/ 20, 0);
+			Skill skill = Skill(/*(int)options["SkillLevel"]*/ 20, 0);
 
 			// 並列して探索させていたスレッドのうち、ベストのスレッドの結果を選出する。
-			if (    int(Options["MultiPV"]) == 1
-				&& !Limits.depth
+			if (    int(options["MultiPV"]) == 1
+				&& !limits.depth
 				&& !skill.enabled()
 				&&  rootMoves[0].pv[0] != Move::resign()
 				// ⇨　やねうら王では、詰んでいるときなどMove::resign()を積むので、
@@ -760,7 +693,7 @@ SKIP_SEARCH:;
 				// ⇨　定跡などの指し手を指させるために、このチェックが必要。(bestThreadを変更されては困るため)
 				)
 
-				bestThread = Threads.get_best_thread();
+				bestThread = threads.get_best_thread()->worker.get();
 
 
 			if (/*bestThread != this && */
@@ -772,10 +705,10 @@ SKIP_SEARCH:;
 				// →　いずれにせよ、mateを見つけた時に最終的なPVを出力していないと、詰みではないscoreのPVが最終的な読み筋としてGUI上に
 				//     残ることになるからよろしくない。PV自体は必ず出力すべき。
 
-				!Limits.silent
+				!limits.silent
 				)
 				
-				sync_cout << Search::pv(bestThread->rootPos, TT, bestThread->completedDepth) << sync_endl;
+				sync_cout << Search::pv(bestThread->rootPos, tt, bestThread->completedDepth) << sync_endl;
 
 			/*
 				bestThreadがmainThreadではなくなる場合、探索した最大depthが減ることがありうる。
@@ -789,25 +722,25 @@ SKIP_SEARCH:;
 	// ここで思考は完了したのでwait_stopの処理。
 	// まだ思考が完了したことを通知していないならば。
 
-	if (Limits.wait_stop && !Threads.main()->time_to_return_bestmove)
-		output_time_to_return_bestmove();
+	if (limits.wait_stop && !main_manager()->time_to_return_bestmove)
+		output_time_to_return_bestmove(main_manager());
 
     // When we reach the maximum depth, we can arrive here without a raise of
-    // Threads.stop. However, if we are pondering or in an infinite search,
+    // threads.stop. However, if we are pondering or in an infinite search,
     // the UCI protocol states that we shouldn't print the best move before the
     // GUI sends a "stop" or "ponderhit" command. We therefore simply wait here
     // until the GUI sends one of those commands.
 
 	// 最大depth深さに到達したときに、ここまで実行が到達するが、
-	// まだThreads.stopが生じていない。しかし、ponder中や、go infiniteによる探索の場合、
+	// まだthreads.stopが生じていない。しかし、ponder中や、go infiniteによる探索の場合、
 	// USI(UCI)プロトコルでは、"stop"や"ponderhit"コマンドをGUIから送られてくるまでbest moveを出力してはならない。
 	// それゆえ、単にここでGUIからそれらのいずれかのコマンドが送られてくるまで待つ。
-	// "stop"が送られてきたらThreads.stop == trueになる。
-	// "ponderhit"が送られてきたらThreads.ponder == falseになるので、それを待つ。(stopOnPonderhitは用いない)
+	// "stop"が送られてきたらthreads.stop == trueになる。
+	// "ponderhit"が送られてきたらthreads.ponder == falseになるので、それを待つ。(stopOnPonderhitは用いない)
 	// "go infinite"に対してはstopが送られてくるまで待つ。
 	// ちなみにStockfishのほう、ここのコードに長らく同期上のバグがあった。
 	// やねうら王のほうは、かなり早くからこの構造で書いていた。最近のStockfishではこの書き方に追随した。
-	while (!Threads.stop && (ponder || Limits.infinite || Limits.wait_stop))
+	while (!threads.stop && (main_manager()->ponder || limits.infinite || limits.wait_stop))
 	{
 		//	こちらの思考は終わっているわけだから、ある程度細かく待っても問題ない。
 		// (思考のためには計算資源を使っていないので。)
@@ -816,14 +749,14 @@ SKIP_SEARCH:;
 
 		// === やねうら王独自改良 ===
 		// 　ここですべての探索スレッドが停止しているならば最終PVを出力してやる。
-		if (!output_final_pv_done && Threads.search_finished() /* 全探索スレッドが探索を完了している */)
+		if (!output_final_pv_done && threads.search_finished() /* 全探索スレッドが探索を完了している */)
 			output_final_pv();
 	}
 
-	Threads.stop = true;
+	threads.stop = true;
 
 	// 各スレッドが終了するのを待機する(開始していなければいないで構わない)
-	Threads.wait_for_search_finished();
+	threads.wait_for_search_finished();
 
 #if 0
 	// When playing in 'nodes as time' mode, subtract the searched nodes from
@@ -833,8 +766,8 @@ SKIP_SEARCH:;
 	// 時間切れの場合、負の数になりうる。
 	// 将棋の場合、秒読みがあるので秒読みも考慮しないといけない。
 
-	if (Limits.npmsec)
-		Time.availableNodes += Limits.inc[us] + Limits.byoyomi[us] - Threads.nodes_searched();
+	if (limits.npmsec)
+		Time.availableNodes += limits.inc[us] + limits.byoyomi[us] - threads.nodes_searched();
 	// →　将棋と相性がよくないのでこの機能をサポートしないことにする。
 #endif
 
@@ -845,18 +778,18 @@ SKIP_SEARCH:;
 	// ---------------------
 
 	// 次回の探索のときに何らか使えるのでベストな指し手の評価値を保存しておく。
-	bestPreviousScore        = bestThread->rootMoves[0].score;
-	bestPreviousAverageScore = bestThread->rootMoves[0].averageScore;
+	main_manager()->bestPreviousScore        = bestThread->rootMoves[0].score;
+	main_manager()->bestPreviousAverageScore = bestThread->rootMoves[0].averageScore;
 
 	// 投了スコアが設定されていて、歩の価値を100として正規化した値がそれを下回るなら投了。(やねうら王独自拡張)
 	// ただし定跡の指し手にhitした場合などはrootMoves[0].score == -VALUE_INFINITEになっているのでそれは除外。
-	auto resign_value = (int)Options["ResignValue"];
+	auto resign_value = (int)options["ResignValue"];
 	if (bestThread->rootMoves[0].score != -VALUE_INFINITE
 		&& bestThread->rootMoves[0].score * 100 / PawnValue <= -resign_value)
 		bestThread->rootMoves[0].pv[0] = Move::resign();
 
 	// サイレントモードでないならbestな指し手を出力
-	if (!Limits.silent)
+	if (!limits.silent)
 	{
 		// sync_cout～sync_endlで全体を挟んでいるのでここを実行中に他スレッドの出力が割り込んでくる余地はない。
 
@@ -873,7 +806,7 @@ SKIP_SEARCH:;
 		// pvにはbestmoveのときの読み筋(PV)が格納されているので、ponderとしてpv[1]があればそれを出力してやる。
 		// また、pv[1]がない場合(rootでfail highを起こしたなど)、置換表からひねり出してみる。
 		if (bestThread->rootMoves[0].pv.size() > 1
-			|| bestThread->rootMoves[0].extract_ponder_from_tt(TT, rootPos, Threads.main()->ponder_candidate))
+			|| bestThread->rootMoves[0].extract_ponder_from_tt(tt, rootPos, main_manager()->ponder_candidate))
 			std::cout << " ponder " << bestThread->rootMoves[0].pv[1];
 
 		std::cout << sync_endl;
@@ -881,23 +814,11 @@ SKIP_SEARCH:;
 }
 
 // ----------------------------------------------------------------------------------------------------------
-//                        探索スレッドごとに個別の置換表へのアクセス
-// ----------------------------------------------------------------------------------------------------------
-
-// 以下のTT.probe()は、学習用の実行ファイルではスレッドごとに持っているTTのほうにアクセスして欲しいので、
-// TTのマクロを定義して無理やりそっちにアクセスするように挙動を変更する。
-#if defined(EVAL_LEARN)
-#define TT (thisThread->tt)
-	// Threadのメンバにttという変数名で、スレッドごとのTranspositionTableを持っている。
-	// そちらを参照するように変更する。
-#endif
-
-// ----------------------------------------------------------------------------------------------------------
 
 // 探索スレッド用の初期化(探索部と学習部と共通)
 // やねうら王、独自拡張。
 // ssにはstack+7が渡されるものとする。
-void search_thread_init(Thread* th, Stack* ss , Move pv[])
+void search_thread_init(Search::Worker* th, Stack* ss , Move pv[])
 {
 	// counterMovesをnullptrに初期化するのではなくNO_PIECEのときの値を番兵として用いる。
 	for (int i = 7; i > 0; --i)
@@ -931,7 +852,7 @@ void search_thread_init(Thread* th, Stack* ss , Move pv[])
 // 探索本体。並列化している場合、ここがslaveのエントリーポイント。
 // Lazy SMPなので、置換表を共有しながらそれぞれのスレッドが勝手に探索しているだけ。
 
-void Thread::search()
+void Search::Worker::iterative_deepening()
 {
 	// ---------------------
 	//      variables
@@ -972,8 +893,7 @@ void Thread::search()
 
 	// もし自分がメインスレッドであるならmainThreadにそのポインタを入れる。
 	// 自分がスレーブのときはnullptrになる。
-	MainThread* mainThread = (this == Threads.main() ? Threads.main() : nullptr);
-	Thread* thisThread = this;
+	SearchManager* mainThread = (thread_idx == 0 ? main_manager() : nullptr);
 
 	// timeReduction      : 読み筋が安定しているときに時間を短縮するための係数。
 	// Stockfish9までEasyMoveで処理していたものが廃止され、Stockfish10からこれが導入された。
@@ -1006,12 +926,12 @@ void Thread::search()
 	// --- MultiPV
 
 	// bestmoveとしてしこの局面の上位N個を探索する機能
-	size_t multiPV = Options["MultiPV"];
+	size_t multiPV = options["MultiPV"];
 
 	// SkillLevelの実装
-	//Skill skill(Options["SkillLevel"], Options["USI_LimitStrength"] ? int(Options["USI_Elo"]) : 0);
+	//Skill skill(options["SkillLevel"], options["USI_LimitStrength"] ? int(options["USI_Elo"]) : 0);
 	// ↑これでエンジンオプション2つも増えるのやだな…。気が向いたらサポートすることにする。
-	//Skill skill((int)Options["SkillLevel"], 0);
+	//Skill skill((int)options["SkillLevel"], 0);
 
 	Skill skill(20, 0);
 
@@ -1043,12 +963,12 @@ void Thread::search()
 	// 要求があるか、または目標深度に達するまで反復深化ループを実行します
 
 	// 1つ目のrootDepthはこのthreadの反復深化での探索中の深さ。
-	// 2つ目のrootDepth (Threads.main()->rootDepth)は深さで探索量を制限するためのもの。
-	// main threadのrootDepthがLimits.depthを超えた時点で、
+	// 2つ目のrootDepth (threads.main()->rootDepth)は深さで探索量を制限するためのもの。
+	// main threadのrootDepthがlimits.depthを超えた時点で、
 	// slave threadはこのループを抜けて良いのでこういう書き方になっている。
 	while (   ++rootDepth < MAX_PLY
-			&& !Threads.stop
-			&& !(Limits.depth && mainThread && rootDepth > Limits.depth))
+			&& !threads.stop
+			&& !(limits.depth && mainThread && rootDepth > limits.depth))
 	{
 		// Stockfish9にはslave threadをmain threadより先行させるコードがここにあったが、
 		// Stockfish10で廃止された。
@@ -1088,12 +1008,12 @@ void Thread::search()
 
 		// 探索深さを増やすかのフラグがfalseなら、同じ深さを探索したことになるので、
 		// searchAgainCounterカウンターを1増やす
-		if (!Threads.increaseDepth)
+		if (!threads.increaseDepth)
 			searchAgainCounter++;
 
 		// MultiPV loop. We perform a full root search for each PV line
 		// MultiPVのためにこの局面の候補手をN個選出する。
-		for (pvIdx = 0; pvIdx < multiPV && !Threads.stop; ++pvIdx)
+		for (pvIdx = 0; pvIdx < multiPV && !threads.stop; ++pvIdx)
 		{
 			// chessではtbRankの処理が必要らしい。将棋では関係なさげなのでコメントアウト。
 			// tbRankが同じ値のところまでしかsortしなくて良いらしい。
@@ -1166,7 +1086,7 @@ void Thread::search()
 				// fail highするごとにdepthを下げていく処理
 				Depth adjustedDepth = std::max(1, rootDepth - failedHighCnt - 3 * (searchAgainCounter + 1) / 4);
 				rootDelta = beta - alpha;
-				bestValue = ::search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
+				bestValue = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
 				// Bring the best move to the front. It is critical that sorting
 				// is done with a stable algorithm because all the values but the
@@ -1181,7 +1101,7 @@ void Thread::search()
 
 				std::stable_sort(rootMoves.begin() + pvIdx, rootMoves.end());
 
-				if (Threads.stop)
+				if (threads.stop)
 					break;
 
 				// main threadでfail low/highが起きたなら読み筋をGUIに出力する。
@@ -1193,21 +1113,21 @@ void Thread::search()
 					// fail low/highしたときの読み筋は役に立たないであろうという考え。
 					&& multiPV == 1
 					&& (bestValue <= alpha || bestValue >= beta)
-					&& Time.elapsed() > 3000
+					&& main_manager()->tm.elapsed() > 3000
 					// 将棋所のコンソールが詰まるのを予防するために出力を少し抑制する。
 					// また、go infiniteのときは、検討モードから使用しているわけで、PVは必ず出力する。
 
 					// 以下、やねうら王独自拡張。
-					&& (rootDepth < 3 || mainThread->lastPvInfoTime + Limits.pv_interval <= Time.elapsed())
+					&& (rootDepth < 3 || mainThread->lastPvInfoTime + limits.pv_interval <= main_manager()->tm.elapsed())
 					// silent modeや検討モードなら出力を抑制する。
-					&& !Limits.silent
+					&& !limits.silent
 					// ただし、outout_fail_lh_pvがfalseならfail high/fail lowのときのPVを出力しない。
-					&&  Limits.outout_fail_lh_pv
+					&&  limits.outout_fail_lh_pv
 					)
 				{
 					// 最後に出力した時刻を記録しておく。
-					mainThread->lastPvInfoTime = Time.elapsed();
-					sync_cout << Search::pv(rootPos, TT, rootDepth) << sync_endl;
+					mainThread->lastPvInfoTime = main_manager()->tm.elapsed();
+					sync_cout << Search::pv(rootPos, tt, rootDepth) << sync_endl;
 				}
 
 				// aspiration窓の範囲外
@@ -1258,27 +1178,27 @@ void Thread::search()
 
 			if (   mainThread
 				// メインスレッド以外はPVを出力しない。
-				&& !Limits.silent
+				&& !limits.silent
 				// また、silentモードの場合もPVは出力しない。
 				// (やねうら王独自拡張。教師生成の時などにPVが出力されたくないので)
-				&& (/* Threads.stop || */ pvIdx + 1 == multiPV || Time.elapsed() > 3000)
-				// ⇨　Stockfishは、Threads.stopが条件に入っていて、停止するときにもPVを出力している。
+				&& (/* threads.stop || */ pvIdx + 1 == multiPV || main_manager()->tm.elapsed() > 3000)
+				// ⇨　Stockfishは、threads.stopが条件に入っていて、停止するときにもPVを出力している。
 				// やねうら王では、Threads::search()の最後で行うから、stopする時にはここでは出力しないことにする。
 				// ⇨　MultiPVのときは最後の候補手を求めた直後とする。MultiPVでない時は、毎回。(pvIdx == 0かつmultiPV == 1なので)
 				// ただし、MultiPVの時でも時間が3秒以上経過してからは、MultiPVのそれぞれの指し手の更新ごと。
-				&&  mainThread->lastPvInfoTime + Limits.pv_interval <= Time.elapsed()
+				&&  mainThread->lastPvInfoTime + limits.pv_interval <= main_manager()->tm.elapsed()
 				// ⇨　思考エンジンオプションの"PvInterval"の出力間隔を守る。それより短い間隔では出力しない。
 				// デフォルト 300[ms]だが、これは0に設定しても問題はない。(GUI側の表示処理で詰まる可能性はある。)
 				)
 			{
-				mainThread->lastPvInfoTime = Time.elapsed();
-				sync_cout << Search::pv(rootPos, TT, rootDepth) << sync_endl;
+				mainThread->lastPvInfoTime = main_manager()->tm.elapsed();
+				sync_cout << Search::pv(rootPos, tt, rootDepth) << sync_endl;
 			}
 
 		} // multi PV
 
 			// ここでこの反復深化の1回分は終了したのでcompletedDepthに反映させておく。
-		if (!Threads.stop)
+		if (!threads.stop)
 			completedDepth = rootDepth;
 
 		if (rootMoves[0].pv[0] != lastBestMove)
@@ -1290,9 +1210,9 @@ void Thread::search()
 		// Have we found a "mate in x"?
 		// x手詰めを発見したのか？
 
-		//if (Limits.mate && bestValue >= VALUE_MATE_IN_MAX_PLY
-		//    && VALUE_MATE - bestValue <= 2 * Limits.mate)
-		//    Threads.stop = true;
+		//if (limits.mate && bestValue >= VALUE_MATE_IN_MAX_PLY
+		//    && VALUE_MATE - bestValue <= 2 * limits.mate)
+		//    threads.stop = true;
 
 		// multi_pvのときは一つのpvで詰みを見つけただけでは停止するのは良くないので
 		// 早期終了はmultiPV == 1のときのみ行なう。(やねうら王独自拡張)
@@ -1304,13 +1224,13 @@ void Thread::search()
 			// mateを読みきったとき、そのmateの2.5倍以上、iterationを回しても仕方ない気がするので探索を打ち切るようにする。
 			// ⇨ あと、rootで1手詰め呼び出さなくしたので、その影響もあって、VALUE_MATE == bestValueになることはあるから、この時、
 			//   rootDepth == 1で探索を終了されては困る。もう少し先まで調べて欲しいので、+2しておく。
-			if (!Limits.mate
+			if (!limits.mate
 				&& bestValue >= VALUE_MATE_IN_MAX_PLY
 				&& (VALUE_MATE - bestValue + 2) * 5/2 < (Value)(rootDepth))
 				break;
 
 			// 詰まされる形についても同様。こちらはmateの2.5倍以上、iterationを回したなら探索を打ち切る。
-			if (!Limits.mate
+			if (!limits.mate
 				&& bestValue <= VALUE_MATED_IN_MAX_PLY
 				&& (bestValue - (-VALUE_MATE) + 2) * 5/2 < (Value)(rootDepth))
 				break;
@@ -1326,8 +1246,8 @@ void Thread::search()
 		// ponder用の指し手として、2手目の指し手を保存しておく。
 		// これがmain threadのものだけでいいかどうかはよくわからないが。
 		// とりあえず、無いよりマシだろう。(やねうら王独自拡張)
-		if (mainThread->rootMoves[0].pv.size() > 1)
-			mainThread->ponder_candidate = mainThread->rootMoves[0].pv[1];
+		if (threads.main_thread()->worker->rootMoves[0].pv.size() > 1)
+			mainThread->ponder_candidate = threads.main_thread()->worker->rootMoves[0].pv[1];
 
 		// -- やねうら王独自の処理ここまで↑↑↑
 
@@ -1337,18 +1257,18 @@ void Thread::search()
 			skill.pick_best(multiPV);
 
 		// Use part of the gained time from a previous stable move for the current move
-		for (Thread* th : Threads)
+		for (Thread* th : threads)
 		{
-			totBestMoveChanges += th->bestMoveChanges;
-			th->bestMoveChanges = 0;
+			totBestMoveChanges += th->worker->bestMoveChanges;
+			th->worker->bestMoveChanges = 0;
 		}
 
 		// 残り時間的に、次のiterationに行って良いのか、あるいは、探索をいますぐここでやめるべきか？
-		if (Limits.use_time_management())
+		if (limits.use_time_management())
 		{
 			// まだ停止が確定していない
 			// (このへんの仕組み、やねうら王では、Stockfishとは異なる)
-			if (!Threads.stop && Time.search_end == 0)
+			if (!threads.stop && mainThread->tm.search_end == 0)
 			{
 				// 1つしか合法手がない(one reply)であるだとか、利用できる時間を使いきっているだとか、
 
@@ -1364,12 +1284,12 @@ void Thread::search()
 				double reduction = (1.48 + mainThread->previousTimeReduction) / (2.17 * timeReduction);
 				// rootでのbestmoveの不安定性。
 				// bestmoveが不安定であるなら思考時間を増やしたほうが良い。
-				double bestMoveInstability = 1 + 1.88 * totBestMoveChanges / Threads.size();
+				double bestMoveInstability = 1 + 1.88 * totBestMoveChanges / threads.size();
 				//double recapture = limits.capSq == rootMoves[0].pv[0].to_sq() ? 0.955 : 1.005;
 				// ⇨ やねうら王ではcapSqは実装してない。
 
 				double totalTime =
-				  /*mainThread->tm*/Time.optimum() * fallingEval * reduction * bestMoveInstability /* *recapture*/;
+				  /*mainThread->tm*/mainThread->tm.optimum() * fallingEval * reduction * bestMoveInstability /* *recapture*/;
 
 				// 合法手が1手しかないときはtotalTime = 0として、即指しする。(これはやねうら王独自改良)
 				if (rootMoves.size() == 1)
@@ -1379,7 +1299,7 @@ void Thread::search()
 				// failLowが起きてなかったり、1つ前の反復深化から値がよくなってたりするとimprovingFactorが小さくなる。
 				// Stop the search if we have only one legal move, or if available time elapsed
 
-				auto elapsedTime = Time.elapsed();
+				auto elapsedTime = mainThread->tm.elapsed();
 
 				if (elapsedTime > totalTime)
 				{
@@ -1390,13 +1310,13 @@ void Thread::search()
 
 					// ponder中なら、終了時刻はponderhit後から計算して、Time.minimum()。
 					if (mainThread->ponder)
-						Time.search_end = Time.minimum();
+						mainThread->tm.search_end = mainThread->tm.minimum();
 					else
 					{
 						// "ponderhit"しているときは、そこからの経過時間を丸める。
 						// "ponderhit"していないときは開始からの経過時間を丸める。
 						// そのいずれもTime.elapsed_from_ponderhit()で良い。
-						Time.search_end = std::max(Time.round_up(Time.elapsed_from_ponderhit()), Time.minimum());
+						mainThread->tm.search_end = std::max(mainThread->tm.round_up(mainThread->tm.elapsed_from_ponderhit()), mainThread->tm.minimum());
 					}
 				}
 
@@ -1408,7 +1328,7 @@ void Thread::search()
 				//   ここは固定秒での対局であっても、探索に影響する。
 
 				//threads.increaseDepth = mainThread->ponder || elapsedTime <= totalTime * 0.506;
-				Threads.increaseDepth = mainThread->ponder || elapsedTime <= totalTime * 0.506;
+				threads.increaseDepth = mainThread->ponder || elapsedTime <= totalTime * 0.506;
 
 				// Stockfish 14ではtotalTime * 0.58
 				// Stockfish 16では totalTime * 0.50
@@ -1438,11 +1358,82 @@ void Thread::search()
 			skill.best ? skill.best : skill.pick_best(multiPV)));
 }
 
+// Search::clear() resets search state to its initial value
+// isreadyコマンドの応答中に呼び出される。時間のかかる処理はここに書くこと。
+void Search::Worker::clear()
+{
+#if defined(USE_MOVE_PICKER)
+	mainHistory.fill(0);
+	captureHistory.fill(-758);
+#if defined(ENABLE_PAWN_HISTORY)
+	pawnHistory.fill(-1158);
+	pawnCorrectionHistory.fill(0);
+	materialCorrectionHistory.fill(0);
+	majorPieceCorrectionHistory.fill(0);
+	minorPieceCorrectionHistory.fill(0);
+	nonPawnCorrectionHistory[WHITE].fill(0);
+	nonPawnCorrectionHistory[BLACK].fill(0);
+
+	for (auto& to : continuationCorrectionHistory)
+		for (auto& h : to)
+			h->fill(0);
+#endif
+
+	// ここは、未初期化のときに[NO_PIECE][SQ_ZERO]を指すので、ここを-1で初期化しておくことによって、
+	// history > 0 を条件にすれば自ずと未初期化のときは除外されるようになる。
+
+	// ほとんどの履歴エントリがいずれにせよ後で負になるため、
+	// 開始値を「正しい」方向に少しシフトさせるため、-71で埋めている。
+	// この効果は、深度が深くなるほど薄れるので、長時間思考させる時には
+	// あまり意味がないが、無駄ではないらしい。
+	// Tweak history initialization : https://github.com/official-stockfish/Stockfish/commit/7d44b43b3ceb2eebc756709432a0e291f885a1d2
+
+	for (bool inCheck : { false, true })
+		for (StatsType c : { NoCaptures, Captures })
+			//for (auto& to : continuationHistory[inCheck][c])
+			//	for (auto& h : to)
+			//		h->fill(-675);
+
+			// ↑この初期化コードは、ContinuationHistory::fill()に移動させた。
+
+			continuationHistory[inCheck][c].fill(-645);
+
+#endif
+
+	// -----------------------
+	//   テーブルの初期化
+	// -----------------------
+
+	// LMRで使うreduction tableの初期化
+	//
+	// pvとnon pvのときのreduction定数
+	// 0.05とか変更するだけで勝率えらく変わる
+
+	// EVAL_LEARNの時は、1スレで探索しないといけないので、1スレで最強になるように枝刈りを甘くする必要がある。
+	// つまりは、この時、Threads.size() == 1と見做す必要がある。
+
+	//for (int i = 1; i < MAX_MOVES; ++i)
+	//	Reductions[i] = int(20.81 * std::log(i));
+
+	size_t THREAD_SIZE =
+#if defined(EVAL_LEARN)
+		1
+#else
+		Threads.size()
+#endif
+		;
+
+	for (size_t i = 1; i < std::size(reductions); ++i)
+		reductions[i] = int((PARAM_REDUCTIONS_PARAM1 / 100.0 /*(100で割ったあとの数値が)19.43*/
+			+ std::log(THREAD_SIZE) / 2) * std::log(i));
+	// TODO あとで
+
+// ここ、log(THREAD_SIZE)/2 の /2 のところ、何か良さげな係数を掛けて調整すべきだと思う。
+}
+
 // -----------------------
 //      通常探索
 // -----------------------
-
-namespace {
 
 // Main search function for both PV and non-PV nodes
 // PV , non-PV node共用のメインの探索関数。
@@ -1450,7 +1441,7 @@ namespace {
 // cutNode = LMRで悪そうな指し手に対してreduction量を増やすnode
 
 template <NodeType nodeType>
-Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, bool cutNode)
+Value Search::Worker::search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, bool cutNode)
 {
 	// -----------------------
 	//     nodeの種類
@@ -1562,7 +1553,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 
 	//     nodeの初期化
 
-	Thread* thisThread = pos.this_thread();
+	Worker* thisThread = this;
 	ss->inCheck		   = pos.checkers();
 	priorCapture	   = pos.captured_piece();
 	Color us		   = pos.side_to_move();
@@ -1577,8 +1568,8 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 	// 残りの利用可能な時間を確認します
 	// ⇨ 備考) これはメインスレッドのみが行なう。
 
-	if (thisThread == Threads.main())
-		static_cast<MainThread*>(thisThread)->check_time();
+	if (is_mainthread())
+		main_manager()->check_time(*this);
 
 	// Used to send selDepth info to GUI (selDepth counts from 1, ply from 0)
 	// selDepth情報をGUIに送信するために使用します（selDepthは1からカウントし、plyは0からカウントします）
@@ -1615,9 +1606,9 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 			return value_from_tt(draw_value(draw_type, pos.side_to_move()), ss->ply);
 
 		// 最大手数を超えている、もしくは停止命令が来ている。
-		if (   Threads.stop.load(std::memory_order_relaxed)
+		if (   threads.stop.load(std::memory_order_relaxed)
 			|| ss->ply >= MAX_PLY
-			|| pos.game_ply() > Limits.max_game_ply
+			|| pos.game_ply() > limits.max_game_ply
 			)
 			return draw_value(REPETITION_DRAW, pos.side_to_move());
 
@@ -1755,7 +1746,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 	**/
 
 	posKey = pos.hash_key();
-	auto [ttHit, ttData, ttWriter] = TT.probe(posKey, pos);
+	auto [ttHit, ttData, ttWriter] = tt.probe(posKey, pos);
 
 	// Need further processing of the saved data
 	// 保存されたデータのさらなる処理が必要です
@@ -1953,7 +1944,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 				ASSERT_LV3(pos.legal_promote(move));
 				if (!excludedMove)
 					ttWriter.write(posKey, bestValue , ss->ttPv, BOUND_EXACT,
-						    std::min(MAX_PLY - 1, depth + 6), move, VALUE_NONE , TT.generation());
+						    std::min(MAX_PLY - 1, depth + 6), move, VALUE_NONE , tt.generation());
 				// ⇨ excludedMoveがあるときは置換表に書き出さないルールになっているので、
 				//   この条件式が必要なので注意。
 
@@ -1997,7 +1988,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 		// 王手がかかってようがかかってまいが、宣言勝ちの判定は正しい。
 		// (トライルールのとき王手を回避しながら入玉することはありうるので)
 		// トライルールのときここで返ってくるのは16bitのmoveだが、置換表に格納するには問題ない。
-		move = pos.DeclarationWin();
+		move = pos.DeclarationWin(limits);
 		if (move != Move::none())
 		{
 			bestValue = mate_in(ss->ply + 1); // 1手詰めなのでこの次のnodeで(指し手がなくなって)詰むという解釈
@@ -2190,7 +2181,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 		// 上の方にある else if (excludedMove) でこの条件は除外されている。
 
 		ttWriter.write(posKey, VALUE_NONE, ss->ttPv, BOUND_NONE, DEPTH_UNSEARCHED, Move::none(),
-			unadjustedStaticEval, TT.generation());
+			unadjustedStaticEval, tt.generation());
 
 		// どうせ毎node評価関数を呼び出すので、evalの値にそんなに価値はないのだが、mate_1ply()を
 		// 実行したという証にはなるので意味がある。
@@ -2346,7 +2337,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 		// do_null_move()は、この条件を満たす必要がある。
 
 		lazy_evaluate(pos);
-		pos.do_null_move(st);
+		pos.do_null_move(st, tt);
 
 		Value nullValue = -search<NonPV>(pos, ss + 1, -beta, -beta + 1, depth - R, false);
 
@@ -2457,7 +2448,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 		{
 			// ↑Stockfishでは省略してあるけど、この"{"、省略するとbugの原因になりうるので追加しておく。
 			ASSERT_LV3(move.is_ok());
-			ASSERT_LV5(pos.pseudo_legal(move) && pos.legal_promote(move));
+			ASSERT_LV5(pos.pseudo_legal(move, limits) && pos.legal_promote(move));
 
 			if (move == excludedMove)
 				continue;
@@ -2487,7 +2478,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 			//thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
 
 			lazy_evaluate(pos);
-			pos.do_move(move, st);
+			pos.do_move(move, st, tt);
 
 			// Perform a preliminary qsearch to verify that the move holds
 			// この指し手がよさげであることを確認するための予備的なqsearch
@@ -2510,7 +2501,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 				// ProbCutのdataを置換表に保存する。
 
 				ttWriter.write(posKey, value_to_tt(value, ss->ply),
-					ss->ttPv, BOUND_LOWER, depth - 3, move, unadjustedStaticEval, TT.generation());
+					ss->ttPv, BOUND_LOWER, depth - 3, move, unadjustedStaticEval, tt.generation());
 
 				return std::abs(value) < VALUE_TB_WIN_IN_MAX_PLY
 							? value - (probCutBeta - beta)
@@ -2581,7 +2572,7 @@ moves_loop: // When in check, search starts here
 	// moveCountPruningがtrueの時はnext_move()はQUIETの指し手を返さないので注意。
 	while ((move = mp.next_move()) != Move::none())
 	{
-		ASSERT_LV3(pos.pseudo_legal(move) && pos.legal_promote(move));
+		ASSERT_LV3(pos.pseudo_legal(move, limits) && pos.legal_promote(move));
 
 		if (move == excludedMove)
 			continue;
@@ -2985,7 +2976,7 @@ moves_loop: // When in check, search starts here
 
 		// 指し手で1手進める
 		lazy_evaluate(pos);
-		pos.do_move(move, st, givesCheck);
+		pos.do_move(move, st, givesCheck, tt);
 
 		// These reduction adjustments have proven non-linear scaling.
 		// They are optimized to time controls of 180 + 1.8 and longer,
@@ -3191,7 +3182,7 @@ moves_loop: // When in check, search starts here
 		// 指し手の探索が終了しました。もし停止が発生した場合、探索の返り値は信頼できないため、
 		// 最善手、主要変化、トランスポジションテーブルを更新せずに直ちに戻ります。
 
-		if (Threads.stop.load(std::memory_order_relaxed))
+		if (threads.stop.load(std::memory_order_relaxed))
 			return VALUE_ZERO;
 
 		// -----------------------
@@ -3367,7 +3358,7 @@ moves_loop: // When in check, search starts here
 	// completed. But in this case, bestValue is valid because we have fully
 	// searched our subtree, and we can anyhow save the result in TT.
 	/*
-		if (Threads.stop)
+		if (threads.stop)
 		return VALUE_DRAW;
 	*/
 
@@ -3418,7 +3409,7 @@ moves_loop: // When in check, search starts here
 
 		// quietな(駒を捕獲しない)best moveなのでkillerとhistoryとcountermovesを更新する。
 
-		update_all_stats(pos, ss, bestMove, bestValue, beta, prevSq, quietsSearched,
+		update_all_stats(pos, ss, *this, bestMove, bestValue, beta, prevSq, quietsSearched,
 			capturesSearched, depth);
 
 
@@ -3505,7 +3496,7 @@ moves_loop: // When in check, search starts here
 			  bestValue >= beta  ? BOUND_LOWER
 			: PvNode && bestMove ? BOUND_EXACT
 			                     : BOUND_UPPER,
-			depth, bestMove, unadjustedStaticEval, TT.generation());
+			depth, bestMove, unadjustedStaticEval, tt.generation());
 	}
 
 	// correction historyは実装しない。
@@ -3559,7 +3550,7 @@ moves_loop: // When in check, search starts here
 
 
 template <NodeType nodeType>
-Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth)
+Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth)
 {
 	// チェスと異なり将棋では、手駒があるため、王手を無条件で延長するとかなりの長手数、王手が続くことがある。
 	// 手駒が複数あると、その組み合わせをすべて延長してしまうことになり、組み合わせ爆発を容易に起こす。
@@ -3661,7 +3652,7 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth)
 		ss->pv[0]    = Move::none();
 	}
 
-	Thread* thisThread = pos.this_thread();
+	Worker* thisThread = this;
 
 	bestMove           = Move::none();
 	ss->inCheck        = pos.checkers();
@@ -3694,7 +3685,7 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth)
 		return draw_value(REPETITION_DRAW, pos.side_to_move());
 
 	// 最大手数の到達
-	if (ss->ply >= MAX_PLY || pos.game_ply() > Limits.max_game_ply)
+	if (ss->ply >= MAX_PLY || pos.game_ply() > limits.max_game_ply)
 		return draw_value(REPETITION_DRAW, pos.side_to_move());
 
 	ASSERT_LV3(0 <= ss->ply && ss->ply < MAX_PLY);
@@ -3718,7 +3709,7 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth)
 
 
 	posKey  = pos.hash_key();
-	auto [ttHit, ttData, ttWriter] = TT.probe(posKey, pos);
+	auto [ttHit, ttData, ttWriter] = tt.probe(posKey, pos);
 
 	// Need further processing of the saved data
 	// 保存されたデータのさらなる処理が必要です
@@ -3882,7 +3873,7 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth)
 
 #if defined(WRITE_QSEARCH_MATE1PLY_TO_TT)
 					ttWriter.write(posKey, bestValue , ss->ttPv, BOUND_EXACT,
-						DEPTH_QS, move, unadjustedStaticEval, TT.generation());
+						DEPTH_QS, move, unadjustedStaticEval, tt.generation());
 						// depth - 6 は値の範囲が良くない。DEPTH_QSにすべき。
 
 					// ⇨ 置換表に書き出しても得するかわからなかった。(V7.74taya-t9 vs V7.74taya-t12)
@@ -3950,7 +3941,7 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth)
 			if (!ss->ttHit)
 				ttWriter.write(posKey, value_to_tt(bestValue, ss->ply), false, BOUND_LOWER,
 					DEPTH_UNSEARCHED, Move::none(), unadjustedStaticEval,
-					TT.generation());
+					tt.generation());
 
             return bestValue;
 		}
@@ -4002,7 +3993,7 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth)
 	while ((move = mp.next_move()) != Move::none())
 	{
 		// MovePickerで生成された指し手はpseudo_legalであるはず。
-		ASSERT_LV3(pos.pseudo_legal(move) && pos.legal_promote(move));
+		ASSERT_LV3(pos.pseudo_legal(move, limits) && pos.legal_promote(move));
 
 		// Check for legality
 		// 合法手かどうかのチェック
@@ -4144,7 +4135,7 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth)
 
 		// 1手動かして、再帰的にqsearch()を呼ぶ
 		lazy_evaluate(pos);
-		pos.do_move(move, st, givesCheck);
+		pos.do_move(move, st, givesCheck, tt);
 		value = -qsearch<nodeType>(pos, ss + 1, -beta, -alpha, depth - 1);
 		pos.undo_move(move);
 
@@ -4242,7 +4233,7 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth)
 	ASSERT_LV3(pos.legal_promote(bestMove));
 	ttWriter.write(posKey, value_to_tt(bestValue, ss->ply), pvHit,
 				bestValue >= beta ? BOUND_LOWER : BOUND_UPPER, DEPTH_QS, bestMove,
-				unadjustedStaticEval, TT.generation());
+				unadjustedStaticEval, tt.generation());
 
 	// ■ 備考
 	// 
@@ -4261,6 +4252,25 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth)
 	ASSERT_LV3(-VALUE_INFINITE < bestValue && bestValue < VALUE_INFINITE);
 
 	return bestValue;
+}
+
+// 【計測資料 30.】　Reductionのコード、Stockfish 9と10での比較
+
+// 残り探索深さをこの深さだけ減らす。
+// 注意 : Stockfish 17(2024.11)で、1024倍して返すことになった。
+//
+// 引数の意味
+//   d  : depth
+//   mn : move_count
+//   i  : improving , 評価値が2手前から上がっているかのフラグ。
+//                    上がっていないなら悪化していく局面なので深く読んでも仕方ないからreduction量を心もち増やす。
+//   delta, rootDelta : staticEvalとchildのeval(value)の差が一貫して低い時にreduction量を増やしたいので、
+//                   そのためのフラグ。(これがtrueだとreduction量が1増える)
+Depth Search::Worker::reduction(bool i, Depth d, int mn, Value delta, Value rootDelta) {
+	int reductionScale = reductions[d] * reductions[mn];
+	return (reductionScale + PARAM_REDUCTION_ALPHA - delta * PARAM_REDUCTION_GAMMA / rootDelta)
+		+ (!i && reductionScale > PARAM_REDUCTION_BETA) * 1135;
+	// PARAM_REDUCTION_BETAの値、将棋ではもう少し小さくして、reductionの適用範囲を広げた方がいいかも？
 }
 
 // value_to_tt() adjusts a mate or TB score from "plies to mate from the root" to
@@ -4362,6 +4372,7 @@ void update_pv(Move* pv, Move move, const Move* childPv) {
 void update_all_stats(
 		const Position& pos,
 		Stack* ss,
+		Search::Worker& workerThread,
 		Move bestMove,
 		Value bestValue,
 		Value beta,
@@ -4371,7 +4382,6 @@ void update_all_stats(
 		Depth depth) {
 
 	Color   us           = pos.side_to_move();
-	Thread& workerThread = *pos.this_thread();
 	CapturePieceToHistory& captureHistory = workerThread.captureHistory;
 	Piece moved_piece  = pos.moved_piece_after(bestMove);
 	PieceType captured;
@@ -4467,7 +4477,7 @@ void update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus)
 // move      = これが良かった指し手
 
 void update_quiet_histories(
-	const Position& pos, Stack* ss, /*Search::Worker& workerThread*/ Thread& workerThread,  Move move, int bonus) {
+	const Position& pos, Stack* ss, Search::Worker& workerThread, Move move, int bonus) {
 
 	Color us = pos.side_to_move();
 	workerThread.mainHistory(us, move.from_to()) << bonus;
@@ -4490,7 +4500,7 @@ void update_quiet_histories(
 // Heinz van Saanenのアイデア。
 Move Skill::pick_best(size_t multiPV) {
 
-	const RootMoves& rootMoves = Threads.main()->rootMoves;
+	const RootMoves& rootMoves = threads.main()->rootMoves;
 	static PRNG rng(now()); // 乱数ジェネレーターは非決定的であるべき。
 
 	// RootMovesはすでにscoreで降順にソートされている。
@@ -4524,14 +4534,12 @@ Move Skill::pick_best(size_t multiPV) {
 }
 #endif
 
-} // namespace
-
 // MainThread::check_time() is used to print debug info and, more importantly,
 // to detect when we are out of available time and thus stop the search.
 
-// 残り時間をチェックして、時間になっていればThreads.stopをtrueにする。
+// 残り時間をチェックして、時間になっていればthreads.stopをtrueにする。
 // main threadからしか呼び出されないのでロジックがシンプルになっている。
-void MainThread::check_time()
+void SearchManager::check_time(Search::Worker& worker)
 {
 	// When using nodes, ensure checking rate is not lower than 0.1% of nodes
 	// 4096回に1回ぐらいのチェックで良い。
@@ -4539,10 +4547,10 @@ void MainThread::check_time()
 		return;
 
 	// "stop"待ちなので以降の判定不要。
-	if (Threads.main()->time_to_return_bestmove)
+	if (time_to_return_bestmove)
 		return ;
 
-	// Limits.nodesが指定されているときは、そのnodesの0.1%程度になるごとにチェック。
+	// limits.nodesが指定されているときは、そのnodesの0.1%程度になるごとにチェック。
 	// さもなくばデフォルトの値を使う。
 	// このデフォルト値、ある程度小さくしておかないと、通信遅延分のマージンを削ったときに
 	// ちょうど1秒を超えて計測2秒になり、損をしうるという議論があるようだ。
@@ -4552,7 +4560,7 @@ void MainThread::check_time()
 	// When using nodes, ensure checking rate is not lower than 0.1% of nodes
 	// → NodesLimitを有効にした時、その指定されたノード数の0.1%程度の誤差であって欲しいのでそれくらいの頻度でチェックする。
 
-	callsCnt = Limits.nodes ? std::min(512, int(Limits.nodes / 1024)) : 512;
+	callsCnt = worker.limits.nodes ? std::min(512, int(worker.limits.nodes / 1024)) : 512;
 
 	// 1秒ごとにdbg_print()を呼び出す処理。
 	// dbg_print()は、dbg_hit_on()呼び出しによる統計情報を表示する。
@@ -4574,28 +4582,28 @@ void MainThread::check_time()
 
 	// "ponderhit"時は、そこからの経過時間で考えないと、elapsed > Time.maximum()になってしまう。
 	// elapsed_from_ponderhit()は、"ponderhit"していないときは"go"コマンドからの経過時間を返すのでちょうど良い。
-	TimePoint elapsed = Time.elapsed_from_ponderhit();
+	TimePoint elapsed = tm.elapsed_from_ponderhit();
 
 	// 今回のための思考時間を完璧超えているかの判定。
 
 	// 反復深化のループ内でそろそろ終了して良い頃合いになると、Time.search_endに停止させて欲しい時間が代入される。
 	// (それまではTime.search_endはゼロであり、これは終了予定時刻が未確定であることを示している。)
 	// ※　前半部分、やねうら王、独自実装。
-	if ((Limits.use_time_management() &&
-		(elapsed > Time.maximum() || (Time.search_end > 0 && elapsed > Time.search_end)))
-		|| (Limits.movetime && elapsed >= Limits.movetime)
-		|| (Limits.nodes && Threads.nodes_searched() >= uint64_t(Limits.nodes))
+	if ((worker.limits.use_time_management() &&
+		(elapsed > tm.maximum() || (tm.search_end > 0 && elapsed > tm.search_end)))
+		|| (worker.limits.movetime && elapsed >= worker.limits.movetime)
+		|| (worker.limits.nodes && worker.threads.nodes_searched() >= uint64_t(worker.limits.nodes))
 		)
 	{
-		if (Limits.wait_stop)
+		if (worker.limits.wait_stop)
 		{
-			// stopが来るまで待つので、Threads.stopは変化させない。
+			// stopが来るまで待つので、threads.stopは変化させない。
 			// 代わりに"info string time to return bestmove."と出力する。
-			output_time_to_return_bestmove();
+			output_time_to_return_bestmove(this);
 
 		} else {
 
-			Threads.stop = true;
+			worker.threads.stop = true;
 		}
 	}
 }
@@ -4751,7 +4759,7 @@ void init_param()
 #if defined(ENABLE_OUTPUT_GAME_RESULT)
 		{
 			if (!result_log.is_open())
-				result_log.open(Options["PARAMETERS_LOG_FILE_PATH"], std::ios::app);
+				result_log.open(options["PARAMETERS_LOG_FILE_PATH"], std::ios::app);
 			// 今回のパラメーターをログファイルに書き出す。
 			for (size_t i = 0; i < param_names.size(); ++i)
 			{
@@ -4773,194 +4781,6 @@ void init_param()
 #endif
 }
 
-// --------------------
-//    読み筋の出力
-// --------------------
-
-namespace Search {
-
-	// depth : iteration深さ
-	std::string pv(const Position& pos, const TranspositionTable& tt, Depth depth)
-	{
-		std::stringstream ss;
-
-		TimePoint elapsed = Time.elapsed() + 1;
-#if defined(__EMSCRIPTEN__)
-		// yaneuraou.wasm
-		// Time.elapsed()が-1を返すことがある
-		// https://github.com/lichess-org/stockfish.wasm/issues/5
-		// https://github.com/lichess-org/stockfish.wasm/commit/4f591186650ab9729705dc01dec1b2d099cd5e29
-		elapsed = std::max(elapsed, TimePoint(1));
-#endif
-		const auto& rootMoves = pos.this_thread()->rootMoves;
-		size_t pvIdx = pos.this_thread()->pvIdx;
-		size_t multiPV = std::min(size_t(Options["MultiPV"]), rootMoves.size());
-
-		uint64_t nodes_searched = Threads.nodes_searched();
-
-		// MultiPVでは上位N個の候補手と読み筋を出力する必要がある。
-		for (size_t i = 0; i < multiPV; ++i)
-		{
-			// この指し手のpvの更新が終わっているのか
-			bool updated = rootMoves[i].score != -VALUE_INFINITE;
-
-			if (depth == 1 && !updated && i > 0)
-				continue;
-
-			// 1より小さな探索depthで出力しない。
-			Depth d = updated ? depth : std::max(1, depth - 1);
-			Value v = updated ? rootMoves[i].usiScore : rootMoves[i].previousScore;
-
-			// multi pv時、例えば3個目の候補手までしか評価が終わっていなくて(PVIdx==2)、このとき、
-			// 3,4,5個目にあるのは前回のiterationまでずっと評価されていなかった指し手であるような場合に、
-			// これらのpreviousScoreが-VALUE_INFINITE(未初期化状態)でありうる。
-			// (multi pv状態で"go infinite"～"stop"を繰り返すとこの現象が発生する。おそらく置換表にhitしまくる結果ではないかと思う。)
-			if (v == -VALUE_INFINITE)
-				v = VALUE_ZERO; // この場合でもとりあえず出力は行う。
-
-			//bool tb = TB::RootInTB && abs(v) < VALUE_MATE_IN_MAX_PLY;
-			//v = tb ? rootMoves[i].tbScore : v;
-
-			if (ss.rdbuf()->in_avail()) // 1行目でないなら連結のための改行を出力
-				ss << std::endl;
-
-			ss << "info"
-				<< " depth " << d
-				<< " seldepth " << rootMoves[i].selDepth
-#if defined(USE_PIECE_VALUE)
-				<< " score " << USI::value(v)
-#endif
-				;
-
-			// これが現在探索中の指し手であるなら、それがlowerboundかupperboundかは表示させる
-			if (i == pvIdx && /*!tb &&*/ updated) // tablebase- and previous-scores are exact
-				ss << (rootMoves[i].scoreLowerbound ? " lowerbound" : (rootMoves[i].scoreUpperbound ? " upperbound" : ""));
-
-			// 将棋所はmultipvに対応していないが、とりあえず出力はしておく。
-			if (multiPV > 1)
-				ss << " multipv " << (i + 1);
-
-			ss << " nodes " << nodes_searched
-				<< " nps " << nodes_searched * 1000 / elapsed
-				<< " hashfull " << tt.hashfull()
-				<< " time " << elapsed
-				<< " pv";
-
-
-			// PV配列からPVを出力する。
-			// ※　USIの"info"で読み筋を出力するときは"pv"サブコマンドはサブコマンドの一番最後にしなければならない。
-
-			auto out_array_pv = [&]()
-				{
-					for (Move m : rootMoves[i].pv)
-						ss << " " << m;
-				};
-
-			// 置換表からPVをかき集めてきてPVを出力する。
-			auto out_tt_pv = [&]()
-				{
-					auto pos_ = const_cast<Position*>(&pos);
-					Move moves[MAX_PLY + 1];
-					StateInfo si[MAX_PLY];
-					int ply = 0;
-
-					while (ply < MAX_PLY)
-					{
-						// 千日手はそこで終了。ただし初手はPVを出力。
-						// 千日手がベストのとき、置換表を更新していないので
-						// 置換表上はMove::none()がベストの指し手になっている可能性があるので早めに検出する。
-						auto rep = pos.is_repetition(ply);
-						if (rep != REPETITION_NONE && ply >= 1)
-						{
-							// 千日手でPVを打ち切るときはその旨を表示
-							ss << " " << rep;
-							break;
-						}
-
-						Move m;
-
-						// まず、rootMoves.pvを辿れるところまで辿る。
-						// rootMoves[i].pv[0]は宣言勝ちの指し手(Move::win())の可能性があるので注意。
-						if (ply < int(rootMoves[i].pv.size()))
-							m = rootMoves[i].pv[ply];
-						else
-						{
-							// 次の手を置換表から拾う。
-							// ただし置換表を破壊されるとbenchコマンドの時にシングルスレッドなのに探索内容の同一性が保証されなくて
-							// 困るのでread_probe()を用いる。
-
-							auto [ttHit, ttData, ttWriter] = tt.probe(pos.key(), pos);
-							// 置換表になかった
-							if (!ttHit)
-								break;
-
-							m = ttData.move;
-
-							// leaf nodeはわりと高い確率でMove::none()
-							if (m == Move::none())
-								break;
-
-							// 置換表にはpsudo_legalではない指し手が含まれるのでそれを弾く。
-							// 宣言勝ちでないならこれが合法手であるかのチェックが必要。
-							if (m != Move::win())
-							{
-								// 歩の不成が読み筋に含まれていようともそれは表示できなくてはならないので
-								// pseudo_legal_s<true>()を用いて判定。
-								if (!(pos.pseudo_legal_s<true>(m) && pos.legal(m)))
-									break;
-							}
-						}
-
-#if defined (USE_ENTERING_KING_WIN)
-						// 宣言勝ちである
-						if (m == Move::win())
-						{
-							// これが合法手であるなら宣言勝ちであると出力。
-							if (pos.DeclarationWin() != Move::none())
-								ss << " " << Move::win();
-
-							break;
-						}
-#endif
-						// leaf node末尾にMove::resign()があることはないが、
-						// 詰み局面で呼び出されると1手先がmove resignなので、これでdo_move()するのは
-						// 非合法だから、do_move()せずにループを抜ける。
-						if (!m.is_ok())
-						{
-							ss << " " << m;
-							break;
-						}
-
-						moves[ply] = m;
-						ss << " " << m;
-
-						// 注)
-						// このdo_moveで Position::nodesが加算されるので探索ノード数に影響が出る。
-						// benchコマンドで探索ノード数が一致しない場合、これが原因。
-						// → benchコマンドでは、ConsiderationMode = falseにすることで
-						// 　PV表示のためにdo_move()を呼び出さないようにした。
-
-						pos_->do_move(m, si[ply]);
-						++ply;
-					}
-					while (ply > 0)
-						pos_->undo_move(moves[--ply]);
-				};
-
-			// 検討用のPVを出力するモードなら、置換表からPVをかき集める。
-			// (そうしないとMultiPV時にPVが欠損することがあるようだ)
-			// fail-highのときにもPVを更新しているのが問題ではなさそう。
-			// Stockfish側の何らかのバグかも。
-			if (Search::Limits.consideration_mode)
-				out_tt_pv();
-			else
-				out_array_pv();
-		}
-
-		return ss.str();
-	}
-}
-
 // ============================================================
 //  学習時に用いる、depth固定探索などの関数を外部に対して公開
 // ============================================================
@@ -4971,8 +4791,6 @@ namespace Search {
 #include "../../testcmd/unit_test.h"
 #include "../../position.h"
 
-namespace Learner
-{
 // 学習用に、1つのスレッドからsearch,qsearch()を呼び出せるようなスタブを用意する。
 // いまにして思えば、AperyのようにSearcherを持ってスレッドごとに置換表などを用意するほうが
 // 良かったかも知れない。
@@ -4980,13 +4798,13 @@ namespace Learner
 // 学習のための初期化。
 // Learner::search(),Learner::qsearch()から呼び出される。
 // ssにはstack + 7が渡されるものとする。
-void init_for_search(Position& pos, Stack* ss , Move pv[], bool qsearch)
+void Learner::init_for_search(Position& pos, Stack* ss , Move pv[], bool qsearch, OptionsMap& options, Search::Worker& worker)
 {
 
 	// Search::Limitsに関して
 	// このメンバー変数はglobalなので他のスレッドに影響を及ぼすので気をつけること。
 	{
-		auto& limits = Search::Limits;
+		auto& limits = worker.limits;
 
 		// 探索を"go infinite"コマンド相当にする。(time managementされると困るため)
 		limits.infinite = true;
@@ -5018,7 +4836,7 @@ void init_for_search(Position& pos, Stack* ss , Move pv[], bool qsearch)
 
 	// this_threadに関して。
 	{
-		auto th = pos.this_thread();
+		auto th = &worker;
 
 		// 探索ノード数のゼロ初期化等。(threads.cppに書いてある初期化コードのコピペ)
 		th->nodes = th->bestMoveChanges = /* th->tbHits = */ th->nmpMinPly = 0;
@@ -5051,12 +4869,9 @@ void init_for_search(Position& pos, Stack* ss , Move pv[], bool qsearch)
 	}
 
 #if defined(YANEURAOU_ENGINE_NNUE)
-	init_fv_scale();
+	init_fv_scale(options);
 #endif
 }
-
-// 読み筋と評価値のペア。Learner::search(),Learner::qsearch()が返す。
-using ValuePV = std::pair<Value, std::vector<Move>>;
 
 // 対局の初期化。
 // 置換表のクリアとhistory table等のクリアを行う。
@@ -5069,27 +4884,25 @@ using ValuePV = std::pair<Value, std::vector<Move>>;
 //
 // この関数を呼び出すなせば、そのバランスを考慮した上で呼び出すこと。
 // 
-void init_for_game(Position& pos)
+void Learner::init_for_game(Search::Worker& worker, TranspositionTable& tt)
 {
-	auto thisThread = pos.this_thread();
-
-	TT.clear();          // 置換表のクリア
-	thisThread->clear(); // history table等のクリア
+	tt.clear();          // 置換表のクリア
+	worker.clear(); // history table等のクリア
 }
 
 // 静止探索。
 //
 // 前提条件) pos.set_this_thread(Threads[thread_id])で探索スレッドが設定されていること。
-// 　また、Threads.stopが来ると探索を中断してしまうので、そのときのPVは正しくない。
-// 　search()から戻ったあと、Threads.stop == trueなら、その探索結果を用いてはならない。
-// 　あと、呼び出し前は、Threads.stop == falseの状態で呼び出さないと、探索を中断して返ってしまうので注意。
+// 　また、threads.stopが来ると探索を中断してしまうので、そのときのPVは正しくない。
+// 　search()から戻ったあと、threads.stop == trueなら、その探索結果を用いてはならない。
+// 　あと、呼び出し前は、threads.stop == falseの状態で呼び出さないと、探索を中断して返ってしまうので注意。
 //
 // 詰まされている場合は、PV配列にMove::resign()が返る。
 //
 // 引数でalpha,betaを指定できるようにしていたが、これがその窓で探索したときの結果を
 // 置換表に書き込むので、その窓に対して枝刈りが出来るような値が書き込まれて学習のときに
 // 悪い影響があるので、窓の範囲を指定できるようにするのをやめることにした。
-ValuePV qsearch(Position& pos)
+Learner::ValuePV Learner::qsearch(Position& pos, OptionsMap& options, Search::Worker& worker)
 {
 
 	Move pv[MAX_PLY + 1];
@@ -5105,9 +4918,9 @@ ValuePV qsearch(Position& pos)
 	}
 
 	// 探索の初期化
-	init_for_search(pos, ss , pv, /* qsearch = */true);
+	init_for_search(pos, ss , pv, /* qsearch = */true, options, worker);
 
-	auto bestValue = ::qsearch<PV>(pos, ss, -VALUE_INFINITE, VALUE_INFINITE, 0);
+	auto bestValue = worker.qsearch<PV>(pos, ss, -VALUE_INFINITE, VALUE_INFINITE, 0);
 
 	// 得られたPVを返す。
 	for (Move* p = &ss->pv[0]; p->is_ok(); ++p)
@@ -5122,7 +4935,7 @@ ValuePV qsearch(Position& pos)
 // のようにすべし。
 // v.firstに評価値、v.secondにPVが得られる。
 // multi pvが有効のときは、pos.this_thread()->rootMoves[N].pvにそのPV(読み筋)の配列が得られる。
-// multi pvの指定はこの関数の引数multiPVで行なう。(Options["MultiPV"]の値は無視される)
+// multi pvの指定はこの関数の引数multiPVで行なう。(options["MultiPV"]の値は無視される)
 // 
 // rootでの宣言勝ち判定はしないので(扱いが面倒なので)、ここでは行わない。
 // 呼び出し側で処理すること。
@@ -5137,11 +4950,11 @@ ValuePV qsearch(Position& pos)
 // →　usi.cppの、読み筋の出力部のコードを読むこと。
 // 
 // 前提条件) pos.set_this_thread(Threads[thread_id])で探索スレッドが設定されていること。
-// 　また、Threads.stopが来ると探索を中断してしまうので、そのときのPVは正しくない。
-// 　search()から戻ったあと、Threads.stop == trueなら、その探索結果を用いてはならない。
-// 　あと、呼び出し前は、Threads.stop == falseの状態で呼び出さないと、探索を中断して返ってしまうので注意。
+// 　また、threads.stopが来ると探索を中断してしまうので、そのときのPVは正しくない。
+// 　search()から戻ったあと、threads.stop == trueなら、その探索結果を用いてはならない。
+// 　あと、呼び出し前は、threads.stop == falseの状態で呼び出さないと、探索を中断して返ってしまうので注意。
 //
-ValuePV search(Position& pos, int depth_, size_t multiPV /* = 1 */, u64 nodesLimit /* = 0 */)
+Learner::ValuePV Learner::search(Position& pos, int depth_, size_t multiPV /* = 1 */, u64 nodesLimit /* = 0 */, OptionsMap& options, Search::Worker& worker, const ThreadPool& threads)
 {
 	std::vector<Move> pvs;
 
@@ -5151,17 +4964,17 @@ ValuePV search(Position& pos, int depth_, size_t multiPV /* = 1 */, u64 nodesLim
 		return std::pair<Value, std::vector<Move>>(Eval::evaluate(pos), std::vector<Move>());
 
 	if (depth == 0)
-		return qsearch(pos);
+		return qsearch(pos, options, worker);
 
 	Stack stack[MAX_PLY + 10], *ss = stack + 7;
 	Move pv[MAX_PLY + 1];
 
 	// 探索の初期化
-	init_for_search(pos, ss , pv, /* qsearch = */ false);
+	init_for_search(pos, ss , pv, /* qsearch = */ false, options, worker);
 
 	// this_threadに関連する変数のaliasを用意。
 	// ※ "th->"と書かずに済むのであれば、Stockfishのsearch()のコードをコピペできるので。
-	auto th				 = pos.this_thread();
+	auto th				 = &worker;
 	auto& rootDepth		 = th->rootDepth;
 	auto& pvIdx			 = th->pvIdx;
 	auto& rootMoves		 = th->rootMoves;
@@ -5169,7 +4982,7 @@ ValuePV search(Position& pos, int depth_, size_t multiPV /* = 1 */, u64 nodesLim
 	auto& selDepth		 = th->selDepth;
 
 	// bestmoveとしてしこの局面の上位N個を探索する機能
-	//size_t multiPV = Options["MultiPV"];
+	//size_t multiPV = options["MultiPV"];
 
 	// この局面での指し手の数を上回ってはいけない
 	multiPV = std::min(multiPV, rootMoves.size());
@@ -5194,7 +5007,7 @@ ValuePV search(Position& pos, int depth_, size_t multiPV /* = 1 */, u64 nodesLim
 			rm.previousScore = rm.score;
 
 		// MultiPV
-		for (pvIdx = 0; pvIdx < multiPV && !Threads.stop; ++pvIdx)
+		for (pvIdx = 0; pvIdx < multiPV && !threads.stop; ++pvIdx)
 		{
 			// それぞれのdepthとPV lineに対するUSI infoで出力するselDepth
 			selDepth = 0;
@@ -5211,7 +5024,7 @@ ValuePV search(Position& pos, int depth_, size_t multiPV /* = 1 */, u64 nodesLim
 				Depth adjustedDepth =
 					std::max(1, rootDepth - failedHighCnt);
 				th->rootDelta = beta - alpha;
-				bestValue = ::search<Root>(pos, ss, alpha, beta, adjustedDepth, false);
+				bestValue = worker.search<Root>(pos, ss, alpha, beta, adjustedDepth, false);
 
 				stable_sort(rootMoves.begin() + pvIdx, rootMoves.end());
 				//my_stable_sort(pos.this_thread()->thread_id(),&rootMoves[0] + pvIdx, rootMoves.size() - pvIdx);
@@ -5270,7 +5083,7 @@ ValuePV search(Position& pos, int depth_, size_t multiPV /* = 1 */, u64 nodesLim
 }
 
 // UnitTest : プレイヤー同士の対局
-void UnitTest(Test::UnitTester& tester)
+void Learner::UnitTest(Test::UnitTester& tester, OptionsMap& options, Search::Worker& worker, const ThreadPool& threads, TranspositionTable& tt)
 {
 	// 対局回数→0ならskip
 	s64 auto_player_loop = tester.options["auto_player_loop"];
@@ -5280,7 +5093,7 @@ void UnitTest(Test::UnitTester& tester)
 		StateInfo si;
 
 		// 平手初期化
-		auto hirate_init  = [&] { pos.set_hirate(&si, Threads.main()); };
+		auto hirate_init  = [&] { pos.set_hirate(&si); };
 		// 探索深さ
 		auto depth = int(tester.options["auto_player_depth"]);
 
@@ -5306,10 +5119,10 @@ void UnitTest(Test::UnitTester& tester)
 					break;
 
 				// depth 6で探索
-				auto r = search(pos, depth);
+				auto r = search(pos, depth, 1, 0, options, worker, threads);
 				//Move m = ml.at(size_t(my_rand.rand(ml.size()))).move;
 
-				pos.do_move(r.second[0],s[ply]);
+				pos.do_move(r.second[0], s[ply], tt);
 
 				if (!pos.pos_is_ok())
 					fail = true;
@@ -5321,8 +5134,6 @@ void UnitTest(Test::UnitTester& tester)
 	}
 }
 
-
-}
 #endif
 
 #endif // YANEURAOU_ENGINE

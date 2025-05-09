@@ -14,7 +14,7 @@ namespace Mate {
 	// 3手詰めチェック
 	// mated_even_ply()から内部的に呼び出される。
 	template <bool INCHECK , bool GEN_ALL>
-	FORCE_INLINE Move MateSolver::mate_3ply(Position& pos)
+	FORCE_INLINE Move MateSolver::mate_3ply(Position& pos, TranspositionTable& tt)
 	{
 		// OR節点
 
@@ -23,7 +23,7 @@ namespace Mate {
 
 		for (const auto& m : MovePicker<true, INCHECK , GEN_ALL , false /* no ordering */>(pos))
 		{
-			pos.do_move(m, si, true);
+			pos.do_move(m, si, true, tt);
 
 			// and node
 
@@ -61,7 +61,7 @@ namespace Mate {
 						if (pos.gives_check(m2))
 							goto NEXT_CHECK;
 
-						pos.do_move(m2, si2, /* givesCheck */false);
+						pos.do_move(m2, si2, /* givesCheck */false, tt);
 
 						// mate_1ply()は王手がかかっている時に呼べないが、
 						// この局面は王手はかかっていないから問題ない。
@@ -94,7 +94,7 @@ namespace Mate {
 	// InCheck : 王手がかかっているか
 	// GEN_ALL : 歩の不成も生成するのか
 	template <bool INCHECK , bool GEN_ALL>
-	Move MateSolver::mate_odd_ply(Position& pos, const int ply)
+	Move MateSolver::mate_odd_ply(Position& pos, const int ply, TranspositionTable& tt)
 	{
 		// 手数制限オーバーか？
 		if (max_game_ply && max_game_ply < pos.game_ply())
@@ -102,7 +102,7 @@ namespace Mate {
 			return Move::none();
 
 		if (ply == 3)
-			return mate_3ply<INCHECK,GEN_ALL>(pos);
+			return mate_3ply<INCHECK, GEN_ALL>(pos, tt);
 		else if (ply == 1)
 			// 王手がかかっていないなら1手詰めを呼び出せるが、王手がかかっているなら1手詰めを呼べないので
 			// evasionのなかから詰む指し手を探す必要がある。レアケースなので、ここでは不詰み扱いをしておく。
@@ -119,7 +119,7 @@ namespace Mate {
 
 			StateInfo state;
 			// これが王手であることはわかっているので第3引数はtrueで固定しておく。
-			pos.do_move(m, state, true);
+			pos.do_move(m, state, true, tt);
 
 			// and node
 
@@ -142,7 +142,7 @@ namespace Mate {
 			case MateRepetitionState::Unknown:
 				// いずれでもないので、きちんと調べる必要がある。
 				// さらにこの局面から偶数手で相手が詰まされるかのチェック
-				found_mate = mated_even_ply<GEN_ALL>(pos, ply - 1) == Move::none() /* 回避手がない == 詰み */;
+				found_mate = mated_even_ply<GEN_ALL>(pos, ply - 1, tt) == Move::none() /* 回避手がない == 詰み */;
 				break;
 
 			default: UNREACHABLE;
@@ -166,7 +166,7 @@ namespace Mate {
 	// ply     : 最大で調べる手数
 	// GEN_ALL : 歩の不成も生成するのか。
 	template <bool GEN_ALL>
-	Move MateSolver::mated_even_ply(Position& pos, const int ply)
+	Move MateSolver::mated_even_ply(Position& pos, const int ply, TranspositionTable& tt)
 	{
 		MovePicker<false, false, GEN_ALL, false /* no ordering */> picker(pos);
 
@@ -190,7 +190,7 @@ namespace Mate {
 
 			// 1手動かす
 			StateInfo state;
-			pos.do_move(m, state, givesCheck);
+			pos.do_move(m, state, givesCheck, tt);
 
 			// or node
 
@@ -216,11 +216,11 @@ namespace Mate {
 				// いずれでもないので、きちんと調べる必要がある。
 				if (ply == 4)
 					// 3手詰めかどうか
-					found_escape = !(givesCheck ? mate_3ply<true, GEN_ALL>(pos) : mate_3ply<false, GEN_ALL>(pos));
+					found_escape = !(givesCheck ? mate_3ply<true, GEN_ALL>(pos, tt) : mate_3ply<false, GEN_ALL>(pos, tt));
 				//	// 詰みが見つからなかったら、逃れている。
 				else
 					// 奇数手詰めかどうか
-					found_escape = !(givesCheck ? mate_odd_ply<true , GEN_ALL>(pos, ply - 1) : mate_odd_ply<false , GEN_ALL>(pos, ply - 1));
+					found_escape = !(givesCheck ? mate_odd_ply<true, GEN_ALL>(pos, ply - 1, tt) : mate_odd_ply<false, GEN_ALL>(pos, ply - 1, tt));
 					// 詰みが見つからなかったら、逃れている。
 				break;
 
@@ -244,9 +244,9 @@ namespace Mate {
 	// 返し値は、逃れる指し手がある時、その指し手を返す。どうやっても詰む場合は、MOVE_NONEが返る。
 	// ply     : 最大で調べる手数
 	// gen_all : 歩の不成も生成するのか。
-	Move MateSolver::mated_even_ply(Position& pos, const int ply, bool gen_all)
+	Move MateSolver::mated_even_ply(Position& pos, const int ply, bool gen_all, TranspositionTable& tt)
 	{
-		return gen_all ? mated_even_ply<true>(pos, ply) : mated_even_ply<false>(pos, ply);
+		return gen_all ? mated_even_ply<true>(pos, ply, tt) : mated_even_ply<false>(pos, ply, tt);
 	}
 
 
@@ -254,14 +254,14 @@ namespace Mate {
 	// 詰みがある場合は、その1手目の指し手を返す。詰みがない場合は、MOVE_NONEが返る。
 	// ply     : 最大で調べる手数
 	// GEN_ALL : 歩の不成も生成するのか
-	Move MateSolver::mate_odd_ply(Position& pos, const int depth , bool GEN_ALL)
+	Move MateSolver::mate_odd_ply(Position& pos, const int depth , bool GEN_ALL, TranspositionTable& tt)
 	{
 		// 開始局面でのgame_ply()を保存しておかないと、千日手の判定の時に困る。
 		root_game_ply = pos.game_ply();
 
 		// 2×2の四通りのtemplateを呼び分ける。
-		return GEN_ALL ? (pos.in_check() ? mate_odd_ply<true,true >(pos, depth) : mate_odd_ply<false,true >(pos, depth))
-		               : (pos.in_check() ? mate_odd_ply<true,false>(pos, depth) : mate_odd_ply<false,false>(pos, depth));
+		return GEN_ALL ? (pos.in_check() ? mate_odd_ply<true,true >(pos, depth, tt) : mate_odd_ply<false,true >(pos, depth, tt))
+		               : (pos.in_check() ? mate_odd_ply<true,false>(pos, depth, tt) : mate_odd_ply<false,false>(pos, depth, tt));
 	}
 
 

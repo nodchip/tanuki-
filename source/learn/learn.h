@@ -2,10 +2,16 @@
 #define _LEARN_H_
 
 #include "../config.h"
+#include "../usi_option.h"
 
 #if defined(EVAL_LEARN)
 
 #include <vector>
+
+namespace Search {
+	class Stack;
+	class Worker;
+}
 
 // =====================
 //  学習時の設定
@@ -188,8 +194,9 @@ typedef float LearnFloatType;
 // ----------------------
 #include "../position.h"
 
-namespace Learner
+class Learner
 {
+public:
 	// PackedSfenと評価値が一体化した構造体
 	// オプションごとに書き出す内容が異なると教師棋譜を再利用するときに困るので
 	// とりあえず、以下のメンバーはオプションによらずすべて書き出しておく。
@@ -223,16 +230,25 @@ namespace Learner
 
 	// 読み筋とそのときの評価値を返す型
 	// Learner::search() , Learner::qsearch()で用いる。
-	typedef std::pair<Value, std::vector<Move> > ValuePV;
+	using ValuePV = std::pair<Value, std::vector<Move>>;
 
 	// いまのところ、YANEURAOU_ENGINEしか、このスタブを持っていないが
 	// EVAL_LEARNをdefineするなら、このスタブが必須。
-	Learner::ValuePV  search(Position& pos, int depth , size_t multiPV = 1 , u64 NodesLimit = 0);
-	Learner::ValuePV qsearch(Position& pos);
+	static ValuePV  search(Position& pos, int depth, size_t multiPV, u64 NodesLimit, OptionsMap& options, Search::Worker& worker, const ThreadPool& threads);
+	static ValuePV qsearch(Position& pos, OptionsMap& options, Search::Worker& worker);
 
-	double calc_grad(Value shallow, const PackedSfenValue& psv);
+	static double calc_grad(Value shallow, const Learner::PackedSfenValue& psv);
+	static void gen_sfen(Position&, std::istringstream& is, OptionsMap& options, ThreadPool& threads);
+	static void learn(Position&, std::istringstream& is, OptionsMap& options, ThreadPool& threads);
+	static void gen_sfen2019(
+		[[maybe_unused]] Position& pos, [[maybe_unused]] std::istringstream& is,
+		OptionsMap& options, ThreadPool& thread, TranspositionTable& tt);
 
-}
+private:
+	static void init_for_search(Position& pos, Search::Stack* ss, Move pv[], bool qsearch, OptionsMap& options, Search::Worker& worker);
+	static void init_for_game(Search::Worker& worker, TranspositionTable& tt);
+	static void UnitTest(Test::UnitTester& tester, OptionsMap& options, Search::Worker& worker, const ThreadPool& threads, TranspositionTable& tt);
+};
 
 #endif
 

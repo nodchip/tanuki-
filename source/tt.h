@@ -208,6 +208,4 @@ private:
 	uint8_t generation8;
 };
 
-extern TranspositionTable TT;
-
 #endif // #ifndef TT_H_INCLUDED

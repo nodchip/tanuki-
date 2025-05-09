@@ -154,7 +154,8 @@ MovePicker::MovePicker(
 #if defined(ENABLE_PAWN_HISTORY)
 	const PawnHistory*           ph,
 #endif
-	int pl) :
+	int pl,
+	const Search::LimitsType& limits) :
 	pos(p),
 	mainHistory(mh),
 	lowPlyHistory(lph),
@@ -165,19 +166,20 @@ MovePicker::MovePicker(
 #endif
 	ttMove(ttm),
 	depth(d),
-	ply(pl)
+	ply(pl),
+	limits(limits)
 {
 	// 次の指し手生成の段階
 	// 王手がかかっているなら王手回避のフェーズへ。さもなくばQSEARCHのフェーズへ。
 #if 1
 	if (pos.in_check())
 		// 王手がかかっているなら回避手
-		stage = EVASION_TT + !(ttm && pos.pseudo_legal(ttm));
+		stage = EVASION_TT + !(ttm && pos.pseudo_legal(ttm, limits));
 
 	else
 		// 王手がかかっていないなら通常探索用/静止探索の指し手生成
 		// ⇨ 通常探索から呼び出されたのか、静止探索から呼び出されたのかについてはdepth > 0 によって判定できる。
-		stage = (depth > 0 ? MAIN_TT : QSEARCH_TT) + !(ttm && pos.pseudo_legal(ttm));
+		stage = (depth > 0 ? MAIN_TT : QSEARCH_TT) + !(ttm && pos.pseudo_legal(ttm, limits));
 #endif
 	// ⇨ Stockfish 16のコード、ttm(置換表の指し手)は無条件でこのMovePickerが返す1番目の指し手としているが、これだと
 	//    TTの指し手だけで千日手になってしまうことがある。これは、将棋ではわりと起こりうる。
@@ -218,11 +220,13 @@ MovePicker::MovePicker(
 // th = 枝刈りのしきい値
 // ⇨ SEEの値がth以上となるcaptureの指し手(歩の成りは含む)だけを生成する。
 
-MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceToHistory* cph) :
+MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceToHistory* cph,
+	const Search::LimitsType& limits) :
 	pos(p),
 	captureHistory(cph),
 	ttMove(ttm),
-	threshold(Value(th))
+	threshold(Value(th)),
+	limits(limits)
 {
 
 	// ProbCutから呼び出されているので王手はかかっていないはず。
@@ -243,7 +247,7 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
 								// 注意 : ⇑ ProbCutの指し手生成(PROBCUT_INIT)で、
 								// 歩の成りも生成するなら、ここはcapture_or_pawn_promotion()、しないならcapture()にすること。
 								// ただし、TTの指し手は優遇した方が良い可能性もある。
-								&& pos.pseudo_legal(ttm)
+								&& pos.pseudo_legal(ttm, limits)
 								&& pos.see_ge(ttm, threshold));
 	// ⇨ qsearch()のTTと同様、置換表の指し手に関してはsee_geの条件、
 	// つけないほうがいい可能性があるが、やってみたら良くなかった。(V774v2 vs V774v3)
@@ -496,7 +500,7 @@ top:
 		// CAPTURE_INITのあとはこのあと残りの指し手を生成する必要があるので、generate_all_legal_movesがtrueなら、CAPTURE_PRO_PLUSで歩の成らずの指し手も生成する。
 		// PROBCUT_INIT、QCAPTURE_INITの時は、このあと残りの指し手を生成しないので歩の成らずを生成しても仕方がない。
 		if (stage == CAPTURE_INIT)
-			endMoves = Search::Limits.generate_all_legal_moves ? generateMoves<CAPTURES_PRO_PLUS_ALL>(pos, cur) : generateMoves<CAPTURES_PRO_PLUS>(pos, cur);
+			endMoves = limits.generate_all_legal_moves ? generateMoves<CAPTURES_PRO_PLUS_ALL>(pos, cur) : generateMoves<CAPTURES_PRO_PLUS>(pos, cur);
 		else if (stage == PROBCUT_INIT)
 			// ProbCutでは、歩の成りも生成する。
 			endMoves = generateMoves<CAPTURES_PRO_PLUS>(pos, cur);
@@ -586,9 +590,9 @@ top:
 #endif
 
 #if !defined(MOVE_PICKER_GENERATE_CAPTURE)
-			endMoves = beginBadQuiets = endBadQuiets = Search::Limits.generate_all_legal_moves ? generateMoves<NON_CAPTURES_PRO_MINUS_ALL>(pos, cur) : generateMoves<NON_CAPTURES_PRO_MINUS>(pos, cur);
+			endMoves = beginBadQuiets = endBadQuiets = limits.generate_all_legal_moves ? generateMoves<NON_CAPTURES_PRO_MINUS_ALL>(pos, cur) : generateMoves<NON_CAPTURES_PRO_MINUS>(pos, cur);
 #else
-			endMoves = beginBadQuiets = endBadQuiets = Search::Limits.generate_all_legal_moves ? generateMoves<NON_CAPTURES_ALL          >(pos, cur) : generateMoves<NON_CAPTURES          >(pos, cur);
+			endMoves = beginBadQuiets = endBadQuiets = limits.generate_all_legal_moves ? generateMoves<NON_CAPTURES_ALL          >(pos, cur) : generateMoves<NON_CAPTURES          >(pos, cur);
 #endif
 			// 注意 : ここ⇑、CAPTURE_INITで生成した指し手に歩の成りの指し手が含まれているなら、それを除外しなければならない。
 
@@ -677,7 +681,7 @@ top:
 	case EVASION_INIT:
 		cur = moves;
 
-		endMoves = Search::Limits.generate_all_legal_moves ? generateMoves<EVASIONS_ALL>(pos, cur) : generateMoves<EVASIONS>(pos, cur);
+		endMoves = limits.generate_all_legal_moves ? generateMoves<EVASIONS_ALL>(pos, cur) : generateMoves<EVASIONS>(pos, cur);
 
 		// 王手を回避する指し手に対してオーダリングのためのスコアをつける
 		score<EVASIONS>();

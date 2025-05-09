@@ -9,6 +9,7 @@
 #include "movepick.h"
 #include "numa.h"
 #include "position.h"
+#include "timeman.h"
 #include "tt.h"
 
 // -----------------------
@@ -23,9 +24,17 @@ enum NodeType {
 	Root
 };
 
-class TranspositionTable;
+#if defined(EVAL_LEARN)
+class Learner;
+class LearnerThink;
+class MultiThinkGenSfen;
+struct MultiThinkGenSfen2019;
+struct SfenReader;
+#endif
 class ThreadPool;
-class OptionsMap;
+class TranspositionTable;
+class USI;
+using OptionsMap = std::map<std::string, Option, CaseInsensitiveLess>;
 
 // 探索関係
 namespace Search {
@@ -259,14 +268,245 @@ struct LimitsType {
 #endif
 };
 
-extern LimitsType Limits;
-
-// 探索部の初期化。
-void init();
-
 // 探索部のclear。
 // 置換表のクリアなど時間のかかる探索の初期化処理をここでやる。isreadyに対して呼び出される。
-void clear();
+void clear(OptionsMap& options, ThreadPool& threads, TranspositionTable& tt);
+
+// The UCI stores the uci options, thread pool, and transposition table.
+// This struct is used to easily forward data to the Search::Worker class.
+struct SharedState {
+	SharedState(OptionsMap& o, ThreadPool& tp, TranspositionTable& t) :
+		options(o),
+		threads(tp),
+		tt(t) {
+	}
+
+	OptionsMap& options;
+	ThreadPool& threads;
+	TranspositionTable& tt;
+};
+
+class Worker;
+
+// Null Object Pattern, implement a common interface
+// for the SearchManagers. A Null Object will be given to
+// non-mainthread workers.
+class ISearchManager {
+public:
+	virtual ~ISearchManager() {}
+	virtual void check_time(Search::Worker&) = 0;
+};
+
+// SearchManager manages the search from the main thread. It is responsible for
+// keeping track of the time, and storing data strictly related to the main thread.
+class SearchManager : public ISearchManager {
+public:
+	void check_time(Search::Worker& worker) override;
+
+	TimeManagement   tm;
+
+	// check_time()で用いるカウンター。
+	// デクリメントしていきこれが0になるごとに思考をストップするのか判定する。
+	int callsCnt;
+
+	// ponder : "go ponder" コマンドでの探索中であるかを示すフラグ
+	std::atomic_bool ponder;
+
+	// previousTimeReduction : 反復深化の前回のiteration時のtimeReductionの値。
+	double previousTimeReduction;
+
+	// 前回の探索時のスコアとその平均。
+	// 次回の探索のときに何らか使えるかも。
+	Value bestPreviousScore;
+	Value bestPreviousAverageScore;
+
+	// 時間まぎわのときに探索を終了させるかの判定に用いるための、
+	// 反復深化のiteration、前4回分のScore
+	Value iterValue[4];
+
+	//bool stopOnPonderhit;
+	// →　やねうら王では、このStockfishのponderの仕組みを使わない。(もっと上手にponderの時間を活用したいため)
+
+	size_t id;
+
+	// -------------------
+	// やねうら王独自追加
+	// -------------------
+
+	// 将棋所のコンソールが詰まるので出力を抑制するために、前回の出力時刻を
+	// 記録しておき、そこから一定時間経過するごとに出力するという方式を採る。
+	TimePoint lastPvInfoTime;
+
+	// Ponder用の指し手
+	// Stockfishは置換表からponder moveをひねり出すコードになっているが、
+	// 前回iteration時のPVの2手目の指し手で良いのではなかろうか…。
+	Move ponder_candidate;
+
+	// "Position"コマンドで1つ目に送られてきた文字列("startpos" or sfen文字列)
+	std::string game_root_sfen;
+
+	// "Position"コマンドで"moves"以降にあった、rootの局面からこの局面に至るまでの手順
+	std::vector<Move> moves_from_game_root;
+
+	// Stochastic Ponderのときに↑を2手前に戻すので元の"position"コマンドと"go"コマンドの文字列を保存しておく。
+	std::string last_position_cmd_string = "position startpos";
+	std::string last_go_cmd_string;
+	// Stochastic Ponderのために2手前に戻してしまっているかのフラグ
+	bool position_is_dirty = false;
+
+	// goコマンドの"wait_stop"フラグと関連して、↓と出力したかのフラグ。
+	// "info string time to return bestmove."
+	bool time_to_return_bestmove;
+};
+
+class NullSearchManager : public ISearchManager {
+public:
+	void check_time(Search::Worker&) override {}
+};
+
+// Search::Worker is the class that does the actual search.
+// It is instantiated once per thread, and it is responsible for keeping track
+// of the search history, and storing data required for the search.
+class Worker {
+public:
+	Worker(SharedState&, std::unique_ptr<ISearchManager>, size_t);
+
+	// Reset histories, usually before a new game
+	void clear();
+
+	// Called when the program receives the UCI 'go'
+	// command. It searches from the root position and outputs the "bestmove".
+	void start_searching();
+
+	bool is_mainthread() const { return thread_idx == 0; }
+
+	// bestValue :
+	// search()で、そのnodeでbestMoveを指したときの(探索の)評価値
+	// Stockfishではevaluate()の遅延評価のためにThreadクラスに持たせることになった。
+	// cf. Reduce use of lazyEval : https://github.com/official-stockfish/Stockfish/commit/7b278aab9f61620b9dba31896b38aeea1eb911e2
+	// optimism  : 楽観値
+	// → やねうら王では導入せず
+	Value bestValue /*, optimism[COLOR_NB]*/;
+
+	// ↓Stockfishでは思考開始時に評価関数から設定しているが、やねうら王では使っていないのでコメントアウト。
+	//Value rootSimpleEval;
+
+#if defined(USE_MOVE_PICKER)
+	// 近代的なMovePickerではオーダリングのために、スレッドごとにhistoryとcounter movesなどのtableを持たないといけない。
+	ButterflyHistory mainHistory;
+	LowPlyHistory lowPlyHistory;
+	CapturePieceToHistory captureHistory;
+
+	// コア数が多いか、長い持ち時間においては、ContinuationHistoryもスレッドごとに確保したほうが良いらしい。
+	// cf. https://github.com/official-stockfish/Stockfish/commit/5c58d1f5cb4871595c07e6c2f6931780b5ac05b5
+	// 添字の[2][2]は、[inCheck(王手がかかっているか)][capture_stage]
+	// →　この改造、レーティングがほぼ上がっていない。悪い改造のような気がする。
+	ContinuationHistory continuationHistory[2][2];
+
+#if defined(ENABLE_PAWN_HISTORY)
+	PawnHistory pawnHistory;
+#endif
+
+#endif
+
+private:
+	void iterative_deepening();
+
+	// Main search function for both PV and non-PV nodes
+	template<NodeType nodeType>
+	Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, bool cutNode);
+
+	// Quiescence search function, which is called by the main search
+	template<NodeType nodeType>
+	Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth = 0);
+
+	Depth reduction(bool i, Depth d, int mn, Value delta, Value rootDelta);
+
+	// Get a pointer to the search manager, only allowed to be called by the
+	// main thread.
+	SearchManager* main_manager() const {
+		assert(thread_idx == 0);
+		return static_cast<SearchManager*>(manager.get());
+	}
+
+	LimitsType limits;
+
+	// pvIdx    : このスレッドでMultiPVを用いているとして、rootMovesの(0から数えて)何番目のPVの指し手を
+	//      探索中であるか。MultiPVでないときはこの変数の値は0。
+	// pvLast   : tbRank絡み。将棋では関係ないので用いない。
+	size_t pvIdx /*,pvLast*/;
+
+	// nodes     : このスレッドが探索したノード数(≒Position::do_move()を呼び出した回数)
+	// bestMoveChanges : 反復深化においてbestMoveが変わった回数。nodeの安定性の指標として用いる。全スレ分集計して使う。
+	std::atomic<uint64_t> nodes,/* tbHits,*/ bestMoveChanges;
+
+	// selDepth  : rootから最大、何手目まで探索したか(選択深さの最大)
+	// nmpMinPly : null moveの前回の適用ply
+	// nmpColor  : null moveの前回の適用Color
+	// state     : 探索で組合せ爆発が起きているか等を示す状態
+	int selDepth, nmpMinPly;
+
+
+public:
+	// 探索開始局面
+	Position rootPos;
+
+private:
+	// rootでのStateInfo
+	// Position::set()で書き換えるのでスレッドごとに保持していないといけない。
+	StateInfo rootState;
+
+public:
+	// 探索開始局面で思考対象とする指し手の集合。
+	// goコマンドで渡されていなければ、全合法手(ただし歩の不成などは除く)とする。
+	Search::RootMoves rootMoves;
+
+private:
+	// rootDepth      : 反復深化の深さ
+	//					Lazy SMPなのでスレッドごとにこの変数を保有している。
+	//
+	// completedDepth : このスレッドに関して、終了した反復深化の深さ
+	//
+	Depth rootDepth, completedDepth;
+
+#if defined(__EMSCRIPTEN__)
+	// yaneuraou.wasm
+	std::atomic_bool threadStarted;
+#endif
+
+	// aspiration searchのrootでの beta - alpha
+	Value rootDelta;
+
+	// thread id。main threadなら0。slaveなら1から順番に値が割当てられる。
+	size_t thread_idx;
+
+	// Reductions lookup table initialized at startup
+	// 探索深さを減らすためのReductionテーブル。起動時に初期化する。
+	int reductions[MAX_MOVES];  // [depth or moveNumber]
+
+	// The main thread has a SearchManager, the others have a NullSearchManager
+	std::unique_ptr<ISearchManager> manager;
+
+	OptionsMap& options;
+	ThreadPool& threads;
+#if defined(EVAL_LEARN)
+	// 学習用の実行ファイルでは、スレッドごとに置換表を持ちたい。
+	TranspositionTable tt;
+#else
+	TranspositionTable& tt;
+#endif
+
+#if defined (EVAL_LEARN)
+	friend class Learner;
+	friend class LearnerThink;
+	friend class MultiThinkGenSfen;
+	friend struct MultiThinkGenSfen2019;
+	friend struct SfenReader;
+#endif
+	friend class SearchManager;
+	friend class ThreadPool;
+	friend class USI;
+};
 
 // pv(読み筋)をUSIプロトコルに基いて出力する。
 // pos   : 局面

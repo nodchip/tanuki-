@@ -34,11 +34,6 @@ void USI::extra_option(USI::OptionsMap & o)
 	o["NodesLimit"] << Option(0, 0, INT64_MAX);
 }
 
-// 起動時に呼び出される。時間のかからない探索関係の初期化処理はここに書くこと。
-void Search::init()
-{
-}
-
 // isreadyコマンドの応答中に呼び出される。時間のかかる処理はここに書くこと。
 void  Search::clear()
 {

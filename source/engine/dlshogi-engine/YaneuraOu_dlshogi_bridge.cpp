@@ -135,9 +135,6 @@ void USI::extra_option(USI::OptionsMap& o)
 	o["LeafDfpnNodesLimit"]			<< USI::Option(40, 0, 10000);
 }
 
-// "isready"コマンドに対する初回応答
-void Search::init(){}
-
 // "isready"コマンド時に毎回呼び出される。
 void Search::clear()
 {

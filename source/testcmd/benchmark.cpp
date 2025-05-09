@@ -52,7 +52,7 @@ const vector<string> BenchSfen =
 /// bench 64 4 5000 current movetime : search current position with 4 threads for 5 sec
 /// bench 16 1 5 blah perft          : run a perft 5 on positions in file "blah"
 
-void bench_cmd(Position& current, istringstream& is)
+void USI::bench(Position& current, istringstream& is)
 {
 	// Optionsを書き換えるのであとで復元する。
 	auto oldOptions = Options;

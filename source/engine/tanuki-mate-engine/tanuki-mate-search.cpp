@@ -954,7 +954,6 @@ void USI::extra_option(USI::OptionsMap & o) {
 
 // --- Search
 
-void Search::init() {}
 void Search::clear()
 {
 	MateEngine::transposition_table.Resize();

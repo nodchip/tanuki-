@@ -87,7 +87,7 @@ void std_aligned_free(void* ptr) {
 
 #if defined(_WIN32)
 
-static void* aligned_large_pages_alloc_windows([[maybe_unused]] size_t allocSize) {
+static void* aligned_large_pages_alloc_windows([[maybe_unused]] size_t allocSize, OptionsMap& options) {
 
 	// Windows 64bit用専用。
 	// Windows 32bit用ならこの機能は利用できない。
@@ -98,7 +98,7 @@ static void* aligned_large_pages_alloc_windows([[maybe_unused]] size_t allocSize
 
 	// ※ やねうら王独自拡張
 	// LargePageはエンジンオプションにより無効化されているなら何もせずに返る。
-	if (!Options["LargePageEnable"])
+	if (!options["LargePageEnable"])
 		return nullptr;
 
     HANDLE hProcessToken{};
@@ -179,13 +179,13 @@ static void* aligned_large_pages_alloc_windows([[maybe_unused]] size_t allocSize
 
 bool first_large_pages_allocation = true;
 
-void* aligned_large_pages_alloc(size_t allocSize) {
+void* aligned_large_pages_alloc(size_t allocSize, OptionsMap& options) {
 
 	// ※　ここでは4KB単位でalignされたメモリが返ることは保証されているので
 	//     引数でalignを指定できる必要はない。(それを超えた大きなalignを行いたいケースがない)
 
     // Try to allocate large pages
-    void* mem = aligned_large_pages_alloc_windows(allocSize);
+    void* mem = aligned_large_pages_alloc_windows(allocSize, options);
 
     // Fall back to regular, page-aligned, allocation if necessary
 	// 必要に応じて、通常のpage-alignedなメモリ割り当てにfall backする。
@@ -228,12 +228,12 @@ void* aligned_large_pages_alloc(size_t allocSize) {
 
 #endif
 
-bool has_large_pages() {
+bool has_large_pages(OptionsMap& options) {
 
 #if defined(_WIN32)
 
     constexpr size_t page_size = 2 * 1024 * 1024;  // 2MB page size assumed
-    void*            mem       = aligned_large_pages_alloc_windows(page_size);
+    void*            mem       = aligned_large_pages_alloc_windows(page_size, options);
     if (mem == nullptr)
     {
         return false;

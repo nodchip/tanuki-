@@ -379,14 +379,16 @@ public:
 #if defined(ENABLE_PAWN_HISTORY)
 		const PawnHistory* ph,
 #endif
-		int ply_
+		int ply_,
+		const Search::LimitsType& limits
 	);
 
 	// 通常探索時にProbCutの処理から呼び出されるのコンストラクタ。
 	// SEEの値がth以上となるcaptureの指してだけを生成する。
 	// threshold_ = 直前に取られた駒の価値。これ以下の捕獲の指し手は生成しない。
 	// capture_or_pawn_promotion()に該当する指し手しか返さない。
-	MovePicker(const Position&, Move ttMove_, int threshold_, const CapturePieceToHistory*);
+	MovePicker(const Position&, Move ttMove_, int threshold_, const CapturePieceToHistory*,
+		const Search::LimitsType&);
 
 	// 呼び出されるごとに新しいpseudo legalな指し手をひとつ返す。
 	// 指し手が尽きればMove::none()が返る。
@@ -454,6 +456,8 @@ private:
 #else
 	ExtMove moves[611];
 #endif
+
+	const Search::LimitsType& limits;
 };
 
 #endif // defined(USE_MOVE_PICKER)

@@ -15,6 +15,12 @@
 #include "extra/long_effect.h"
 #include "misc.h"
 
+namespace Search {
+	struct LimitsType;
+}
+class ThreadPool;
+class TranspositionTable;
+
 // --------------------
 //     局面の情報
 // --------------------
@@ -49,22 +55,22 @@ struct StateInfo {
 	// ※　次の局面にdo_move()で進むときに最終的な値が設定される
 	// board_key()は盤面のhash。hand_key()は手駒のhash。それぞれ加算したのがkey() 盤面のhash。
 	// board_key()のほうは、手番も込み。
-	
-	Key key()                     const { return hash_key_to_key(hash_key());       }
+
+	Key key()                     const { return hash_key_to_key(hash_key()); }
 	Key board_key()               const { return hash_key_to_key(board_hash_key()); }
-	Key hand_key()                const { return hash_key_to_key(hand_hash_key());  }
+	Key hand_key()                const { return hash_key_to_key(hand_hash_key()); }
 
 	// HASH_KEY_BITSが128のときはKey128が返るhash key,256のときはKey256
 
 	HASH_KEY hash_key()           const { return board_key_ + hand_key_; }
-	HASH_KEY board_hash_key()     const { return board_key_            ; }
+	HASH_KEY board_hash_key()     const { return board_key_; }
 	HASH_KEY hand_hash_key()      const { return              hand_key_; }
 
 #if defined(ENABLE_PAWN_HISTORY)
 	// 歩の陣形に対するhash key
 	HASH_KEY pawnKey_;
-	Key      pawn_key()           const { return hash_key_to_key(pawn_hash_key()) >> 1;  }
-	HASH_KEY pawn_hash_key()      const { return pawnKey_;               }
+	Key      pawn_key()           const { return hash_key_to_key(pawn_hash_key()) >> 1; }
+	HASH_KEY pawn_hash_key()      const { return pawnKey_; }
 #endif
 
 	// 現局面で手番側に対して王手をしている駒のbitboard
@@ -122,7 +128,7 @@ struct StateInfo {
 
 	// この手番側の連続王手は何手前からやっているのか(連続王手の千日手の検出のときに必要)
 	int continuousCheck[COLOR_NB];
-  
+
 	// この局面における手番側の持ち駒。優等局面の判定のために必要。
 	Hand hand;
 
@@ -161,8 +167,6 @@ struct StateInfo {
 
 };
 
-class Thread;
-
 // --------------------
 //     局面の定数
 // --------------------
@@ -178,7 +182,7 @@ extern std::string SFEN_HIRATE;
 // setup moves("position"コマンドで設定される、現局面までの指し手)に沿った局面の状態を追跡するためのStateInfoのlist。
 // 千日手の判定のためにこれが必要。std::dequeを使っているのは、StateInfoがポインターを内包しているので、resizeに対して
 // 無効化されないように。
-using StateList    = std::deque<StateInfo>;
+using StateList = std::deque<StateInfo>;
 using StateListPtr = std::unique_ptr<StateList>;
 
 // --------------------
@@ -224,7 +228,7 @@ struct PackedSfenHash {
 		static_assert(sizeof(PackedSfen) % sizeof(size_t) == 0);
 
 		size_t s = 0;
-		for (size_t i = 0; i < sizeof(PackedSfen) ; i+= sizeof(size_t))
+		for (size_t i = 0; i < sizeof(PackedSfen); i += sizeof(size_t))
 		{
 			// size_tのsize分ずつをxorしていき、それをhash keyとする。
 			s ^= *(size_t*)&ps.data[i];
@@ -255,7 +259,7 @@ public:
 	// 局面を遡るために、rootまでの局面の情報が必要であるから、それを引数のsiで渡してやる。
 	// 遡る必要がない場合は、StateInfo si;に対して&siなどとして渡しておけば良い。
 	// 内部的にmemset(si,0,sizeof(StateInfo))として、この渡されたインスタンスをクリアしている。
-	void set(std::string sfen , StateInfo* si , Thread* th);
+	void set(std::string sfen, StateInfo* si);
 
 	// 局面のsfen文字列を取得する
 	// ※ USIプロトコルにおいては不要な機能ではあるが、デバッグのために局面を標準出力に出力して
@@ -270,11 +274,11 @@ public:
 	const std::string flipped_sfen(int gamePly) const;
 
 	// sfen文字列をflip(先後反転)したsfen文字列に変換する。
-	static const std::string sfen_to_flipped_sfen(std::string sfen);
+	static const std::string sfen_to_flipped_sfen(std::string sfen, const ThreadPool& threads);
 
 	// 平手の初期盤面を設定する。
 	// siについては、上記のset()にある説明を読むこと。
-	void set_hirate(StateInfo*si,Thread* th) { set(SFEN_HIRATE,si,th); }
+	void set_hirate(StateInfo* si) { set(SFEN_HIRATE, si); }
 
 	// --- properties
 
@@ -284,9 +288,6 @@ public:
 	// (将棋の)開始局面からの手数を返す。
 	// 平手の開始局面なら1が返る。(0ではない)
 	int game_ply() const { return gamePly; }
-
-	// この局面クラスを用いて探索しているスレッドを返す。 
-	Thread* this_thread() const { return thisThread; }
 
 	// 盤面上の駒を返す。
 	// ※ sq == SQ_NBの時、NO_PIECEが返ることは保証されている。
@@ -331,7 +332,7 @@ public:
 		return (Piece)((m ^ ((m & MOVE_PROMOTE) << 4)) >> 16);
 
 #else
-		return m.is_drop() ? make_piece(sideToMove , m.move_dropped_piece()) : piece_on(m.from_sq());
+		return m.is_drop() ? make_piece(sideToMove, m.move_dropped_piece()) : piece_on(m.from_sq());
 #endif
 	}
 
@@ -363,7 +364,7 @@ public:
 	// 
 	// ※　これを MAX_PLY に設定すると初手からのチェックになるが、将棋はチェスと異なり
 	// 　　終局までの平均手数がわりと長いので、そこまでするとスピードダウンしてR40ほど弱くなる。
-	void set_max_repetition_ply(int ply){ max_repetition_ply = ply;}
+	void set_max_repetition_ply(int ply) { max_repetition_ply = ply; }
 
 	// 普通の千日手、連続王手の千日手等を判定する。
 	// そこまでの局面と同一局面であるかを、局面を遡って調べる。
@@ -378,7 +379,7 @@ public:
 
 	// is_repetition()の、千日手が見つかった時に、現局面から何手遡ったかを返すバージョン。
 	// REPETITION_NONEではない時は、found_plyにその値が返ってくる。	// ※　定跡生成の時にしか使わない。
-	RepetitionState is_repetition(int ply , int& found_ply) const;
+	RepetitionState is_repetition(int ply, int& found_ply) const;
 
 #if !defined(ENABLE_QUICK_DRAW)
 	// Tests whether there has been at least one repetition
@@ -391,7 +392,7 @@ public:
 	// c == BLACK : 先手の駒があるBitboardが返る
 	// c == WHITE : 後手の駒があるBitboardが返る
 	Bitboard pieces(Color c) const;
-	
+
 	// ↑のtemplate版
 	template<Color C>
 	Bitboard pieces() const { ASSERT_LV3(is_ok(C)); return byColorBB[C]; }
@@ -415,7 +416,7 @@ public:
 	// ↑のtemplate版
 	template<Color C>
 	Bitboard pieces(PieceType pr) const { return pieces(pr) & pieces(C); }
-	template<Color C,PieceType PR>
+	template<Color C, PieceType PR>
 	Bitboard pieces() const { return pieces(PR) & pieces(C); }
 
 	// 駒がない升が1になっているBitboardが返る
@@ -434,7 +435,7 @@ public:
 	Bitboard blockers_for_king() const { return st->blockersForKing[C]; }
 
 	// 現局面で駒Ptを動かしたときに王手となる升を表現するBitboard
-	Bitboard check_squares(PieceType pt) const { ASSERT_LV3(pt!= NO_PIECE_TYPE && pt < PIECE_TYPE_NB); return st->checkSquares[pt]; }
+	Bitboard check_squares(PieceType pt) const { ASSERT_LV3(pt != NO_PIECE_TYPE && pt < PIECE_TYPE_NB); return st->checkSquares[pt]; }
 
 	// c側の玉に対してpinしている駒
 	// ※ pinされているではなく、pinしているということに注意。
@@ -450,8 +451,8 @@ public:
 	// occが指定されていなければ現在の盤面において。occが指定されていればそれをoccupied bitboardとして。
 	// sq == SQ_NBでの呼び出しは合法。Bitboard(ZERO)が返る。
 
-	Bitboard attackers_to(Color c, Square sq) const { return c==BLACK ? attackers_to<BLACK>(sq, pieces()): attackers_to<WHITE>(sq, pieces()); }
-	Bitboard attackers_to(Color c, Square sq, const Bitboard& occ) const { return c==BLACK ? attackers_to<BLACK>(sq, occ): attackers_to<WHITE>(sq, occ); }
+	Bitboard attackers_to(Color c, Square sq) const { return c == BLACK ? attackers_to<BLACK>(sq, pieces()) : attackers_to<WHITE>(sq, pieces()); }
+	Bitboard attackers_to(Color c, Square sq, const Bitboard& occ) const { return c == BLACK ? attackers_to<BLACK>(sq, occ) : attackers_to<WHITE>(sq, occ); }
 	Bitboard attackers_to(Square sq) const { return attackers_to(sq, pieces()); }
 	Bitboard attackers_to(Square sq, const Bitboard& occ) const;
 
@@ -494,7 +495,7 @@ public:
 	void update_slider_blockers(Color c) const;
 
 	// c側の駒Ptの利きのある升を表現するBitboardを返す。(MovePickerで用いている。)
-	template<Color C , PieceType Pt> Bitboard attacks_by() const;
+	template<Color C, PieceType Pt> Bitboard attacks_by() const;
 
 	// --- 局面を進める/戻す
 
@@ -504,17 +505,17 @@ public:
 	// このバッファはこのdo_move()の呼び出し元の責任において確保されている必要がある。
 	// givesCheck = mの指し手によって王手になるかどうか。
 	// この呼出までにst.checkInfo.update(pos)が呼び出されている必要がある。
-	void do_move(Move m, StateInfo& newSt, bool givesCheck);
+	void do_move(Move m, StateInfo& newSt, bool givesCheck, TranspositionTable& tt);
 
 	// do_move()の4パラメーター版のほうを呼び出すにはgivesCheckも渡さないといけないが、
 	// mで王手になるかどうかがわからないときはこちらの関数を用いる。
-	void do_move(Move m, StateInfo& newSt) { do_move(m, newSt, gives_check(m)); }
+	void do_move(Move m, StateInfo& newSt, TranspositionTable& tt) { do_move(m, newSt, gives_check(m), tt); }
 
 	// 指し手で盤面を1手戻す
 	void undo_move(Move m);
 
 	// null move用のdo_move()
-	void do_null_move(StateInfo& st);
+	void do_null_move(StateInfo& st, TranspositionTable& tt);
 	// null move用のundo_move()
 	void undo_null_move();
 
@@ -552,7 +553,7 @@ public:
 	// 注意)
 	// ↑のオプションに依らず、常に歩の不成の指し手も合法手として扱いたいならば、
 	// この関数ではなく、pseudo_legal_s<true>()を用いること。
-	bool pseudo_legal(const Move m) const;
+	bool pseudo_legal(const Move m, const Search::LimitsType& limits) const;
 
 	// All == false        : 歩や大駒の不成に対してはfalseを返すpseudo_legal()
 	template <bool All> bool pseudo_legal_s(const Move m) const;
@@ -596,14 +597,14 @@ public:
 	// --- Accessing hash keys
 
 	// StateInfo::key()への簡易アクセス。
-	Key           key() const { return st->key()     ; }
+	Key           key() const { return st->key(); }
 	HASH_KEY hash_key() const { return st->hash_key(); }
 
 	// ある指し手を指した後のhash keyを返す。
 	// 将棋だとこの計算にそこそこ時間がかかるので、通常の探索部でprefetch用に
 	// これを計算するのはあまり得策ではないが、詰将棋ルーチンでは置換表を投機的に
 	// prefetchできるとずいぶん速くなるのでこの関数を用意しておく。
-	Key      key_after     (Move m) const;
+	Key      key_after(Move m) const;
 	HASH_KEY hash_key_after(Move m) const;
 
 #if defined(ENABLE_PAWN_HISTORY)
@@ -637,7 +638,7 @@ public:
 	// ※利きのない1手詰め判定のときに必要。
 	Bitboard pinned_pieces(Color c, Square from, Square to) const
 	{
-		return c == BLACK ? pinned_pieces<BLACK>(from,to) : pinned_pieces<WHITE>(from,to);
+		return c == BLACK ? pinned_pieces<BLACK>(from, to) : pinned_pieces<WHITE>(from, to);
 	}
 
 	// ↑のtemplate版
@@ -658,7 +659,7 @@ public:
 		// 3) pinされている駒でも王と(縦横斜において)直線上への移動であれば合法
 		return pinned                        // 1)
 			&& (pinned & from)               // 2)
-			&& !aligned(from, to , ourKing); // 3)
+			&& !aligned(from, to, ourKing); // 3)
 	}
 
 	// 現局面で指し手がないかをテストする。指し手生成ルーチンを用いるので速くない。探索中には使わないこと。
@@ -724,7 +725,7 @@ public:
 	// 条件を満たしているとき、MOVE_WINや、玉を移動する指し手(トライルール時)が返る。さもなくば、MOVE_NONEが返る。
 	// mate1ply()から内部的に呼び出す。(そうするとついでに処理出来て良い)
 	// 32bit Moveが返る。
-	Move DeclarationWin() const;
+	Move DeclarationWin(const Search::LimitsType& limits) const;
 
 
 	// -- sfen化ヘルパ
@@ -741,7 +742,7 @@ public:
 	// pos.set(sfen_unpack(data),si,th); と等価。
 	// 渡された局面に問題があって、エラーのときはTools::Result::SomeErrorを返す。
 	// PackedSfenにgamePlyは含まないので復元できない。そこを設定したいのであれば引数で指定すること。
-	Tools::Result set_from_packed_sfen(const PackedSfen& sfen , StateInfo * si , Thread* th, bool mirror=false , int gamePly_ = 0);
+	Tools::Result set_from_packed_sfen(const PackedSfen& sfen, StateInfo* si, bool mirror, int gamePly_, Search::LimitsType& limits);
 
 	// 盤面と手駒、手番を与えて、そのsfenを返す。
 	static std::string sfen_from_rawdata(Piece board[81], Hand hands[2], Color turn, int gamePly);
@@ -786,7 +787,10 @@ public:
 	friend struct MoveGenerator;
 
 	// UnitTest
-	static void UnitTest(Test::UnitTester&);
+	static void UnitTest(Test::UnitTester&, Search::LimitsType& limits, TranspositionTable& tt);
+
+	// 現在の盤面から、入玉に必要な駒点を計算し、Search::Limits::enteringKingPointに設定する。
+	void update_entering_point(Search::LimitsType& limits) const;
 
 private:
 
@@ -802,7 +806,7 @@ private:
 
 	// 王手になるbitboard等を更新する。set_state()とdo_move()のときに自動的に行われる。
 	// null moveのときは利きの更新を少し端折れるのでフラグを渡すことに。
-	template <bool doNullMove,Color Us>
+	template <bool doNullMove, Color Us>
 	void set_check_info() const;
 
 	template <bool doNullMove>
@@ -812,13 +816,10 @@ private:
 	}
 
 	// do_move()の先後分けたもの。内部的に呼び出される。
-	template <Color Us> void do_move_impl(Move m, StateInfo& st, bool givesCheck);
+	template <Color Us> void do_move_impl(Move m, StateInfo& st, bool givesCheck, TranspositionTable& tt);
 
 	// undo_move()の先後分けたもの。内部的に呼び出される。
 	template <Color Us> void undo_move_impl(Move m);
-
-	// 現在の盤面から、入玉に必要な駒点を計算し、Search::Limits::enteringKingPointに設定する。
-	void update_entering_point();
 
 	// --- Bitboards
 	// alignas(16)を要求するものを先に宣言。
@@ -904,9 +905,6 @@ private:
 	// 初期局面からの手数(初期局面 == 1)
 	int gamePly;
 
-	// この局面クラスを用いて探索しているスレッド
-	Thread* thisThread;
-
 	// 現局面に対応するStateInfoのポインタ。
 	// do_move()で次の局面に進むときは次の局面のStateInfoへの参照をdo_move()の引数として渡される。
 	//   このとき、undo_move()で戻れるようにStateInfo::previousに前のstの値を設定しておく。
@@ -924,16 +922,16 @@ private:
 
 template<typename ...PieceTypes>
 inline Bitboard Position::pieces(PieceType pt, PieceTypes... pts) const {
-  return pieces(pt) | pieces(pts...);
+	return pieces(pt) | pieces(pts...);
 }
 
 inline Bitboard Position::pieces(Color c) const {
-  return byColorBB[c];
+	return byColorBB[c];
 }
 
 template<typename ...PieceTypes>
 inline Bitboard Position::pieces(Color c, PieceTypes... pts) const {
-  return pieces(c) & pieces(pts...);
+	return pieces(c) & pieces(pts...);
 }
 
 // sに利きのあるc側の駒を列挙する。
@@ -948,12 +946,12 @@ inline Bitboard Position::attackers_to(Square sq, const Bitboard& occ) const
 	// sの地点に敵駒ptをおいて、その利きに自駒のptがあればsに利いているということだ。
 	// 香の利きを求めるコストが惜しいのでrookEffect()を利用する。
 	return
-		(     (pawnEffect  <Them>(sq)	&  pieces(PAWN)        )
-			| (knightEffect<Them>(sq)	&  pieces(KNIGHT)      )
-			| (silverEffect<Them>(sq)	&  pieces(SILVER_HDK)  )
-			| (goldEffect  <Them>(sq)	&  pieces(GOLDS_HDK)   )
-			| (bishopEffect(sq, occ)	&  pieces(BISHOP_HORSE))
-			| (rookEffect(sq, occ)		& (pieces(ROOK_DRAGON) | (lanceStepEffect<Them>(sq) & pieces(LANCE))))
+		((pawnEffect  <Them>(sq) & pieces(PAWN))
+			| (knightEffect<Them>(sq) & pieces(KNIGHT))
+			| (silverEffect<Them>(sq) & pieces(SILVER_HDK))
+			| (goldEffect  <Them>(sq) & pieces(GOLDS_HDK))
+			| (bishopEffect(sq, occ) & pieces(BISHOP_HORSE))
+			| (rookEffect(sq, occ) & (pieces(ROOK_DRAGON) | (lanceStepEffect<Them>(sq) & pieces(LANCE))))
 			//  | (kingEffect(sq) & pieces(c, HDK));
 			// →　HDKは、銀と金のところに含めることによって、参照するテーブルを一個減らして高速化しようというAperyのアイデア。
 			) & pieces<C>(); // 先後混在しているのでc側の駒だけ最後にマスクする。
@@ -962,17 +960,17 @@ inline Bitboard Position::attackers_to(Square sq, const Bitboard& occ) const
 
 // c側の駒Ptの利きのある升を表現するBitboardを返す。(MovePickerで用いている。)
 // 遠方駒に関しては盤上の駒を考慮した利き。
-template<Color C , PieceType Pt>
+template<Color C, PieceType Pt>
 Bitboard Position::attacks_by() const
 {
 	if constexpr (Pt == PAWN)
 		return C == WHITE ? pawn_attacks_bb<WHITE>(pieces<WHITE, PAWN>()) : pawn_attacks_bb<BLACK>(pieces<BLACK, PAWN>());
 	else
 	{
-		Bitboard threats   = Bitboard(ZERO);
+		Bitboard threats = Bitboard(ZERO);
 		Bitboard attackers = pieces(C, Pt);
 		while (attackers)
-			threats |= attacks_bb<make_piece(C,Pt)>(attackers.pop(), pieces());
+			threats |= attacks_bb<make_piece(C, Pt)>(attackers.pop(), pieces());
 		return threats;
 	}
 }
@@ -989,9 +987,9 @@ Bitboard Position::pinned_pieces(Square avoid) const
 	Bitboard avoid_bb = ~Bitboard(avoid);
 
 	pinners = (
-		(  pieces(ROOK_DRAGON)   & rookStepEffect    (ksq))
-		| (pieces(BISHOP_HORSE)  & bishopStepEffect  (ksq))
-		| (pieces(LANCE)         & lanceStepEffect<C>(ksq))
+		(pieces(ROOK_DRAGON) & rookStepEffect(ksq))
+		| (pieces(BISHOP_HORSE) & bishopStepEffect(ksq))
+		| (pieces(LANCE) & lanceStepEffect<C>(ksq))
 		) & avoid_bb & pieces<~C>();
 
 	while (pinners)
@@ -1014,9 +1012,9 @@ Bitboard Position::pinned_pieces(Square from, Square to) const {
 	Bitboard avoid_bb = ~Bitboard(from);
 
 	pinners = (
-		(  pieces(ROOK_DRAGON)  & rookStepEffect    (ksq))
-		| (pieces(BISHOP_HORSE) & bishopStepEffect  (ksq))
-		| (pieces(LANCE)        & lanceStepEffect<C>(ksq))
+		(pieces(ROOK_DRAGON) & rookStepEffect(ksq))
+		| (pieces(BISHOP_HORSE) & bishopStepEffect(ksq))
+		| (pieces(LANCE) & lanceStepEffect<C>(ksq))
 		) & avoid_bb & pieces<~C>();
 
 	// fromからは消えて、toの地点に駒が現れているものとして

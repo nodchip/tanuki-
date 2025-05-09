@@ -157,7 +157,7 @@ std::string pretty(Piece pc) {
 #endif
 
 // sfen文字列で盤面を設定する
-void Position::set(std::string sfen , StateInfo* si , Thread* th)
+void Position::set(std::string sfen , StateInfo* si)
 {
 	std::memset(this, 0, sizeof(Position));
 
@@ -317,7 +317,8 @@ void Position::set(std::string sfen , StateInfo* si , Thread* th)
 
 	// --- 入玉の駒点の設定
 
-	update_entering_point();
+	// 入玉の駒点の設定はUSI::go()で行う。
+	// update_entering_point(limits);
 
 	// --- validation
 
@@ -326,9 +327,6 @@ void Position::set(std::string sfen , StateInfo* si , Thread* th)
 	if (!is_ok(*this))
 		std::cout << "info string Illigal Position?" << endl;
 #endif
-
-	thisThread = th;
-
 }
 
 // 局面のsfen文字列を取得する。
@@ -488,12 +486,12 @@ const std::string Position::flipped_sfen(int gamePly_) const
 }
 
 // sfen文字列をflip(先後反転)したsfen文字列に変換する。
-const std::string Position::sfen_to_flipped_sfen(std::string sfen)
+const std::string Position::sfen_to_flipped_sfen(std::string sfen, const ThreadPool& threads)
 {
 #if 1
 	Position pos;
 	StateInfo si;
-	pos.set(sfen,&si,Threads.main());
+	pos.set(sfen, &si);
 	return pos.flipped_sfen();
 #else
 	// この局面クラスを利用せず文字列操作だけで求めて返す。
@@ -905,9 +903,9 @@ bool Position::legal_pawn_drop(const Color us, const Square to) const
 // 
 // Options["GenerateAllLegalMoves"]を反映させる。
 // ↑これがtrueならば、歩の不成も合法手扱い。
-bool Position::pseudo_legal(const Move m) const
+bool Position::pseudo_legal(const Move m, const Search::LimitsType& limits) const
 {
-	return Search::Limits.generate_all_legal_moves ? pseudo_legal_s<true>(m) : pseudo_legal_s<false>(m);
+	return limits.generate_all_legal_moves ? pseudo_legal_s<true>(m) : pseudo_legal_s<false>(m);
 }
 
 // ※　mがこの局面においてpseudo_legalかどうかを判定するための関数。
@@ -1181,7 +1179,7 @@ Move Position::to_move(Move16 m16) const
 
 // 指し手で盤面を1手進める。
 template <Color Us>
-void Position::do_move_impl(Move m, StateInfo& new_st, bool givesCheck)
+void Position::do_move_impl(Move m, StateInfo& new_st, bool givesCheck, TranspositionTable& tt)
 {
 	// Move::none()はもちろん、Move::null() , Move::resign()などお断り。
 	ASSERT_LV3(m.is_ok());
@@ -1189,9 +1187,6 @@ void Position::do_move_impl(Move m, StateInfo& new_st, bool givesCheck)
 	ASSERT_LV3(&new_st != st);
 
 	constexpr Color Them = ~Us;
-
-	// 探索ノード数 ≒do_move()の呼び出し回数のインクリメント。
-	thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
 
 	//std::cout << *this << m << std::endl;
 
@@ -1288,7 +1283,7 @@ void Position::do_move_impl(Move m, StateInfo& new_st, bool givesCheck)
 		// なるべく早い段階でのTTに対するprefetch
 		// 駒打ちのときはこの時点でTT entryのアドレスが確定できる
 		const HASH_KEY key = k + h;
-		prefetch(TT.first_entry(key));
+		prefetch(tt.first_entry(key));
 #if defined(USE_EVAL_HASH)
 		Eval::prefetch_evalhash(hash_key_to_key(key));
 #endif
@@ -1471,7 +1466,7 @@ void Position::do_move_impl(Move m, StateInfo& new_st, bool givesCheck)
 
 		// 駒打ちでないときはprefetchはこの時点まで延期される。
 		const HASH_KEY key = k + h;
-		prefetch(TT.first_entry(key));
+		prefetch(tt.first_entry(key));
 #if defined(USE_EVAL_HASH)
 		Eval::prefetch_evalhash(hash_key_to_key(key));
 #endif
@@ -1851,12 +1846,12 @@ void Position::undo_move_impl(Move m)
 }
 
 // do_move()を先後分けたdo_move_impl<>()を呼び出す。
-void Position::do_move(Move m, StateInfo& newSt, bool givesCheck)
+void Position::do_move(Move m, StateInfo& newSt, bool givesCheck, TranspositionTable& tt)
 {
 	if (sideToMove == BLACK)
-		do_move_impl<BLACK>(m, newSt, givesCheck);
+		do_move_impl<BLACK>(m, newSt, givesCheck, tt);
 	else
-		do_move_impl<WHITE>(m, newSt, givesCheck);
+		do_move_impl<WHITE>(m, newSt, givesCheck, tt);
 }
 
 // undo_move()を先後分けたdo_move_impl<>()を呼び出す。
@@ -1869,7 +1864,7 @@ void Position::undo_move(Move m)
 }
 
 // null move searchに使われる。手番だけ変更する。
-void Position::do_null_move(StateInfo& newSt) {
+void Position::do_null_move(StateInfo& newSt, TranspositionTable& tt) {
 
 	ASSERT_LV3(!checkers());
 	ASSERT_LV3(&newSt != st);
@@ -1897,7 +1892,7 @@ void Position::do_null_move(StateInfo& newSt) {
 	// CPUによっては有効なので一応やっておく。
 
 	const HASH_KEY key = st->hash_key();
-	prefetch(TT.first_entry(key));
+	prefetch(tt.first_entry(key));
 
 	// これは、さっきアクセスしたところのはずなので意味がない。
 	//  Eval::prefetch_evalhash(key);
@@ -2379,9 +2374,8 @@ RepetitionState Position::is_repetition(int ply, int& found_ply) const
 // ----------------------------------
 
 // 現在の盤面から、入玉に必要な駒点を計算し、Search::Limits::enteringKingPointに設定する。
-void Position::update_entering_point()
+void Position::update_entering_point(Search::LimitsType& limits) const
 {
-	auto& limits = Search::Limits;
 	auto rule = limits.enteringKingRule;
 	int points[COLOR_NB];
 
@@ -2443,9 +2437,9 @@ void Position::update_entering_point()
 	limits.enteringKingPoint[WHITE] = points[WHITE];
 }
 
-Move Position::DeclarationWin() const
+Move Position::DeclarationWin(const Search::LimitsType& limits) const
 {
-	auto rule = Search::Limits.enteringKingRule;
+	auto rule = limits.enteringKingRule;
 
 	switch (rule)
 	{
@@ -2524,7 +2518,7 @@ Move Position::DeclarationWin() const
 
 		// ↓ 駒落ち対応などを考慮して、enteringKingPoint[]を参照することにした。
 
-		if (score < Search::Limits.enteringKingPoint[us])
+		if (score < limits.enteringKingPoint[us])
 			return Move::none();
 
 		// 評価関数でそのまま使いたいので駒点を返しておくのもアリか…。
@@ -2645,7 +2639,7 @@ bool Position::pos_is_ok() const
 namespace {
 	// performance test
 	// ある局面から、全合法手を生成して depth深さまで辿り、局面数がいくらあったかを返す。
-	u64 perft(Position& pos, Depth depth)
+	u64 perft(Position& pos, Depth depth, TranspositionTable& tt)
 	{
 		StateInfo st;
 		u64 cnt, nodes = 0;
@@ -2657,8 +2651,8 @@ namespace {
 		const bool leaf = (depth == 2);
 		for (const auto& m : ml)
 		{
-			pos.do_move(m, st);
-			cnt = leaf ? MoveList<LEGAL_ALL>(pos).size() : perft(pos, depth - 1);
+			pos.do_move(m, st, tt);
+			cnt = leaf ? MoveList<LEGAL_ALL>(pos).size() : perft(pos, depth - 1, tt);
 			nodes += cnt;
 			pos.undo_move(m);
 		}
@@ -2666,32 +2660,29 @@ namespace {
 	};
 }
 
-void Position::UnitTest(Test::UnitTester& tester)
+void Position::UnitTest(Test::UnitTester& tester, Search::LimitsType& limits, TranspositionTable& tt)
 {
 	auto section1 = tester.section("Position");
-
-	// Search::Limitsのalias
-	auto& limits = Search::Limits;
 
 	Position pos;
 	StateInfo si;
 
 	// 任意局面での初期化。
-	auto pos_init = [&](const std::string& sfen_) { pos.set(sfen_, &si, Threads.main()); };
+	auto pos_init = [&](const std::string& sfen_) { pos.set(sfen_, &si); };
 
 	// 平手初期化
-	auto hirate_init  = [&] { pos.set_hirate(&si, Threads.main()); };
+	auto hirate_init  = [&] { pos.set_hirate(&si); };
 	// 2枚落ち初期化
 	auto handi2_sfen = "lnsgkgsnl/9/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL w - 1";
-	auto handi2_init = [&] { pos.set(handi2_sfen , &si, Threads.main()); };
+	auto handi2_init = [&] { pos.set(handi2_sfen , &si); };
 
 	// 4枚落ち初期化
 	auto handi4_sfen = "1nsgkgsn1/9/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL w - 1";
-	auto handi4_init = [&] { pos.set(handi4_sfen, &si, Threads.main()); };
+	auto handi4_init = [&] { pos.set(handi4_sfen, &si); };
 
 	// 指し手生成祭りの局面
 	auto matsuri_sfen = "l6nl/5+P1gk/2np1S3/p1p4Pp/3P2Sp1/1PPb2P1P/P5GS1/R8/LN4bKL w GR5pnsg 1";
-	auto matsuri_init = [&] { pos.set(matsuri_sfen, &si, Threads.main()); };
+	auto matsuri_init = [&] { pos.set(matsuri_sfen, &si); };
 
 	Move16 m16;
 	Move m;
@@ -2743,7 +2734,7 @@ void Position::UnitTest(Test::UnitTester& tester)
 		// これはpseudo_legalではある。
 		m16 = make_move16(SQ_77, SQ_76);
 		m = pos.to_move(m16);
-		tester.test("make_move(SQ_77, SQ_76) is pseudo_legal == true", pos.pseudo_legal(m) == true);
+		tester.test("make_move(SQ_77, SQ_76) is pseudo_legal == true", pos.pseudo_legal(m, limits) == true);
 
 #if 0
 		// 後手の駒の場合、現在の手番の駒ではないので、pseudo_legalではない。(pseudo_legalは手番側の駒であることを保証する)
@@ -2757,7 +2748,7 @@ void Position::UnitTest(Test::UnitTester& tester)
 		// (pseudo_legalは、その駒が移動できる(移動先の升にその駒の利きがある)ことを保証する)
 		m16 = make_move16(SQ_88, SQ_22);
 		m = pos.to_move(m16);
-		tester.test("make_move(SQ_88, SQ_22) is pseudo_legal == false", pos.pseudo_legal(m) == false);
+		tester.test("make_move(SQ_88, SQ_22) is pseudo_legal == false", pos.pseudo_legal(m, limits) == false);
 	}
 
 	// attacks_bb() のテスト
@@ -2785,7 +2776,7 @@ void Position::UnitTest(Test::UnitTester& tester)
 		std::deque<StateInfo> sis;
 
 		// 4手前の局面に戻っているパターン
-		BookTools::feed_position_string(pos, "startpos moves 5i5h 5a5b 5h5i 5b5a", sis);
+		BookTools::feed_position_string(pos, "startpos moves 5i5h 5a5b 5h5i 5b5a", sis, [](Position&, Move) {}, limits);
 
 		int found_ply;
 		auto rep = pos.is_repetition(16, found_ply);
@@ -2798,13 +2789,13 @@ void Position::UnitTest(Test::UnitTester& tester)
 		pos_init("lnsg1gsnl/1r5b1/ppppppppp/4k4/9/5R3/PPPPPPPPP/1B7/LNSGKGSNL b - 1");
 
 		m = pos.to_move(make_move16(SQ_46,SQ_56));
-		pos.do_move(m,s[0]);
+		pos.do_move(m, s[0], tt);
 		m = pos.to_move(make_move16(SQ_54,SQ_44));
-		pos.do_move(m,s[1]);
+		pos.do_move(m, s[1], tt);
 		m = pos.to_move(make_move16(SQ_56,SQ_46));
-		pos.do_move(m,s[2]);
+		pos.do_move(m, s[2], tt);
 		m = pos.to_move(make_move16(SQ_44,SQ_54));
-		pos.do_move(m,s[3]);
+		pos.do_move(m, s[3], tt);
 
 		// いま先手番であり、先手の反則負けが確定しているはず。
 		auto draw_value = pos.is_repetition();
@@ -2815,13 +2806,13 @@ void Position::UnitTest(Test::UnitTester& tester)
 		pos_init("lnsg1gsnl/1r5b1/ppppppppp/4k4/9/4R4/PPPPPPPPP/1B7/LNSGKGSNL w - 1");
 
 		m = pos.to_move(make_move16(SQ_54,SQ_44));
-		pos.do_move(m,s[0]);
+		pos.do_move(m, s[0], tt);
 		m = pos.to_move(make_move16(SQ_56,SQ_46));
-		pos.do_move(m,s[1]);
+		pos.do_move(m, s[1], tt);
 		m = pos.to_move(make_move16(SQ_44,SQ_54));
-		pos.do_move(m,s[2]);
+		pos.do_move(m, s[2], tt);
 		m = pos.to_move(make_move16(SQ_46,SQ_56));
-		pos.do_move(m,s[3]);
+		pos.do_move(m, s[3], tt);
 
 		draw_value = pos.is_repetition();
 		tester.test("REPETITION_WIN", draw_value == REPETITION_WIN);
@@ -3013,19 +3004,19 @@ void Position::UnitTest(Test::UnitTester& tester)
 
 		// 76歩、34歩の局面を作る。
 		m = pos.to_move(make_move16(SQ_77, SQ_76));
-		pos.do_move(m, s[0]);
+		pos.do_move(m, s[0], tt);
 		m = pos.to_move(make_move16(SQ_33, SQ_34));
-		pos.do_move(m, s[1]);
+		pos.do_move(m, s[1], tt);
 		// 22角成りの指し手について
 		m = pos.to_move(make_move_promote16(SQ_88, SQ_22));
 		// 角を取るが、see値は、同銀と取り返されて、駒の損得なし。
 
 		tester.test("pos1move", see_ge_th(0));
 
-		pos.do_move(m, s[2]);
+		pos.do_move(m, s[2], tt);
 		// 馬を取り返さずにあえて84歩
 		m = pos.to_move(make_move16(SQ_83, SQ_24));
-		pos.do_move(m, s[3]);
+		pos.do_move(m, s[3], tt);
 
 		// この局面で31馬は、同金とされて、(see値は)馬、銀の交換 = 馬を損して銀を得する
 		m = pos.to_move(make_move16(SQ_22, SQ_31));
@@ -3048,7 +3039,7 @@ void Position::UnitTest(Test::UnitTester& tester)
 		StateInfo s[512];
 
 		// null moveして、局面情報がおかしくならないかのテスト。
-		pos.do_null_move(s[0]);
+		pos.do_null_move(s[0], tt);
 		tester.test("pos_is_ok()",pos.pos_is_ok());
 	}
 
@@ -3103,7 +3094,7 @@ void Position::UnitTest(Test::UnitTester& tester)
 			auto &packed_sfen = packed_sfens[i];
 
 			StateInfo si;
-			pos.set(sfen, &si, Threads.main());
+			pos.set(sfen, &si);
 
 			PackedSfen ps;
 			pos.sfen_pack(ps);
@@ -3143,7 +3134,7 @@ void Position::UnitTest(Test::UnitTester& tester)
 
 			for (Depth d = 1; d <= 6; ++d)
 			{
-				u64 nodes = perft(pos, d);
+				u64 nodes = perft(pos, d, tt);
 				u64 pn = p_nodes[d];
 				tester.test("depth " + to_string(d) + " = " + to_string(pn), nodes == pn && pos.pos_is_ok());
 			}
@@ -3157,7 +3148,7 @@ void Position::UnitTest(Test::UnitTester& tester)
 
 			for (Depth d = 1; d <= 4; ++d)
 			{
-				u64 nodes = perft(pos, d);
+				u64 nodes = perft(pos, d, tt);
 				u64 pn = p_nodes[d];
 				tester.test("depth " + to_string(d) + " = " + to_string(nodes), nodes == pn && pos.pos_is_ok());
 			}
@@ -3177,7 +3168,7 @@ void Position::UnitTest(Test::UnitTester& tester)
 			pos.sfen_pack(ps);
 
 			Position pos2;
-			pos2.set_from_packed_sfen(ps, &si, Threads.main());
+			pos2.set_from_packed_sfen(ps, &si, false, 0, limits);
 			string sfen2 = pos2.sfen(game_ply);
 
 			return sfen == sfen2;
@@ -3197,7 +3188,7 @@ void Position::UnitTest(Test::UnitTester& tester)
 			pos.sfen_pack(ps);
 
 			Position pos2;
-			pos2.set_from_packed_sfen(ps, &si, Threads.main());
+			pos2.set_from_packed_sfen(ps, &si, false, 0, limits);
 			// ここから駒を5枚ほど落とす。
 			int count = 0;
 			for(auto sq : SQ)
@@ -3214,7 +3205,7 @@ void Position::UnitTest(Test::UnitTester& tester)
 			pos2.sfen_pack(ps); // 駒落ちのpacked sfenができた。
 
 			Position pos3;
-			pos3.set_from_packed_sfen(ps, &si, Threads.main());
+			pos3.set_from_packed_sfen(ps, &si, false, 0, limits);
 
 			string sfen3 = pos3.sfen(game_ply);
 
@@ -3252,7 +3243,7 @@ void Position::UnitTest(Test::UnitTester& tester)
 
 					Move m = Move(ml.at(size_t(my_rand.rand(ml.size()))));
 
-					pos.do_move(m,s[ply]);
+					pos.do_move(m, s[ply], tt);
 
 					if (!pos.pos_is_ok() || !extra_test1(pos) || !extra_test2(pos))
 						fail = true;

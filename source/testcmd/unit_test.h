@@ -73,7 +73,7 @@ namespace Test
 		// string->Variant(何でも取れる型)みたいなものがあれば良いだけなのだが、
 		// C++にそういうのはないし、いまやりたいのは、パラメーター名からu64とstringにmapできる程度で良いので
 		// OptionsMapを流用して用いることにする。
-		USI::OptionsMap options;
+		OptionsMap options;
 
 	protected:
 		// 現在のsection名。

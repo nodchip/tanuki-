@@ -102,8 +102,6 @@ std::ostream& operator<<(std::ostream& os, RepetitionState rs)
 // ----------------------------------------
 
 namespace Search {
-	LimitsType Limits;
-
 	// Called in case we have no ponder move before exiting the search,
 	// for instance, in case we stop the search during a fail high at root.
 	// We try hard to have a ponder move to return to the GUI,

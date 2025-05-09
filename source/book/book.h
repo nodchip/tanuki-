@@ -9,7 +9,10 @@
 
 #include <unordered_map>
 
-namespace Search { struct LimitsType; };
+namespace Search {
+	struct LimitsType;
+	class Worker;
+};
 
 
 // 定跡処理関連のnamespace
@@ -147,7 +150,7 @@ namespace Book
 		// ・見つからなかった場合、nullptrが返る。
 		// ・read_book()のときにon_the_flyが指定されていれば実際にはメモリ上には定跡データが存在しないので
 		// ファイルを調べに行き、BookMovesPtrをメモリ上に作って、それをくるんだBookMovesPtrを返す。
-		BookMovesPtr find(const Position& pos);
+		BookMovesPtr find(const Position& pos, OptionsMap& options, Search::LimitsType& limits);
 
 		// [ASYNC] 定跡を内部に読み込む。
 		// ・Aperyの定跡ファイルは"book/book.bin"だと仮定。(これはon the fly読み込みに非対応なので丸読みする)
@@ -156,22 +159,22 @@ namespace Book
 		// 　　定跡作成時などはこれをtrueにしてはいけない。(メモリに読み込まれないため)
 		// ・同じファイルを二度目は読み込み動作をskipする。
 		// ・filenameはpathとして"book/"を補完しないので生のpathを指定する。
-		Tools::Result read_book(const std::string& filename, bool on_the_fly = false);
+		Tools::Result read_book(const std::string& filename, bool on_the_fly, OptionsMap& options);
 
 		// [ASYNC] 定跡ファイルの書き出し
 		// ・sort = 書き出すときにsfen文字列で並び替えるのか。(書き出しにかかる時間増)
 		// →　必ずソートするように変更した。
 		// ・ファイルへの書き出しは、*thisを書き換えないという意味においてconst性があるので関数にconstを付与しておく。
 		// また、事前にis_ready()は呼び出されているものとする。
-		Tools::Result write_book(const std::string& filename /*, bool sort = false*/) const;
+		Tools::Result write_book(const std::string& filename, Search::LimitsType& limits /*, bool sort = false*/) const;
 
 		// [ASYNC] Aperyの定跡ファイルを読み込む（定跡コンバート用）
 		// ・Aperyの定跡ファイルはAperyBookで別途読み込んでいるため、read_apery_bookは定跡のコンバート専用。
 		// ・unreg_depth は定跡未登録の局面を再探索する深さ。デフォルト値1。
-		Tools::Result read_apery_book(const std::string& filename, int unreg_depth = 1);
+		Tools::Result read_apery_book(const std::string& filename, int unreg_depth, OptionsMap& options, Search::LimitsType& limits, TranspositionTable& tt);
 
 		// [ASYNC] Aperyの定跡ファイルに書き出す（定跡コンバート用）
-		Tools::Result write_apery_book(const std::string& filename);
+		Tools::Result write_apery_book(const std::string& filename, Search::LimitsType& limits);
 
 		// --------------------------------------------------------------------------
 		//   以下のメンバは、普段は外部から普段は直接アクセスすべきではない。
@@ -180,7 +183,7 @@ namespace Book
 		// --------------------------------------------------------------------------
 
 		// [ASYNC] book_body.find()のwrapper。book_body.find()ではなく、こちらのfindを呼び出して用いること。
-		BookMovesPtr find(const std::string& sfen) const;
+		BookMovesPtr find(const std::string& sfen, OptionsMap& options) const;
 
 		// [ASYNC] メモリに保持している定跡に局面を一つ追加する。
 		//   book_body[sfen] = ptr;
@@ -216,10 +219,10 @@ namespace Book
 		// 末尾のスペース、"\t","\r","\n"を除去する。
 		// Options["IgnoreBookPly"] == trueのときは、さらに数字も除去する。
 		// sfen文字列の末尾にある手数を除去する目的。
-		std::string trim(std::string input) const;
+		std::string trim(std::string input, OptionsMap& options) const;
 
 		// sfenで指定された局面の情報を定跡DBファイルにon the flyで探して、それを返すヘルパー関数。
-		BookMovesPtr find_bookmoves_on_the_fly(std::string sfen);
+		BookMovesPtr find_bookmoves_on_the_fly(std::string sfen, OptionsMap& options);
 
 		// メモリに丸読みせずにfind()のごとにファイルを調べにいくのか。
 		// これは思考エンジン設定のOptions["BookOnTheFly"]の値を反映したもの。
@@ -252,14 +255,14 @@ namespace Book
 	struct BookMoveSelector
 	{
 		// extra_option()で呼び出すと、定跡関係のオプション項目をオプション(OptionMap)に追加する。
-		void init(USI::OptionsMap & o);
+		void init(OptionsMap & o);
 
 		// 定跡ファイルの読み込み。
 		// ・Search::clear()からこの関数を呼び出す。
 		// ・Search::clear()は、USIのisreadyコマンドのときに呼び出されるので
 		// 　定跡をメモリに丸読みするのであればこのタイミングで行なう。
 		// ・Search::clear()が呼び出されたときのOptions["BookOnTheFly"]の値をcaptureして使う。(ことになる)
-		void read_book() { memory_book.read_book(get_book_name(), (bool)Options["BookOnTheFly"]); }
+		void read_book(OptionsMap& options) { memory_book.read_book(get_book_name(options), (bool)(options["BookOnTheFly"]), options); }
 
 		// --- 定跡の指し手の選択
 
@@ -274,7 +277,7 @@ namespace Book
 		//   on_the_fly == falseでなければ、非同期にこの関数を呼び出してはならない。
 		// ・Options["USI_OwnBook"]==trueにすることでエンジン側の定跡を有効化されていないなら、
 		// 　probe()には常に失敗する。(falseが返る)
-		bool probe(Thread& th , Search::LimitsType& limit);
+		bool probe(Search::Worker& th, OptionsMap& options, Search::LimitsType& limits, TranspositionTable& tt);
 
 		// 現在の局面が定跡に登録されているかを調べる。
 		// ・pos.RootMovesを持っていないときに、現在の局面が定跡にhitするか調べてhitしたらその指し手を返す。
@@ -284,7 +287,7 @@ namespace Book
 		// ・この関数自体はthread safeなのでread_book()したあとは非同期に呼び出して問題ない。
 		// 　ただし、on_the_flyのときは、ディスクアクセスが必要で、その部分がthread safeではないので
 		//   on_the_fly == falseでなければ、非同期にこの関数を呼び出してはならない。
-		Move probe(Position& pos);
+		Move probe(Position& pos, OptionsMap& options, Search::LimitsType& limits, TranspositionTable& tt);
 
 	protected:
 		// メモリに読み込んだ定跡ファイル
@@ -295,7 +298,7 @@ namespace Book
 
 		// 定跡ファイル名を返す。
 		// Option["BookDir"]が定跡ファイルの入っているフォルダなのでこれを連結した定跡ファイルのファイル名を返す。
-		std::string get_book_name() const { return Path::Combine((std::string)Options["BookDir"], (std::string)Options["BookFile"]); }
+		std::string get_book_name(OptionsMap& options) const { return Path::Combine((std::string)(options["BookDir"]), (std::string)(options["BookFile"])); }
 
 		// probe()の下請け
 		// forceHit == trueのときは、設定オプションの値を無視して強制的に定跡にhitさせる。(BookPvMovesの実装で用いる)
@@ -308,12 +311,12 @@ namespace Book
 		// bestMove   : 今回選択された指し手
 		// ponderMove : bestMoveの次の定跡の指し手 
 		// value      : bestMoveの評価値。
-		bool probe_impl(Position& rootPos, bool silent, Move16& bestMove, Move16& ponderMove , Value& value , bool forceHit = false);
+		bool probe_impl(Position& rootPos, bool silent, Move16& bestMove, Move16& ponderMove , Value& value , bool forceHit, OptionsMap& options, Search::LimitsType& limits, TranspositionTable& tt);
 
 		// 定跡のpv文字列を生成して返す。
 		// m        : 局面posをこの指し手で進める
 		// rest_ply : 残り出力するPVの手数
-		std::string pv_builder(Position& pos, Move16 m , int rest_ply);
+		std::string pv_builder(Position& pos, Move16 m , int rest_ply, OptionsMap& options, Search::LimitsType& limits, TranspositionTable& tt);
 
 		AsyncPRNG prng;
 	};
@@ -337,7 +340,7 @@ namespace BookTools
 	// position_callbackは、その局面と、その局面での指し手が引数にセットされて呼び出される。
 	// 与えたsfenの最後の局面では、MoveはMove::none()が入って呼び出される。
 	void feed_position_string(Position& pos, const std::string& root_sfen, std::deque<StateInfo>& si,
-		const std::function<void(Position&, Move)>& position_callback = [](Position&, Move) {});
+		const std::function<void(Position&, Move)>& position_callback, Search::LimitsType& limits);
 
 	// 平手、駒落ちの開始局面集
 	// ここで返ってきた配列の、[0]は平手のsfenであることは保証されている。

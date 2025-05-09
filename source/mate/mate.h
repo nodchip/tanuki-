@@ -8,6 +8,8 @@
 #include <memory> // std::unique_ptr<>
 #include <atomic> // std::atomic<>
 
+class TranspositionTable;
+
 namespace Mate
 {
 	// Mate関連で使うテーブルの初期化
@@ -27,7 +29,7 @@ namespace Mate
 
 	// 利きのある場所への取れない近接王手からの3手詰め
 	// 詰みがある場合は、その1手目の指し手を返す。詰みがない場合は、MOVE_NONEが返る。
-	Move weak_mate_3ply(const Position& pos, int ply);
+	Move weak_mate_3ply(const Position& pos, int ply, TranspositionTable& tt);
 
 	// Mate::MateRepetition() で千日手判定を行った時の返し値
 	enum class MateRepetitionState
@@ -170,7 +172,7 @@ namespace Mate
 		// 詰みがある場合は、その1手目の指し手を返す。詰みがない場合は、MOVE_NONEが返る。
 		// ply     : 最大で調べる手数
 		// gen_all : 歩の不成も生成するのか
-		Move mate_odd_ply(Position& pos, const int ply, bool gen_all);
+		Move mate_odd_ply(Position& pos, const int ply, bool gen_all, TranspositionTable& tt);
 
 		// 最大探索深さ。これを超えた局面は不詰扱いとする。
 		// Position::game_ply()がこれを超えた時点で不詰扱い。
@@ -184,7 +186,7 @@ namespace Mate
 		// INCHECK : 王手がかかっているか
 		// GEN_ALL : 歩の不成も生成するのか
 		template <bool INCHECK, bool GEN_ALL>
-		Move mate_odd_ply(Position& pos, const int ply);
+		Move mate_odd_ply(Position& pos, const int ply, TranspositionTable& tt);
 
 		// 偶数手詰め
 		// 前提) 手番側が王手されていること。
@@ -192,12 +194,12 @@ namespace Mate
 		// 返し値は、逃れる指し手がある時、その指し手を返す。どうやっても詰む場合は、MOVE_NONEが返る。
 		// ply     : 最大で調べる手数
 		// gen_all : 歩の不成も生成するのか。
-		Move mated_even_ply(Position& pos, const int ply, bool gen_all);
+		Move mated_even_ply(Position& pos, const int ply, bool gen_all, TranspositionTable& tt);
 
 		// mated_even_ply()のtemplate版。
 		// GEN_ALL : 歩の不成も生成するのか。
 		template <bool GEN_ALL>
-		Move mated_even_ply(Position& pos, const int ply);
+		Move mated_even_ply(Position& pos, const int ply, TranspositionTable& tt);
 
 		// 3手詰めチェック
 		// 手番側が王手でないこと
@@ -205,7 +207,7 @@ namespace Mate
 		// INCHECK : 王手がかかっているか
 		// GEN_ALL : 歩の不成も生成するのか。
 		template <bool INCHECK, bool GEN_ALL>
-		Move mate_3ply(Position& pos);
+		Move mate_3ply(Position& pos, TranspositionTable& tt);
 
 	private:
 		// 探索開始時のgame_plyを保存しておく。
