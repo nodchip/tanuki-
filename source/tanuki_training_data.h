@@ -5,6 +5,7 @@ namespace Tanuki
 {
 	void Rescore();
 	void Ensemble();
+	void CopyMateValue();
 }
 
 #endif

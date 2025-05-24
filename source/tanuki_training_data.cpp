@@ -193,3 +193,62 @@ void Tanuki::Ensemble()
 		input_file = nullptr;
 	}
 }
+
+void Tanuki::CopyMateValue()
+{
+	static constexpr int batch_size = 1024 * 1024;
+
+	std::string input_file_path = R"(D:\hnoda\shogi\training_data\tanuki-.nnue-pytorch-2024-07-30.1.shuffled\shuffled.bin)";
+	std::string distilled_file_path = R"(D:\hnoda\shogi\training_data\tanuki-.nnue-pytorch-2024-07-30.1.shuffled\shuffled.bin)";
+	std::string output_file_path = R"(D:\hnoda\shogi\training_data\tanuki-.nnue-pytorch-2024-07-30.1.shuffled\shuffled.mate.bin)";
+
+	FILE* input_file = std::fopen(input_file_path.c_str(), "rb");
+	std::setvbuf(input_file, nullptr, _IOFBF, BUFFER_SIZE);
+
+	FILE* distilled_file = std::fopen(distilled_file_path.c_str(), "rb");
+	std::setvbuf(distilled_file, nullptr, _IOFBF, BUFFER_SIZE);
+
+	FILE* output_file = std::fopen(output_file_path.c_str(), "wb");
+	std::setvbuf(output_file, nullptr, _IOFBF, BUFFER_SIZE);
+
+	int64_t num_processed = 0;
+	int64_t progress_duration = 1000000;
+	int64_t next_progress = progress_duration;
+	std::vector<PackedSfenValue> input_packed_sfens(batch_size);
+	std::vector<PackedSfenValue> distilled_packed_sfens(batch_size);
+	while (!std::feof(input_file)) {
+		size_t min_num_samples = std::numeric_limits<size_t>::max();
+		size_t input_samples =
+			std::fread(&input_packed_sfens[0], sizeof(PackedSfenValue), batch_size, input_file);
+		size_t distilled_samples =
+			std::fread(&distilled_packed_sfens[0], sizeof(PackedSfenValue), batch_size, input_file);
+		min_num_samples = std::min(min_num_samples, distilled_samples);
+
+		std::vector<PackedSfenValue> output_packed_sfens = distilled_packed_sfens;
+		for (int position_index = 0; position_index < static_cast<int>(min_num_samples);
+			++position_index) {
+			if (VALUE_MATE_IN_MAX_PLY <= std::abs(input_packed_sfens[position_index].score)) {
+				output_packed_sfens[position_index].score = input_packed_sfens[position_index].score;
+			}
+		}
+
+		std::fwrite(&output_packed_sfens[0], sizeof(PackedSfenValue), min_num_samples, output_file);
+
+		num_processed += min_num_samples;
+		if (next_progress < num_processed) {
+			std::cout << num_processed << std::endl;
+			next_progress += progress_duration;
+		}
+	}
+
+	std::cout << "Finished." << std::endl;
+
+	std::fclose(output_file);
+	output_file = nullptr;
+
+	std::fclose(distilled_file);
+	distilled_file = nullptr;
+
+	std::fclose(input_file);
+	input_file = nullptr;
+}

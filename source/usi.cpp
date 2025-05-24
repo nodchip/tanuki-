@@ -885,6 +885,9 @@ void usi_cmdexec(Position& pos, StateListPtr& states, string& cmd)
 		else if (token == "ensemble") {
 			Tanuki::Ensemble();
 		}
+		else if (token == "copy_mate_value") {
+			Tanuki::CopyMateValue();
+		}
 		else
 		{
 			//    簡略表現として、
