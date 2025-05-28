@@ -6,6 +6,7 @@ namespace Tanuki
 	void Rescore();
 	void Ensemble();
 	void CopyMateValue();
+	void Unique();
 }
 
 #endif

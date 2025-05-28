@@ -1,5 +1,8 @@
 ﻿#include "tanuki_training_data.h"
 
+#include <filesystem>
+#include <random>
+
 #include "engine/dlshogi-engine/UctSearch.h"
 #include "eval/deep/nn.h"
 #include "eval/deep/nn_types.h"
@@ -39,6 +42,10 @@ namespace
 		u8 padding;
 
 		// 32 + 2 + 2 + 2 + 1 + 1 = 40bytes
+
+		bool operator<(const PackedSfenValue& rh) const {
+			return std::memcmp(sfen.data, rh.sfen.data, sizeof(sfen.data)) < 0;
+		}
 	};
 
 	static constexpr size_t BUFFER_SIZE = 1024 * 1024 * 1024;
@@ -251,4 +258,146 @@ void Tanuki::CopyMateValue()
 
 	std::fclose(input_file);
 	input_file = nullptr;
+}
+
+void Tanuki::Unique()
+{
+	static constexpr int batch_size = 1024 * 1024;
+	static constexpr int large_buffer_size = 1024 * 1024 * 1024;
+	//static constexpr int small_buffer_size = 256 * 1024 * 1024;
+	static constexpr int small_buffer_size = 128 * 1024 * 1024;
+	static constexpr int num_files = 256;
+
+	std::string input_file_path = R"(D:\hnoda\shogi\training_data\tanuki-.nnue-pytorch-2024-07-30.1.shuffled\shuffled.bin)";
+	std::string temp_folder_path = R"(D:\hnoda\shogi\training_data\tanuki-.nnue-pytorch-2024-07-30.1.shuffled)";
+	std::string output_file_path = R"(D:\hnoda\shogi\training_data\tanuki-.nnue-pytorch-2024-07-30.1.shuffled\shuffled.unique.bin)";
+
+	// 棋譜を入力し、複数のファイルにランダムに追加していく
+	FILE* input_file = std::fopen(input_file_path.c_str(), "rb");
+	std::setvbuf(input_file, nullptr, _IOFBF, large_buffer_size);
+
+	std::vector<std::string> temp_file_paths;
+	for (int file_index = 0; file_index < num_files; ++file_index) {
+		std::string file_path = temp_folder_path + "\\" + std::to_string(file_index) + ".bin";
+		temp_file_paths.push_back(file_path);
+	}
+
+	sync_cout << "info string Opening temp output files..." << sync_endl;
+	std::vector<FILE*> temp_files;
+	for (const auto& file_path : temp_file_paths) {
+		FILE* file = std::fopen(file_path.c_str(), "wb");
+		std::setvbuf(input_file, nullptr, _IOFBF, small_buffer_size);
+		temp_files.push_back(file);
+	}
+
+	sync_cout << "info string Starting dividing..." << sync_endl;
+
+	std::mt19937_64 mt(std::time(nullptr));
+	std::uniform_int_distribution<> dist(0, num_files - 1);
+	int64_t num_records = 0;
+
+	for (;;) {
+		std::vector<PackedSfenValue> records(batch_size);
+		int num_samples = std::fread(&records[0], sizeof(records[0]), batch_size, input_file);
+
+		if (num_samples == 0) {
+			break;
+		}
+
+		for (int sample_index = 0; sample_index < num_samples; ++sample_index) {
+			std::fwrite(&records[sample_index], sizeof(records[sample_index]), 1, temp_files[dist(mt)]);
+			++num_records;
+			if (num_records % 10000000 == 0) {
+				sync_cout << "info string " << num_records << sync_endl;
+			}
+		}
+	}
+	for (auto temp_file : temp_files) {
+		std::fclose(temp_file);
+	}
+	temp_files.clear();
+
+	// 分割した学習データをソートする。
+	sync_cout << "info string Starting shuffling..." << sync_endl;
+
+	for (const auto& temp_file_path : temp_file_paths) {
+		sync_cout << "info string " << temp_file_path << sync_endl;
+
+		FILE* temp_file = std::fopen(temp_file_path.c_str(), "rb");
+		std::setvbuf(temp_file, nullptr, _IOFBF, large_buffer_size);
+
+		_fseeki64(temp_file, 0, SEEK_END);
+		int64_t file_size = _ftelli64(temp_file);
+		_fseeki64(temp_file, 0, SEEK_SET);
+		std::vector<PackedSfenValue> records(file_size / sizeof(PackedSfenValue));
+		std::fread(&records[0], sizeof(PackedSfenValue), file_size / sizeof(PackedSfenValue), temp_file);
+		std::fclose(temp_file);
+		temp_file = nullptr;
+
+		std::sort(records.begin(), records.end());
+
+		temp_file = std::fopen(temp_file_path.c_str(), "wb");
+		std::setvbuf(temp_file, nullptr, _IOFBF, large_buffer_size);
+		std::fwrite(&records[0], sizeof(PackedSfenValue), records.size(), temp_file);
+		std::fclose(temp_file);
+		temp_file = nullptr;
+	}
+
+	sync_cout << "info string Starting merging..." << sync_endl;
+
+	std::priority_queue<std::pair<PackedSfenValue, FILE*>, std::vector<std::pair<PackedSfenValue, FILE*>>, std::greater<>> q;
+
+	for (const auto& temp_file_path : temp_file_paths) {
+		sync_cout << "info string " << temp_file_path << sync_endl;
+
+		FILE* temp_file = std::fopen(temp_file_path.c_str(), "rb");
+		std::setvbuf(temp_file, nullptr, _IOFBF, small_buffer_size);
+
+		PackedSfenValue packed_sfen_value;
+		std::fread(&packed_sfen_value, sizeof(packed_sfen_value), 1, temp_file);
+
+		q.emplace(packed_sfen_value, temp_file);
+	}
+
+	num_records = 0;
+	int64_t num_duplicated = 0;
+
+	FILE* output_file = std::fopen(output_file_path.c_str(), "wb");
+	std::setvbuf(output_file, nullptr, _IOFBF, large_buffer_size);
+	PackedSfenValue last_packed_sfen_value = {};
+	while (!q.empty()) {
+		auto [packed_sfen_value, file] = q.top();
+		q.pop();
+
+		if (std::memcmp(&last_packed_sfen_value.sfen, &packed_sfen_value.sfen,
+			sizeof(last_packed_sfen_value.sfen)) != 0) {
+			std::fwrite(&packed_sfen_value, sizeof(packed_sfen_value), 1, output_file);
+		}
+		else {
+			++num_duplicated;
+		}
+		last_packed_sfen_value = packed_sfen_value;
+
+		if (std::fread(&packed_sfen_value, sizeof(packed_sfen_value), 1, file)) {
+			q.emplace(packed_sfen_value, file);
+		}
+		else {
+			std::fclose(file);
+			file = nullptr;
+		}
+
+		++num_records;
+		if (num_records % 10000000 == 0) {
+			sync_cout << "info string " << num_records << sync_endl;
+		}
+	}
+
+	sync_cout << "info string " << (num_duplicated * 100.0 / num_records) << "% duplicated."  << sync_endl;
+
+	std::fclose(output_file);
+	output_file = nullptr;
+
+	for (const auto& temp_file_path : temp_file_paths) {
+		std::filesystem::remove(temp_file_path);
+	}
 }
