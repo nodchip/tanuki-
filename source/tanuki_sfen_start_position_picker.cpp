@@ -34,11 +34,29 @@ bool SfenStartPositionPicker::Open()
 	while (!fs_book.eof()) {
 		Thread& thread = *Threads[0];
 		Position& pos = thread.rootPos;
-		pos.set_hirate(&state_info[0], &thread);
 
 		std::getline(fs_book, line);
 		std::istringstream is(line);
 		std::string token;
+
+		is >> token;
+		if (token == "startpos") {
+			pos.set_hirate(&state_info[0], &thread);
+			// movesを読み飛ばす。
+			is >> token;
+		}
+		else if (token == "sfen") {
+			std::string sfen;
+			// movesより前までをスペース区切りで結合する。
+			while (is >> token && token != "moves") {
+				if (!sfen.empty()) {
+					sfen += " ";
+				}
+				sfen += token;
+			}
+			pos.set(sfen, &state_info[0], &thread);
+		}
+
 		while (pos.game_ply() <= start_position_max_play) {
 			if (!(is >> token)) {
 				break;
@@ -71,7 +89,7 @@ bool SfenStartPositionPicker::Open()
 	// 開始位置を初期化する。
 	start_positions_iterator_ = start_positions_.begin();
 	ASSERT_LV3(start_positions_iterator_ != start_positions_.end())
-	return true;
+		return true;
 }
 
 void SfenStartPositionPicker::Pick(Position& position, StateInfo*& state_info, Thread& thread)
