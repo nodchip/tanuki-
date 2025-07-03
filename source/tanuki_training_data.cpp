@@ -63,16 +63,17 @@ using Eval::dlshogi::NN_Output_Value;
 
 extern DlshogiSearcher searcher;
 
-void Tanuki::Rescore()
+void Tanuki::Rescore(std::istringstream& is)
 {
 	int batch_size = 1024;
 
 	Options["DNN_Batch_Size1"] = std::to_string(batch_size);
 
 	is_ready();
-	
-	std::string input_file_path = R"(D:\hnoda\shogi\training_data\tanuki-.nnue-pytorch-2024-07-30.1.shuffled\shuffled.bin)";
-	std::string output_file_path = R"(D:\hnoda\shogi\training_data\tanuki-.nnue-pytorch-2024-07-30.1.shuffled\shuffled.20240329_153000_model_resnet30x384_relu_027.bin)";
+
+	std::string input_file_path;
+	std::string output_file_path;
+	is >> input_file_path >> output_file_path;
 	int gpu_id = 0;
 
 	UctSearcherGroup& grp = searcher.GetSearchGroups()[0];
@@ -134,15 +135,18 @@ void Tanuki::Rescore()
 	input_file = nullptr;
 }
 
-void Tanuki::Ensemble()
+void Tanuki::Ensemble(std::istringstream& is)
 {
 	static constexpr int batch_size = 1024 * 1024;
+
+	std::vector<std::string> file_paths;
+	std::string file_path;
+	while (is >> file_path) {
+		file_paths.push_back(file_path);
+	}
  
-	std::vector<std::string> input_file_paths = {
-		R"(D:\hnoda\shogi\training_data\tanuki-.nnue-pytorch-2024-07-30.1.shuffled\shuffled.bin)",
-		R"(D:\hnoda\shogi\training_data\tanuki-.nnue-pytorch-2024-07-30.1.shuffled\shuffled.bin)",
-	};
-	std::string output_file_path = R"(D:\hnoda\shogi\training_data\tanuki-.nnue-pytorch-2024-07-30.1.shuffled\shuffled.bin)";
+	std::vector<std::string> input_file_paths(file_paths.begin(), file_paths.end() - 1);
+	std::string output_file_path = file_paths.back();
 
 	std::vector<FILE*> input_files;
 	for (const auto& input_file_path : input_file_paths) {

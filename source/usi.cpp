@@ -880,10 +880,10 @@ void usi_cmdexec(Position& pos, StateListPtr& states, string& cmd)
 #endif
 
 		else if (token == "rescore") {
-			Tanuki::Rescore();
+			Tanuki::Rescore(is);
 		}
 		else if (token == "ensemble") {
-			Tanuki::Ensemble();
+			Tanuki::Ensemble(is);
 		}
 		else if (token == "copy_mate_value") {
 			Tanuki::CopyMateValue();
