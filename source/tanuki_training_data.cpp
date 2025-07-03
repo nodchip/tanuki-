@@ -94,7 +94,7 @@ void Tanuki::Rescore(std::istringstream& is)
 	std::setvbuf(output_file, nullptr, _IOFBF, BUFFER_SIZE);
 
 	int64_t num_processed = 0;
-	int64_t progress_duration = 1000000;
+	int64_t progress_duration = 10000000;
 	int64_t next_progress = progress_duration;
 	std::vector<PackedSfenValue> packed_sfens(batch_size);
 	while (!std::feof(input_file)) {
@@ -158,7 +158,7 @@ void Tanuki::Ensemble(std::istringstream& is)
 	std::setvbuf(output_file, nullptr, _IOFBF, BUFFER_SIZE);
 
 	int64_t num_processed = 0;
-	int64_t progress_duration = 1000000;
+	int64_t progress_duration = 10000000;
 	int64_t next_progress = progress_duration;
 	int num_input_files = static_cast<int>(input_file_paths.size());
 	std::vector<std::vector<PackedSfenValue>> input_packed_sfens(
