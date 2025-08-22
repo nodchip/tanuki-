@@ -3,52 +3,33 @@
 #include <filesystem>
 #include <random>
 
+#include "engine/dlshogi-engine/dlshogi_searcher.h"
 #include "engine/dlshogi-engine/UctSearch.h"
 #include "eval/deep/nn.h"
 #include "eval/deep/nn_types.h"
-#include "engine/dlshogi-engine/dlshogi_searcher.h"
 #include "position.h"
+#include "tanuki_kifu_writer.h"
+#include "tanuki_progress_report.h"
+#include "tanuki_sfen_start_position_picker.h"
 #include "thread.h"
 
 namespace
 {
-	// source\learn\learn.hよりコピー
-	// PackedSfenと評価値が一体化した構造体
-	// オプションごとに書き出す内容が異なると教師棋譜を再利用するときに困るので
-	// とりあえず、以下のメンバーはオプションによらずすべて書き出しておく。
-	struct PackedSfenValue
-	{
-		// 局面
-		PackedSfen sfen;
-
-		// Learner::search()から返ってきた評価値
-		s16 score;
-
-		// PVの初手
-		// 教師との指し手一致率を求めるときなどに用いる
-		u16 move;
-
-		// 初期局面からの局面の手数。
-		u16 gamePly;
-
-		// この局面の手番側が、ゲームを最終的に勝っているなら1。負けているなら-1。
-		// 引き分けに至った場合は、0。
-		// 引き分けは、教師局面生成コマンドgensfenにおいて、
-		// LEARN_GENSFEN_DRAW_RESULTが有効なときにだけ書き出す。
-		s8 game_result;
-
-		// 教師局面を書き出したファイルを他の人とやりとりするときに
-		// この構造体サイズが不定だと困るため、paddingしてどの環境でも必ず40bytesになるようにしておく。
-		u8 padding;
-
-		// 32 + 2 + 2 + 2 + 1 + 1 = 40bytes
-
-		bool operator<(const PackedSfenValue& rh) const {
-			return std::memcmp(sfen.data, rh.sfen.data, sizeof(sfen.data)) < 0;
-		}
-	};
-
 	static constexpr size_t BUFFER_SIZE = 1024 * 1024 * 1024;
+	static constexpr int kMaxGamePlay = 400;
+
+	template <typename T>
+	T ParseOptionOrDie(const char* name) {
+		std::string value_string = (std::string)Options[name];
+		std::istringstream iss(value_string);
+		T value;
+		if (!(iss >> value)) {
+			sync_cout << "Failed to parse an option. Exitting...: name=" << name << " value=" << value
+				<< sync_endl;
+			std::exit(1);
+		}
+		return value;
+	}
 }
 
 using dlshogi::UctSearcherGroup;
@@ -60,8 +41,24 @@ using Eval::dlshogi::NN_Input1;
 using Eval::dlshogi::NN_Input2;
 using Eval::dlshogi::NN_Output_Policy;
 using Eval::dlshogi::NN_Output_Value;
+using USI::Option;
+using USI::OptionsMap;
 
 extern DlshogiSearcher searcher;
+
+constexpr const char* kOptionKifuDir = "KifuDir";
+constexpr const char* kOptionGeneratorNumPositions = "GeneratorNumPositions";
+constexpr const char* kOptionGeneratorKifuTag = "GeneratorKifuTag";
+constexpr const char* kOptionGeneratorStartposFileName = "GeneratorStartposFileName";
+constexpr const char* kOptionGeneratorStartPositionMaxPlay = "GeneratorStartPositionMaxPlay";
+
+void Tanuki::InitializeGenerator(USI::OptionsMap& o) {
+	o[kOptionKifuDir] << Option("");
+	o[kOptionGeneratorNumPositions] << Option("10000000000");
+	o[kOptionGeneratorKifuTag] << Option("default_tag");
+	o[kOptionGeneratorStartposFileName] << Option("startpos.sfen");
+	o[kOptionGeneratorStartPositionMaxPlay] << Option(std::numeric_limits<int>::max(), 1, std::numeric_limits<int>::max());
+}
 
 void Tanuki::Rescore(std::istringstream& is)
 {
@@ -144,7 +141,7 @@ void Tanuki::Ensemble(std::istringstream& is)
 	while (is >> file_path) {
 		file_paths.push_back(file_path);
 	}
- 
+
 	std::vector<std::string> input_file_paths(file_paths.begin(), file_paths.end() - 1);
 	std::string output_file_path = file_paths.back();
 
@@ -396,7 +393,7 @@ void Tanuki::Unique()
 		}
 	}
 
-	sync_cout << "info string " << (num_duplicated * 100.0 / num_records) << "% duplicated."  << sync_endl;
+	sync_cout << "info string " << (num_duplicated * 100.0 / num_records) << "% duplicated." << sync_endl;
 
 	std::fclose(output_file);
 	output_file = nullptr;
@@ -404,4 +401,154 @@ void Tanuki::Unique()
 	for (const auto& temp_file_path : temp_file_paths) {
 		std::filesystem::remove(temp_file_path);
 	}
+}
+
+void Tanuki::Generate()
+{
+	constexpr int batch_size = 1024;
+
+	Options["DNN_Batch_Size1"] = std::to_string(batch_size);
+
+	is_ready();
+
+	Search::clear();
+
+	std::srand(static_cast<unsigned int>(std::time(nullptr)));
+
+	// 開始局面集を読み込む。
+	std::unique_ptr<StartPositionPicker> start_position_picker(new SfenStartPositionPicker());
+	if (!start_position_picker->Open()) {
+		return;
+	}
+
+	std::string kifu_directory = (std::string)Options["KifuDir"];
+	std::filesystem::create_directories(kifu_directory);
+
+	int64_t num_positions = ParseOptionOrDie<int64_t>(kOptionGeneratorNumPositions);
+	std::string output_file_name_tag = Options[kOptionGeneratorKifuTag];
+
+	std::cout << "num_positions=" << num_positions << std::endl;
+	std::cout << "output_file_name_tag=" << output_file_name_tag << std::endl;
+
+	time_t start_time;
+	std::time(&start_time);
+
+	// スレッド間で共有する
+	std::atomic_int64_t global_position_index;
+	global_position_index = 0;
+	//ProgressReport progress_report(num_positions, 60 * 60);
+	ProgressReport progress_report(num_positions, 1);
+	std::atomic<int> num_records = 0;
+	char output_file_path[1024];
+	std::sprintf(output_file_path,
+		"%s/kifu.tag=%s.num_positions=%I64d.start_time=%I64d.bin",
+		kifu_directory.c_str(), output_file_name_tag.c_str(), num_positions,
+		start_time);
+	std::unique_ptr<KifuWriter> kifu_writer = std::make_unique<KifuWriter>(output_file_path);
+
+	std::mt19937_64 mt19937_64(start_time);
+	std::uniform_real_distribution<float> move_distribution(0.0f, 1.0f);
+
+	struct GameState {
+		Position pos;
+		StateInfo state_info[1024];
+		StateInfo* state_info_ptr = state_info;
+	};
+	std::vector<GameState> game_states(batch_size);
+	// 初期局面を選択する。
+	for (auto& state : game_states) {
+		start_position_picker->Pick(state.pos, state.state_info_ptr, *Threads.main());
+	}
+
+	// ふかうら王から引っ張ってくるもの。
+	UctSearcherGroup& grp = searcher.GetSearchGroups()[0];
+	UctSearcher* searcher = grp.get_uct_searcher(0);
+
+	PType* packed_features1 = searcher->packed_features1;
+	PType* packed_features2 = searcher->packed_features2;
+	NN_Input1* features1 = searcher->features1;
+	NN_Input2* features2 = searcher->features2;
+
+	NN_Output_Policy* y1 = searcher->y1;
+	NN_Output_Value* y2 = searcher->y2;
+
+	std::vector<float> legal_move_probabilities;
+
+	while (global_position_index < num_positions) {
+		for (int sample_index = 0; sample_index < batch_size; ++sample_index) {
+			Eval::dlshogi::make_input_features(
+				game_states[sample_index].pos, sample_index, packed_features1, packed_features2);
+		}
+
+		grp.nn_forward(batch_size, packed_features1, packed_features2, features1, features2, y1, y2);
+
+		for (int sample_index = 0; sample_index < batch_size; ++sample_index) {
+			GameState& game_state = game_states[sample_index];
+			Position& pos = game_state.pos;
+
+			// 生成した局面を保存する。
+			PackedSfenValue packed_sfen_value;
+			pos.sfen_pack(packed_sfen_value.sfen);
+			kifu_writer->Write(packed_sfen_value);
+
+			// 次の指し手を決める。
+			Move selected_move = Mate::mate_1ply(pos);
+			if (selected_move == Move::none())
+			{
+				// 1手詰めではない場合、ニューラルネットワークの出力から指し手を選ぶ。
+				ExtMove moves[MAX_MOVES];
+				ExtMove* last_move = generateMoves<LEGAL>(game_states[sample_index].pos, moves);
+				legal_move_probabilities.clear();
+				for (ExtMove* move = moves; move < last_move; ++move) {
+					int move_label = make_move_label(*move, pos.side_to_move());
+					float probability = y1[sample_index][move_label];
+					legal_move_probabilities.push_back(probability);
+				}
+
+				// Boltzmann distribution
+				softmax_temperature_with_normalize(legal_move_probabilities);
+
+				//sync_cout << pos << sync_endl;
+
+				// 指し手を選ぶ。
+				float rand_probability = move_distribution(mt19937_64);
+				float cumulative_probability = 0.0f;
+				for (ExtMove* move = moves; move < last_move; ++move) {
+					cumulative_probability += legal_move_probabilities[move - moves];
+					//sync_cout << *move << " " << legal_move_probabilities[move - moves] << sync_endl;
+
+					if (cumulative_probability >= rand_probability) {
+						selected_move = *move;
+						break;
+					}
+				}
+			}
+
+			// 選ばれた指し手を局面に適用する。
+			pos.do_move(selected_move, *game_states[sample_index].state_info_ptr++);
+
+			if (
+				// 一定の手数に達していない
+				pos.game_ply() < kMaxGamePlay &&
+				// 詰まされていない
+				!pos.is_mated() &&
+				// 宣言勝ちができない
+				pos.DeclarationWin() == Move::none() &&
+				// 千日手による引き分けではない
+				// 優等局面・劣等局面は、対局中に一瞬だけ現れ、その後通常通り対局が進むパターンがあるため、考慮しない
+				pos.is_repetition() != RepetitionState::REPETITION_DRAW) {
+				// 終局していない場合、次の対局の処理に移る。
+				continue;
+			}
+
+			// 終局した。次の対局の準備を始める。
+			game_state.state_info_ptr = game_state.state_info;
+			start_position_picker->Pick(pos, game_state.state_info_ptr, *Threads.main());
+		}
+
+		global_position_index += batch_size;
+		progress_report.Show(global_position_index);
+	}
+
+	std::cout << "Finished." << std::endl;
 }

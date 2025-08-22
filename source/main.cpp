@@ -7,6 +7,9 @@
 #include "usi.h"
 #include "misc.h"
 
+#include "tanuki_kifu_writer.h"
+#include "tanuki_training_data.h"
+
 // ファイルの中身を出力する。
 void print_file(const std::string& path)
 {
@@ -44,6 +47,9 @@ int main(int argc, char* argv[])
 
 	//Search::clear();
 	Eval::init();
+
+	Tanuki::KifuWriter::Initialize(Options);
+	Tanuki::InitializeGenerator(Options);
 
 #if !defined(__EMSCRIPTEN__)
 	// USIコマンドの応答部

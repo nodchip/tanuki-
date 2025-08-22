@@ -891,6 +891,9 @@ void usi_cmdexec(Position& pos, StateListPtr& states, string& cmd)
 		else if (token == "unique") {
 			Tanuki::Unique();
 		}
+		else if (token == "generate") {
+			Tanuki::Generate();
+		}
 		else
 		{
 			//    簡略表現として、

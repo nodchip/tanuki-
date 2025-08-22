@@ -373,6 +373,18 @@
     <ClInclude Include="usi_option.h">
       <Filter>リソース ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="tanuki_start_position_picker.h">
+      <Filter>リソース ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="tanuki_sfen_start_position_picker.h">
+      <Filter>リソース ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="tanuki_progress_report.h">
+      <Filter>リソース ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="tanuki_kifu_writer.h">
+      <Filter>リソース ファイル</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="movegen.cpp">
@@ -595,6 +607,15 @@
       <Filter>リソース ファイル\book</Filter>
     </ClCompile>
     <ClCompile Include="tanuki_training_data.cpp">
+      <Filter>リソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="tanuki_sfen_start_position_picker.cpp">
+      <Filter>リソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="tanuki_progress_report.cpp">
+      <Filter>リソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="tanuki_kifu_writer.cpp">
       <Filter>リソース ファイル</Filter>
     </ClCompile>
   </ItemGroup>
