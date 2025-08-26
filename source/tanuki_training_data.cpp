@@ -436,8 +436,8 @@ void Tanuki::Generate()
 	// スレッド間で共有する
 	std::atomic_int64_t global_position_index;
 	global_position_index = 0;
-	//ProgressReport progress_report(num_positions, 60 * 60);
-	ProgressReport progress_report(num_positions, 1);
+	ProgressReport progress_report(num_positions, 60 * 60);
+	//ProgressReport progress_report(num_positions, 1);
 	std::atomic<int> num_records = 0;
 	char output_file_path[1024];
 	std::sprintf(output_file_path,
@@ -474,6 +474,8 @@ void Tanuki::Generate()
 
 	std::vector<float> legal_move_probabilities;
 
+	int num_games = 0;
+	int64_t sum_plays = 0;
 	while (global_position_index < num_positions) {
 		for (int sample_index = 0; sample_index < batch_size; ++sample_index) {
 			Eval::dlshogi::make_input_features(
@@ -542,6 +544,8 @@ void Tanuki::Generate()
 			}
 
 			// 終局した。次の対局の準備を始める。
+			++num_games;
+			sum_plays += pos.game_ply();
 			game_state.state_info_ptr = game_state.state_info;
 			start_position_picker->Pick(pos, game_state.state_info_ptr, *Threads.main());
 		}
@@ -550,5 +554,6 @@ void Tanuki::Generate()
 		progress_report.Show(global_position_index);
 	}
 
+	std::cout << "num_games=" << num_games << " sum_plays=" << sum_plays << " sum_plays/num_games=" << sum_plays / num_games << std::endl;
 	std::cout << "Finished." << std::endl;
 }
