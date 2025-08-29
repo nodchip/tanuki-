@@ -489,7 +489,7 @@ void Tanuki::Generate()
 			Position& pos = game_state.pos;
 
 			// 生成した局面を保存する。
-			PackedSfenValue packed_sfen_value;
+			PackedSfenValue packed_sfen_value = {};
 			pos.sfen_pack(packed_sfen_value.sfen);
 			kifu_writer->Write(packed_sfen_value);
 
