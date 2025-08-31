@@ -470,7 +470,7 @@ Tools::Result Position::set_from_packed_sfen(const PackedSfen& sfen , StateInfo 
 	if (stream.get_cursor() != 256)
 	{
 		// こんな局面はおかしい。デバッグ用。
-		//cout << "Error : set_from_packed_sfen() , position = " << endl << *this << endl;
+		cout << "Error : set_from_packed_sfen() , position = " << endl << *this << endl;
 		//ASSERT_LV1(false);
 		return Tools::Result(Tools::ResultCode::SomeError);
 	}

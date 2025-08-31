@@ -11,6 +11,7 @@ namespace Tanuki {
 	void InitializeGenerator(USI::OptionsMap& o);
 	void GenerateKifu();
 	void ConvertSfenToLearningData();
+	void ValidateKifu();
 }
 
 #endif

@@ -926,6 +926,8 @@ void USI::loop(int argc, char* argv[])
 
 		else if (token == "convert_sfen_to_learning_data") Tanuki::ConvertSfenToLearningData();
 
+		else if (token == "validate_kifu") Tanuki::ValidateKifu();
+
 		else if (token == "shuffle_kifu") Tanuki::ShuffleKifu(pos);
 
 		else if (token == "progress_learn") {

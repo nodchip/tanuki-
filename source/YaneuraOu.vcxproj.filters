@@ -471,9 +471,6 @@
     <ClCompile Include="eval\material\evaluate_material.cpp">
       <Filter>リソース ファイル\eval\material</Filter>
     </ClCompile>
-    <ClCompile Include="learn\gensfen2019.cpp">
-      <Filter>リソース ファイル\learn</Filter>
-    </ClCompile>
     <ClCompile Include="tanuki_book.cpp">
       <Filter>リソース ファイル</Filter>
     </ClCompile>

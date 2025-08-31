@@ -61,6 +61,7 @@ namespace {
 		"ConvertSfenToLearningDataSearchDepth";
 	constexpr const char* kOptionConvertSfenToLearningDataOutputFileName =
 		"ConvertSfenToLearningDataOutputFileName";
+	constexpr const char* kOptionValidatorKifuFilePath = "ValidatorKifuFilePath";
 
 	std::vector<std::string> start_positions;
 	std::uniform_real_distribution<> probability_distribution;
@@ -150,6 +151,7 @@ void Tanuki::InitializeGenerator(USI::OptionsMap& o) {
 	o[kOptionGeneratorMaxMultiPVMoves] << Option(16, 0, std::numeric_limits<int>::max());
 	o[kOptionGeneratorMaxEvalDiff] << Option(30, 0, std::numeric_limits<int>::max());
 	o[kOptionGeneratorAdjustNodesLimit] << Option(false);
+	o[kOptionValidatorKifuFilePath] << Option("");
 }
 
 namespace {
@@ -579,6 +581,32 @@ void Tanuki::ConvertSfenToLearningData() {
 			}
 
 			progress_report.Show(global_sfen_index);
+		}
+	}
+}
+
+void Tanuki::ValidateKifu() {
+	is_ready();
+
+	std::string input_file_path = Options[kOptionValidatorKifuFilePath];
+	FILE* input_file = std::fopen(input_file_path.c_str(), "rb");
+	Learner::PackedSfenValue packed_sfen_value;
+	int64_t num_records = 0;
+	while (std::fread(&packed_sfen_value, sizeof(packed_sfen_value), 1, input_file) == 1) {
+		Position& pos = Threads.main()->rootPos;
+		StateInfo state_info;
+		Tools::Result result = pos.set_from_packed_sfen(packed_sfen_value.sfen, &state_info, Threads.main());
+		if (result.is_not_ok()) {
+			FILE* output_file = std::fopen("error.bin", "wb");
+			std::fwrite(&packed_sfen_value, sizeof(packed_sfen_value), 1, output_file);
+			std::fclose(output_file);
+			output_file = nullptr;
+			break;
+		}
+
+		++num_records;
+		if (num_records % 10000000 == 0) {
+			sync_cout << "info string " << num_records << sync_endl;
 		}
 	}
 }
