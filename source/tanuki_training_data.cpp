@@ -1,5 +1,7 @@
 ﻿#include "tanuki_training_data.h"
 
+#pragma optimize("", off)
+
 #include <filesystem>
 #include <random>
 
@@ -491,6 +493,17 @@ void Tanuki::Generate()
 			// 生成した局面を保存する。
 			PackedSfenValue packed_sfen_value = {};
 			pos.sfen_pack(packed_sfen_value.sfen);
+
+			// デバッグ用
+			Tools::Result result = pos.set_from_packed_sfen(packed_sfen_value.sfen, nullptr, Threads.main());
+			if (result.is_not_ok()) {
+				sync_cout << "info string Error in sfen_pack(): global_position_index=" << global_position_index <<
+					" sample_index=" << sample_index <<
+					" pos= " << pos << sync_endl;
+				::__debugbreak();
+				continue;
+			}
+
 			kifu_writer->Write(packed_sfen_value);
 
 			// 次の指し手を決める。
