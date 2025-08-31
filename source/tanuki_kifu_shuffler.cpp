@@ -108,7 +108,12 @@ void Tanuki::ShuffleKifu(Position& position) {
             PackedSfenValue record;
             while (static_cast<int>(records.size()) < kMaxPackedSfenValues && reader->Read(record)) {
                 StateInfo state_info = {};
-                position.set_from_packed_sfen(record.sfen, &state_info, Threads[0]);
+                Tools::Result result = position.set_from_packed_sfen(record.sfen, &state_info, Threads[0]);
+                if (result.is_not_ok()) {
+                    sync_cout << "Failed to call set_from_packed_sfen()." << std::endl << position << sync_endl;
+                    continue;
+                }
+
                 double progress = 0.0;
                 if (min_progress != 0.0 || max_progress != 1.0) {
                     // ‚‘¬‰»‚Ì‚½‚ßAmin_progress‚Ü‚½‚Ímax_progress‚ªÝ’è‚³‚ê‚Ä‚¢‚½ê‡‚Ì‚Ý
