@@ -498,11 +498,10 @@ void Tanuki::Generate()
 			if (selected_move == Move::none())
 			{
 				// 1手詰めではない場合、ニューラルネットワークの出力から指し手を選ぶ。
-				ExtMove moves[MAX_MOVES];
-				ExtMove* last_move = generateMoves<LEGAL>(game_states[sample_index].pos, moves);
+				MoveList<LEGAL> move_list(game_state.pos);
 				legal_move_probabilities.clear();
-				for (ExtMove* move = moves; move < last_move; ++move) {
-					int move_label = make_move_label(*move, pos.side_to_move());
+				for (ExtMove move : move_list) {
+					int move_label = make_move_label(Move(move), pos.side_to_move());
 					float probability = y1[sample_index][move_label];
 					legal_move_probabilities.push_back(probability);
 				}
@@ -515,19 +514,20 @@ void Tanuki::Generate()
 				// 指し手を選ぶ。
 				float rand_probability = move_distribution(mt19937_64);
 				float cumulative_probability = 0.0f;
-				for (ExtMove* move = moves; move < last_move; ++move) {
-					cumulative_probability += legal_move_probabilities[move - moves];
+				int move_index = 0;
+				for (ExtMove move : move_list) {
+					cumulative_probability += legal_move_probabilities[move_index++];
 					//sync_cout << *move << " " << legal_move_probabilities[move - moves] << sync_endl;
 
 					if (cumulative_probability >= rand_probability) {
-						selected_move = *move;
+						selected_move = Move(move);
 						break;
 					}
 				}
 			}
 
 			// 選ばれた指し手を局面に適用する。
-			pos.do_move(selected_move, *game_states[sample_index].state_info_ptr++);
+			pos.do_move(selected_move, *game_state.state_info_ptr++);
 
 			if (
 				// 一定の手数に達していない
