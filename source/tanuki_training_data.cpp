@@ -526,28 +526,34 @@ void Tanuki::Generate()
 				}
 			}
 
-			// 選ばれた指し手を局面に適用する。
-			pos.do_move(selected_move, *game_state.state_info_ptr++);
-
-			if (
-				// 一定の手数に達していない
-				pos.game_ply() < kMaxGamePlay &&
-				// 詰まされていない
-				!pos.is_mated() &&
-				// 宣言勝ちができない
-				pos.DeclarationWin() == Move::none() &&
-				// 千日手による引き分けではない
-				// 優等局面・劣等局面は、対局中に一瞬だけ現れ、その後通常通り対局が進むパターンがあるため、考慮しない
-				pos.is_repetition() != RepetitionState::REPETITION_DRAW) {
-				// 終局していない場合、次の対局の処理に移る。
+			if (selected_move == Move::none()) {
+				// 合法手が無かった。
+				// 下のpos.is_mated()に引っかからない場合があるらしい。
+				++num_games;
+				sum_plays += pos.game_ply();
+				game_state.state_info_ptr = game_state.state_info;
+				start_position_picker->Pick(pos, game_state.state_info_ptr, *Threads.main());
 				continue;
 			}
 
-			// 終局した。次の対局の準備を始める。
-			++num_games;
-			sum_plays += pos.game_ply();
-			game_state.state_info_ptr = game_state.state_info;
-			start_position_picker->Pick(pos, game_state.state_info_ptr, *Threads.main());
+			// 選ばれた指し手を局面に適用する。
+			pos.do_move(selected_move, *game_state.state_info_ptr++);
+
+			if (// 一定の手数に達した。
+				pos.game_ply() >= kMaxGamePlay ||
+				// 詰まされた。
+				pos.is_mated() ||
+				// 宣言勝ちできる。
+				pos.DeclarationWin() != Move::none() ||
+				// 千日手による引き分け
+				// 優等局面・劣等局面は、対局中に一瞬だけ現れ、その後通常通り対局が進むパターンがあるため、考慮しない
+				pos.is_repetition() == RepetitionState::REPETITION_DRAW) {
+				// 終局した。次の対局の準備を始める。
+				++num_games;
+				sum_plays += pos.game_ply();
+				game_state.state_info_ptr = game_state.state_info;
+				start_position_picker->Pick(pos, game_state.state_info_ptr, *Threads.main());
+			}
 		}
 
 		global_position_index += batch_size;
