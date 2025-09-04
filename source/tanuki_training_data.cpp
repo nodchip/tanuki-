@@ -30,6 +30,12 @@ namespace
 		}
 		return value;
 	}
+
+	enum GameResult {
+		GameResultWin = 1,
+		GameResultLose = -1,
+		GameResultDraw = 0,
+	};
 }
 
 using dlshogi::UctSearcherGroup;
@@ -437,6 +443,7 @@ void Tanuki::Generate()
 	std::atomic_int64_t global_position_index;
 	global_position_index = 0;
 	ProgressReport progress_report(num_positions, 60 * 60);
+	//ProgressReport progress_report(num_positions, 60);
 	//ProgressReport progress_report(num_positions, 1);
 	std::atomic<int> num_records = 0;
 	char output_file_path[1024];
@@ -451,8 +458,9 @@ void Tanuki::Generate()
 
 	struct GameState {
 		Position pos;
-		StateInfo state_info[1024];
-		StateInfo* state_info_ptr = state_info;
+		std::vector<StateInfo> state_info = std::vector<StateInfo>(1024);
+		StateInfo* state_info_ptr = &state_info[0];
+		std::vector<PackedSfenValue> records;
 	};
 	std::vector<GameState> game_states(batch_size);
 	// 初期局面を選択する。
@@ -488,75 +496,137 @@ void Tanuki::Generate()
 			GameState& game_state = game_states[sample_index];
 			Position& pos = game_state.pos;
 
-			// 生成した局面を保存する。
-			PackedSfenValue packed_sfen_value = {};
-			pos.sfen_pack(packed_sfen_value.sfen);
-			kifu_writer->Write(packed_sfen_value);
+			if (
+				// 一定の手数に達していない
+				pos.game_ply() < kMaxGamePlay &&
+				// 詰まされていない
+				!pos.is_mated() &&
+				// 宣言勝ちができない
+				pos.DeclarationWin() == Move::none() &&
+				// 千日手による引き分けではない
+				// 優等局面・劣等局面は、対局中に一瞬だけ現れ、その後通常通り対局が進むパターンがあるため、考慮しない
+				pos.is_repetition() != RepetitionState::REPETITION_DRAW) {
+				// 次の指し手を決める。
+				Move selected_move = Mate::mate_1ply(pos);
+				if (selected_move == Move::none())
+				{
+					// 1手詰めではない場合、ニューラルネットワークの出力から指し手を選ぶ。
+					MoveList<LEGAL> move_list(game_state.pos);
+					legal_move_probabilities.clear();
+					for (ExtMove move : move_list) {
+						int move_label = make_move_label(Move(move), pos.side_to_move());
+						float probability = y1[sample_index][move_label];
+						legal_move_probabilities.push_back(probability);
+					}
 
-			// 次の指し手を決める。
-			Move selected_move = Mate::mate_1ply(pos);
-			if (selected_move == Move::none())
-			{
-				// 1手詰めではない場合、ニューラルネットワークの出力から指し手を選ぶ。
-				MoveList<LEGAL> move_list(game_state.pos);
-				legal_move_probabilities.clear();
-				for (ExtMove move : move_list) {
-					int move_label = make_move_label(Move(move), pos.side_to_move());
-					float probability = y1[sample_index][move_label];
-					legal_move_probabilities.push_back(probability);
+					// Boltzmann distribution
+					softmax_temperature_with_normalize(legal_move_probabilities);
+
+					//sync_cout << pos << sync_endl;
+
+					// 指し手を選ぶ。
+					do {
+						float rand_probability = move_distribution(mt19937_64);
+						float cumulative_probability = 0.0f;
+						int move_index = 0;
+						for (ExtMove move : move_list) {
+							cumulative_probability += legal_move_probabilities[move_index++];
+							//sync_cout << *move << " " << legal_move_probabilities[move - moves] << sync_endl;
+
+							if (cumulative_probability >= rand_probability) {
+								selected_move = Move(move);
+								break;
+							}
+						}
+
+						if (selected_move == Move::none()) {
+							sync_cout << "info string No legal move selected. Retrying..." << sync_endl;
+						}
+
+					} while (selected_move == Move::none());
 				}
 
-				// Boltzmann distribution
-				softmax_temperature_with_normalize(legal_move_probabilities);
+				if (selected_move == Move::none()) {
+					// 何らかの理由で合法手が見つからなかった。
+					sync_cout << "info string No legal move found."
+						<< " sample_index=" << sample_index << std::endl
+						<< pos << sync_endl;
 
-				//sync_cout << pos << sync_endl;
+					MoveList<LEGAL> move_list(game_state.pos);
+					for (ExtMove move : move_list) {
+						int move_label = make_move_label(Move(move), pos.side_to_move());
+						float probability = y1[sample_index][move_label];
+						sync_cout << move << " " << probability << sync_endl;
+					}
+					// 対局をやり直す。
+				}
+				else if (!pos.pos_is_ok()) {
+					// 何らかの理由で局面が壊れた。
+					sync_cout << "info string Position became illegal."
+						<< " sample_index=" << sample_index << std::endl
+						<< pos << sync_endl;
+					// 対局をやり直す。
+				}
+				else {
+					// 生成した局面を保存する。
+					PackedSfenValue record = {};
+					pos.sfen_pack(record.sfen);
+					record.gamePly = pos.game_ply();
+					game_state.records.push_back(record);
 
-				// 指し手を選ぶ。
-				float rand_probability = move_distribution(mt19937_64);
-				float cumulative_probability = 0.0f;
-				int move_index = 0;
-				for (ExtMove move : move_list) {
-					cumulative_probability += legal_move_probabilities[move_index++];
-					//sync_cout << *move << " " << legal_move_probabilities[move - moves] << sync_endl;
 
-					if (cumulative_probability >= rand_probability) {
-						selected_move = Move(move);
-						break;
+					// 選ばれた指し手を局面に適用する。
+					pos.do_move(selected_move, *game_state.state_info_ptr++);
+					continue;
+				}
+			}
+
+
+			int game_result = GameResultDraw;
+			u8 entering_king = 0;
+			if (pos.is_mated()) {
+				// 負け
+				// 詰まされた
+				// records.back()は相手局面なので勝ち
+				game_result = GameResultWin;
+			}
+			else if (pos.DeclarationWin() != Move::none()) {
+				// 勝ち
+				// 入玉勝利
+				// records.back()は相手局面なので負け
+				game_result = GameResultLose;
+				entering_king = 1;
+			}
+
+			if (game_result != GameResultDraw) {
+				for (auto rit = game_state.records.rbegin(); rit != game_state.records.rend(); ++rit) {
+					rit->game_result = game_result;
+					rit->entering_king = entering_king;
+					game_result = -game_result;
+				}
+
+				if (!game_state.records.empty()) {
+					game_state.records.back().last_position = true;
+				}
+
+				for (const auto& record : game_state.records) {
+					if (!kifu_writer->Write(record)) {
+						sync_cout << "info string Failed to write a record." << sync_endl;
+						std::exit(1);
 					}
 				}
-			}
 
-			if (selected_move == Move::none()) {
-				// 合法手が無かった。
-				// 下のpos.is_mated()に引っかからない場合があるらしい。
+				// 統計情報を更新する。
 				++num_games;
-				sum_plays += pos.game_ply();
-				game_state.state_info_ptr = game_state.state_info;
-				start_position_picker->Pick(pos, game_state.state_info_ptr, *Threads.main());
-				continue;
+				global_position_index += game_state.records.size();
 			}
 
-			// 選ばれた指し手を局面に適用する。
-			pos.do_move(selected_move, *game_state.state_info_ptr++);
-
-			if (// 一定の手数に達した。
-				pos.game_ply() >= kMaxGamePlay ||
-				// 詰まされた。
-				pos.is_mated() ||
-				// 宣言勝ちできる。
-				pos.DeclarationWin() != Move::none() ||
-				// 千日手による引き分け
-				// 優等局面・劣等局面は、対局中に一瞬だけ現れ、その後通常通り対局が進むパターンがあるため、考慮しない
-				pos.is_repetition() == RepetitionState::REPETITION_DRAW) {
-				// 終局した。次の対局の準備を始める。
-				++num_games;
-				sum_plays += pos.game_ply();
-				game_state.state_info_ptr = game_state.state_info;
-				start_position_picker->Pick(pos, game_state.state_info_ptr, *Threads.main());
-			}
+			// 次の対局の準備を始める。
+			game_state.state_info_ptr = &game_state.state_info[0];
+			game_state.records.clear();
+			start_position_picker->Pick(pos, game_state.state_info_ptr, *Threads.main());
 		}
 
-		global_position_index += batch_size;
 		progress_report.Show(global_position_index);
 	}
 
