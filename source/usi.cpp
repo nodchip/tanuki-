@@ -1750,7 +1750,7 @@ void USIEngine::isready()
 #if defined(YANEURAOU_ENGINE_DEEP)
 	// ふかうら王では置換表は用いない。
 #else
-	//TT.resize(size_t(options["USI_Hash"]));
+	//TT.resize(size_t(options["Hash"]));
 #endif
 
 	//Search::clear();

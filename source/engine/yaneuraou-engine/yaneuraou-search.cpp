@@ -132,14 +132,14 @@ void YaneuraOuEngine::add_options() {
 
 #if STOCKFISH
     options.add(  //
-        "USI_Hash", Option(16, 1, MaxHashMB, [this](const Option& o) {
+        "Hash", Option(16, 1, MaxHashMB, [this](const Option& o) {
             set_tt_size(o);
             return std::nullopt;
         }));
 #else
 	// 🌈 やねうら王では、default値を1024に変更。
     options.add(  //
-        "USI_Hash", Option(1024, 1, MaxHashMB, [this](const Option& o) {
+        "Hash", Option(1024, 1, MaxHashMB, [this](const Option& o) {
             set_tt_size(o);
             return std::nullopt;
         }));
@@ -342,7 +342,7 @@ void YaneuraOuEngine::resize_threads() {
                 updateContext , options["Threads"], worker_factory);
 
 	// 置換表の割り当て
-	set_tt_size(options["USI_Hash"]);
+	set_tt_size(options["Hash"]);
  
     // 📌 NUMAの設定
 
