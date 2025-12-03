@@ -31,7 +31,8 @@
 #                                  ビルドを確認したDocker image → nvcr.io/nvidia/tensorrt:22.12-py3
 
 
-YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE
+YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_HALFKP_1024X2_8_96
+#YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_KP256
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_HALFKPE9
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_HALFKP_512X2_16_32
@@ -116,7 +117,7 @@ PYTHON = python
 
 
 # 標準的なコンパイルオプション (standard compile options)
-CPPFLAGS      = -std=c++17 -fno-exceptions -fno-rtti -Wextra -MMD -MP -fpermissive
+CPPFLAGS      = -std=c++17 -fno-exceptions -fno-rtti -Wextra -MMD -MP -fpermissive -DEVALFILE=\"$(EVALFILE)\"
 NVCC_CPPFLAGS = -std=c++17 -x cu -maxrregcount=0 --machine 64 --compile -cudart static -DNDEBUG -Xcompiler "-Ofast"
 WCPPFLAGS     =
 LDFLAGS       = 
@@ -141,8 +142,8 @@ BLAS = OPENBLAS
 # BLAS = BLIS
 
 # NNUE評価関数を実行ファイルに内蔵する。 ビルドするときにsourceフォルダ直下に"nn.bin"を配置する。
-EVAL_EMBEDDING = OFF
-# EVAL_EMBEDDING = ON
+# EVAL_EMBEDDING = OFF
+EVAL_EMBEDDING = ON
 
 # === implementations ===
 
@@ -234,15 +235,15 @@ endif
 
 TARGETDIR = .
 ifneq (,$(findstring em++,$(COMPILER)))
-	TARGET = $(TARGETDIR)/yaneuraou.js
+	EXE = $(TARGETDIR)/yaneuraou.js
 else
 	ifeq ($(OS),Windows_NT)
 		CPPFLAGS += $(WCPPFLAGS)
 		LDFLAGS += -static -Wl,--stack,25000000
-		TARGET = $(TARGETDIR)/YaneuraOu-by-gcc.exe
+		EXE = $(TARGETDIR)/YaneuraOu-by-gcc.exe
 	else
 		CPPFLAGS += -D_LINUX
-		TARGET = $(TARGETDIR)/YaneuraOu-by-gcc
+		EXE = $(TARGETDIR)/YaneuraOu-by-gcc
 	endif
 endif
 
@@ -656,10 +657,10 @@ CUDA_OBJECTS = $(addprefix $(OBJDIR)/, $(CUDA_SOURCES:.cu=.o))
 OBJC_OBJECTS = $(addprefix $(OBJDIR)/, $(OBJC_SOURCES:.mm=.o))
 DEPENDS  = $(OBJECTS:.o=.d)
 
-all: clean $(TARGET)
+all: clean run_python_script $(EXE)
 .PHONY : all normal evallearn tournament prof profgen profuse pgo clean
 
-$(TARGET): $(OBJECTS) $(CUDA_OBJECTS) $(OBJC_OBJECTS)
+$(EXE): $(OBJECTS) $(CUDA_OBJECTS) $(OBJC_OBJECTS)
 	$(COMPILER) -o $@ $^ $(LDFLAGS) $(CPPFLAGS) $(LIBS)
 
 $(OBJDIR)/%.o: %.cpp
@@ -686,15 +687,15 @@ endif
 
 # 通常使用。
 normal: run_python_script
-	$(MAKE) CPPFLAGS='$(CPPFLAGS) $(LTOFLAGS)' LDFLAGS='$(LDFLAGS) $(LTOFLAGS)' $(TARGET)
+	$(MAKE) CPPFLAGS='$(CPPFLAGS) $(LTOFLAGS)' LDFLAGS='$(LDFLAGS) $(LTOFLAGS)' $(EXE)
 
 # 学習用。openmp , openblasなどを有効にする。
 evallearn: run_python_script
-	$(MAKE) CPPFLAGS='$(CPPFLAGS) $(LTOFLAGS) $(OPENMP) $(BLAS_CPPFLAGS) -DEVAL_LEARN' LDFLAGS='$(LDFLAGS) $(OPENMP_LDFLAGS) $(BLAS_LDFLAGS) $(LTOFLAGS)' $(TARGET)
+	$(MAKE) CPPFLAGS='$(CPPFLAGS) $(LTOFLAGS) $(OPENMP) $(BLAS_CPPFLAGS) -DEVAL_LEARN' LDFLAGS='$(LDFLAGS) $(OPENMP_LDFLAGS) $(BLAS_LDFLAGS) $(LTOFLAGS)' $(EXE)
 
 # トーナメント用
 tournament: run_python_script
-	$(MAKE) CPPFLAGS='$(CPPFLAGS) $(LTOFLAGS) -DFOR_TOURNAMENT' LDFLAGS='$(LDFLAGS) $(LTOFLAGS)' $(TARGET)
+	$(MAKE) CPPFLAGS='$(CPPFLAGS) $(LTOFLAGS) -DFOR_TOURNAMENT' LDFLAGS='$(LDFLAGS) $(LTOFLAGS)' $(EXE)
 
 #　とりあえずPGOはAVX2とSSE4.2専用
 prof:
@@ -708,11 +709,11 @@ profuse:
 
 pgo:
 	$(MAKE) profgen
-	@./$(TARGET) EvalDir ../build/eval , bench , quit
+	@./$(EXE) EvalDir ../build/eval , bench , quit
 	@touch $(SOURCES)
 	$(MAKE) profuse
 
 clean:
-	rm -f $(OBJECTS) $(CUDA_OBJECTS) $(OBJC_OBJECTS) $(DEPENDS) $(TARGET) ${OBJECTS:.o=.gcda}
+	rm -f $(OBJECTS) $(CUDA_OBJECTS) $(OBJC_OBJECTS) $(DEPENDS) $(EXE) ${OBJECTS:.o=.gcda}
 
 -include $(DEPENDS)
