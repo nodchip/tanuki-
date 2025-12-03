@@ -68,7 +68,7 @@ public:
 			この部分を変更することによって、生成するWorker派生classを変更することができる。
 
 		set_tt_size()
-			options["USI_Hash"]などの置換表サイズに対して、それが変更された時に呼び出されるhandler。
+			options["Hash"]などの置換表サイズに対して、それが変更された時に呼び出されるhandler。
 			置換表的なものを使用するときは、これをoverrideすると便利。
 
 		isready()
@@ -158,7 +158,7 @@ public:
     //     また、USER_ENGINEの実装(user-engine.cpp)も参考にすること。
     virtual void resize_threads() = 0;
 
-	// options["USI_Hash"]などの置換表サイズに対して、それが変更された時に呼び出されるhandler。
+	// options["Hash"]などの置換表サイズに対して、それが変更された時に呼び出されるhandler。
     // 置換表的なものを使用するときは、これをoverrideすると便利。
 	virtual void set_tt_size(size_t mb) = 0;
 
