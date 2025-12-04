@@ -741,6 +741,7 @@ void USIEngine::bench(std::istream& args) {
               << "\nTotal time (ms) : " << elapsed  //
               << "\nNodes searched  : " << nodes    //
               << "\nNodes/second    : " << 1000 * nodes / elapsed << std::endl;
+    std::cout << nodes << " nodes " << 1000 * nodes / elapsed << " nps" << std::endl;
 
     // reset callback, to not capture a dangling reference to nodesSearched
     // コールバックをリセットする。nodesSearched へのダングリング参照を捕捉しないようにするため。
@@ -795,7 +796,7 @@ void USIEngine::benchmark(std::istream& args) {
     ss = std::istringstream("name UCI_Chess960 value false");
     setoption(ss);
 #else
-    ss = std::istringstream("name USI_Hash value " + std::to_string(setup.ttSize));
+    ss = std::istringstream("name Hash value " + std::to_string(setup.ttSize));
     setoption(ss);
 #endif
 
@@ -1696,7 +1697,7 @@ void USIEngine::isready()
 	// --- Keep Alive的な処理ここまで ---
 #endif
 
-	// スレッドを先に生成しないとUSI_Hashで確保したメモリクリアの並列化が行われなくて困る。
+	// スレッドを先に生成しないとHashで確保したメモリクリアの並列化が行われなくて困る。
 
 #if defined(YANEURAOU_ENGINE_DEEP)
 
