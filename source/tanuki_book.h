@@ -17,6 +17,7 @@ namespace Tanuki {
 	bool ExtractTargetPositions();
 	bool AddTargetPositions();
 	bool CreateFromTanukiColiseum();
+	bool ConvertToSfenEpd();
 }
 
 #endif

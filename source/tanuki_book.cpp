@@ -1238,4 +1238,44 @@ bool Tanuki::CreateFromTanukiColiseum()
 	return true;
 }
 
+bool Tanuki::ConvertToSfenEpd()
+{
+	std::string input_book_file = Options[kBookInputFile];
+	std::string output_book_file = Options[kBookOutputFile];
+
+	sync_cout << "info string input_book_file=" << input_book_file << sync_endl;
+	sync_cout << "info string output_book_file=" << output_book_file << sync_endl;
+
+	std::ifstream ifs(input_book_file);
+	std::string line;
+	std::ofstream ofs(output_book_file);
+	while (std::getline(ifs, line)) {
+		auto& pos = Threads[0]->rootPos;
+		std::vector<StateInfo> state_info(1024);
+		pos.set_hirate(&state_info[0], Threads[0]);
+
+		std::istringstream iss_line(line);
+		std::string move_string;
+		int num_moves = 0;
+		while (num_moves < 24) {
+			if (!(iss_line >> move_string)) {
+				break;
+			}
+
+			if (move_string == "startpos" || move_string == "moves") {
+				continue;
+			}
+
+			auto sfen = pos.sfen();
+			auto move = USI::to_move(pos, move_string);
+			pos.do_move(move, state_info[pos.game_ply()]);
+			++num_moves;
+		}
+
+		ofs << pos.sfen() << std::endl;
+	}
+
+	return true;
+}
+
 #endif
