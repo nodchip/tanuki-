@@ -524,10 +524,10 @@ void Tanuki::Generate()
 
 					//sync_cout << pos << sync_endl;
 
-					float min_probability = *std::max_element(
+					float max_probability = *std::max_element(
 						legal_move_probabilities.begin(), legal_move_probabilities.end());
 					float min_probability_threshold = 0.1;
-					while (min_probability < min_probability_threshold) {
+					while (max_probability < min_probability_threshold) {
 						min_probability_threshold *= 0.5f;
 					}
 
@@ -546,11 +546,6 @@ void Tanuki::Generate()
 								break;
 							}
 						}
-
-						if (selected_move == Move::none()) {
-							sync_cout << "info string No legal move selected. Retrying..." << sync_endl;
-						}
-
 					} while (selected_move == Move::none());
 				}
 
