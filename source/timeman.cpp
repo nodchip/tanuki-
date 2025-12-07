@@ -153,10 +153,6 @@ void TimeManagement::init_(const Search::LimitsType& limits,
     remain_time =
       limits.time[us] + limits.byoyomi[us] + limits.inc[us] - (TimePoint) options["NetworkDelay2"];
 
-	// remain_timeを0にすると時間切れのあと自爆するのでとりあえず100はあることにしておく。
-	// round_up_to_fullsecond == falseのときは秒未満での戦いなので、1にしておく。
-	remain_time = std::max(remain_time, (TimePoint) (round_up_to_fullsecond ? 100 : 1) );
-
 	// 最小思考時間
     minimum_thinking_time = (TimePoint) options["MinimumThinkingTime"];
 
