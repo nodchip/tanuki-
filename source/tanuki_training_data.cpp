@@ -524,17 +524,25 @@ void Tanuki::Generate()
 
 					//sync_cout << pos << sync_endl;
 
+					float min_probability = *std::max_element(
+						legal_move_probabilities.begin(), legal_move_probabilities.end());
+					float min_probability_threshold = 0.1;
+					while (min_probability < min_probability_threshold) {
+						min_probability_threshold *= 0.5f;
+					}
+
 					// 指し手を選ぶ。
 					do {
 						float rand_probability = move_distribution(mt19937_64);
 						float cumulative_probability = 0.0f;
-						int move_index = 0;
-						for (ExtMove move : move_list) {
-							cumulative_probability += legal_move_probabilities[move_index++];
+						for (int move_index = 0; move_index < move_list.size(); ++move_index) {
+							cumulative_probability += legal_move_probabilities[move_index];
 							//sync_cout << *move << " " << legal_move_probabilities[move - moves] << sync_endl;
 
 							if (cumulative_probability >= rand_probability) {
-								selected_move = Move(move);
+								if (min_probability_threshold < legal_move_probabilities[move_index]) {
+									selected_move = static_cast<Move>(move_list.at(move_index));
+								}
 								break;
 							}
 						}
