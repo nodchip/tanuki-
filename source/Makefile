@@ -64,11 +64,14 @@ YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE
 # 1. IntelMacでSSE4.2までしか対応していないなら、APPLESSE42 を指定。AVX2に対応しているなら APPLEAVX2を指定する。
 # 2. M1以降のCPUであれば、APPLEM1を指定する。(M2でもM3でもAPPLEM1を指定する。)
 
+# ビルドするマシン向けに最適化する
+TARGET_CPU = NATIVE
+
 # --- Intel/AMD系 (x86/x64 Platform)
 #TARGET_CPU = AVX512VNNI
 #TARGET_CPU = AVX512
 #TARGET_CPU = AVXVNNI
-TARGET_CPU = AVX2
+#TARGET_CPU = AVX2
 #TARGET_CPU = SSE42
 #TARGET_CPU = SSE41
 #TARGET_CPU = SSSE3
@@ -635,6 +638,38 @@ else ifeq ($(TARGET_CPU),WASM)
 else ifeq ($(TARGET_CPU),OTHER)
 	CPPFLAGS += -DNO_SSE
 
+else ifeq ($(TARGET_CPU),NATIVE)
+	CPPFLAGS += -march=native -mtune=native
+
+	ARCH_DEFINES = $(shell echo | $(CXX) -march=native -E -dM -)
+
+	ifneq ($(findstring __znver1__, $(ARCH_DEFINES)),)
+		CPPFLAGS += -DUSE_AVX2 -mno-bmi2
+	else ifneq ($(findstring __znver2__, $(ARCH_DEFINES)),)
+		CPPFLAGS += -DUSE_AVX2 -mno-bmi2
+	else ifneq ($(findstring __znver3__, $(ARCH_DEFINES)),)
+		CPPFLAGS += -DUSE_AVX2 -DUSE_BMI2
+	else ifneq ($(findstring __AVX512F__, $(ARCH_DEFINES)),)
+		ifneq ($(findstring __AVX512VNNI__, $(ARCH_DEFINES)),)
+			CPPFLAGS += -DUSE_AVX512 -DUSE_BMI2 -DUSE_VNNI
+		else
+			CPPFLAGS += -DUSE_AVX512 -DUSE_BMI2
+		endif
+	else ifneq ($(findstring __AVX2__, $(ARCH_DEFINES)),)
+		ifneq ($(findstring __VNNI__, $(ARCH_DEFINES)),)
+			CPPFLAGS += -DUSE_AVX2 -DUSE_BMI2 -DUSE_VNNI -DUSE_AVXVNNI
+		else
+			CPPFLAGS += -DUSE_AVX2 -DUSE_BMI2
+		endif
+	else ifneq ($(findstring __SSE4_2__, $(ARCH_DEFINES)),)
+		CPPFLAGS += -DUSE_SSE42
+	else ifneq ($(findstring __SSE4_1__, $(ARCH_DEFINES)),)
+		CPPFLAGS += -DUSE_SSE41
+	else ifneq ($(findstring __SSSE3__, $(ARCH_DEFINES)),)
+		CPPFLAGS += -DUSE_SSSE3
+	else ifneq ($(findstring __SSE2__, $(ARCH_DEFINES)),)
+		CPPFLAGS += -DUSE_SSE2
+	endif
 endif
 
 # YANEURAOU_EDITION , CPUターゲット名 などのシンボルをコンパイル時に定義してやる。
