@@ -741,7 +741,6 @@ void USIEngine::bench(std::istream& args) {
               << "\nTotal time (ms) : " << elapsed  //
               << "\nNodes searched  : " << nodes    //
               << "\nNodes/second    : " << 1000 * nodes / elapsed << std::endl;
-    std::cout << nodes << " nodes " << 1000 * nodes / elapsed << " nps" << std::endl;
 
     // reset callback, to not capture a dangling reference to nodesSearched
     // コールバックをリセットする。nodesSearched へのダングリング参照を捕捉しないようにするため。
