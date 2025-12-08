@@ -540,7 +540,7 @@ void Tanuki::Generate()
 							//sync_cout << *move << " " << legal_move_probabilities[move - moves] << sync_endl;
 
 							if (cumulative_probability >= rand_probability) {
-								if (min_probability_threshold < legal_move_probabilities[move_index]) {
+								if (min_probability_threshold <= legal_move_probabilities[move_index]) {
 									selected_move = static_cast<Move>(move_list.at(move_index));
 								}
 								break;
