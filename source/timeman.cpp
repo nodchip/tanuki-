@@ -41,7 +41,7 @@ void TimeManagement::add_options(OptionsMap& options) {
     // ネットワークの最大遅延時間[ms]
     // 切れ負けの瞬間だけはこの時間だけ早めに指す。
     // 1.2秒ほど早く指さないとfloodgateで切れ負けしかねない。
-    options.add("NetworkDelay2", Option(500, 0, 10000));
+    options.add("NetworkDelay2", Option(100, 0, 10000));
 
     // 最小思考時間[ms]
     options.add("MinimumThinkingTime", Option(0, 0, 100000));
