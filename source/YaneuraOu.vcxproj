@@ -450,7 +450,7 @@
     <ClCompile>
       <OpenMPSupport>
       </OpenMPSupport>
-      <PreprocessorDefinitions>USE_AVX2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>YANEURAOU_ENGINE_NNUE_SFNNwoP1536;USE_AVX2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -573,6 +573,7 @@
     <ClCompile>
       <AdditionalOptions>/source-charset:utf-8 /execution-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
       <RuntimeLibrary Condition="'$(Configuration)|$(Platform)'=='Debug-Deep-TensorRT|x64'">MultiThreadedDebug</RuntimeLibrary>
+      <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug-NNUE|x64'">YANEURAOU_ENGINE_NNUE_SFNNwoP1536;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -612,10 +613,12 @@
     <ClInclude Include="eval\nnue\architectures\halfkp_512x2-16-32.h" />
     <ClInclude Include="eval\nnue\architectures\halfkpvm_256x2-32-32.h" />
     <ClInclude Include="eval\nnue\architectures\kp_256x2-32-32.h" />
+    <ClInclude Include="eval\nnue\architectures\sfnnwop-1536.h" />
     <ClInclude Include="eval\nnue\evaluate_nnue.h" />
     <ClInclude Include="eval\nnue\evaluate_nnue_learner.h" />
     <ClInclude Include="eval\nnue\features\features_common.h" />
     <ClInclude Include="eval\nnue\features\feature_set.h" />
+    <ClInclude Include="eval\nnue\features\half_ka_hm.h" />
     <ClInclude Include="eval\nnue\features\half_kp.h" />
     <ClInclude Include="eval\nnue\features\half_kpe9.h" />
     <ClInclude Include="eval\nnue\features\half_kp_vm.h" />
@@ -728,6 +731,7 @@
     <ClCompile Include="eval\material\evaluate_material.cpp" />
     <ClCompile Include="eval\nnue\evaluate_nnue.cpp" />
     <ClCompile Include="eval\nnue\evaluate_nnue_learner.cpp" />
+    <ClCompile Include="eval\nnue\features\half_ka_hm.cpp" />
     <ClCompile Include="eval\nnue\features\half_kp.cpp" />
     <ClCompile Include="eval\nnue\features\half_kpe9.cpp" />
     <ClCompile Include="eval\nnue\features\half_kp_vm.cpp" />
