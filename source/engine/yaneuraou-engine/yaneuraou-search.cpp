@@ -80,7 +80,7 @@ void SearchOptions::add_options(OptionsMap& options) {
                 }));
 
     //  PVの出力の抑制のために前回出力時間からの間隔を指定できる。
-    options.add("PvInterval", Option(300, 0, 100000000, [&](const Option& o) {
+    options.add("PvInterval", Option(0, 0, 100000000, [&](const Option& o) {
                     pv_interval = s64(o);
                     return std::nullopt;
                 }));

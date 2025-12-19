@@ -23,7 +23,7 @@ struct SearchOptions
 {
     SearchOptions() {
         max_moves_to_draw        = 100000;
-        pv_interval              = 300;
+        pv_interval              = 0;
         consideration_mode       = false;
         outout_fail_lh_pv        = true;
         generate_all_legal_moves = false;
