@@ -573,6 +573,7 @@
     <ClCompile>
       <AdditionalOptions>/source-charset:utf-8 /execution-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
       <RuntimeLibrary Condition="'$(Configuration)|$(Platform)'=='Debug-Deep-TensorRT|x64'">MultiThreadedDebug</RuntimeLibrary>
+      <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug-NNUE|x64'">EVAL_NNUE_HALFKA_HM_1024X2_8_96;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -605,6 +606,7 @@
     <ClInclude Include="eval\evaluate_mir_inv_tools.h" />
     <ClInclude Include="eval\kppt\evaluate_kppt.h" />
     <ClInclude Include="eval\kpp_kkpt\evaluate_kpp_kkpt.h" />
+    <ClInclude Include="eval\nnue\architectures\halfka_hm_1024x2-8-96.h" />
     <ClInclude Include="eval\nnue\architectures\halfkpe9_256x2-32-32.h" />
     <ClInclude Include="eval\nnue\architectures\halfkp_1024x2-8-32.h" />
     <ClInclude Include="eval\nnue\architectures\halfkp_1024x2-8-64.h" />
@@ -616,6 +618,7 @@
     <ClInclude Include="eval\nnue\evaluate_nnue_learner.h" />
     <ClInclude Include="eval\nnue\features\features_common.h" />
     <ClInclude Include="eval\nnue\features\feature_set.h" />
+    <ClInclude Include="eval\nnue\features\half_ka_hm.h" />
     <ClInclude Include="eval\nnue\features\half_kp.h" />
     <ClInclude Include="eval\nnue\features\half_kpe9.h" />
     <ClInclude Include="eval\nnue\features\half_kp_vm.h" />
@@ -728,6 +731,7 @@
     <ClCompile Include="eval\material\evaluate_material.cpp" />
     <ClCompile Include="eval\nnue\evaluate_nnue.cpp" />
     <ClCompile Include="eval\nnue\evaluate_nnue_learner.cpp" />
+    <ClCompile Include="eval\nnue\features\half_ka_hm.cpp" />
     <ClCompile Include="eval\nnue\features\half_kp.cpp" />
     <ClCompile Include="eval\nnue\features\half_kpe9.cpp" />
     <ClCompile Include="eval\nnue\features\half_kp_vm.cpp" />

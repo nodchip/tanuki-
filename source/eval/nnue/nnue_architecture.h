@@ -47,6 +47,10 @@
 // halfkp_1024x2-8-64型
 #include "architectures/halfkp_1024x2-8-64.h"
 
+#elif defined(EVAL_NNUE_HALFKA_HM_1024X2_8_96)
+
+// halfkp_1024x2-8-64型
+#include "architectures/halfka_hm_1024x2-8-96.h"
 
 #elif defined(EVAL_NNUE_HALFKP_VM_256X2_32_32)
 

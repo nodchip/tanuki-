@@ -30,7 +30,7 @@
 #                                  ビルドを確認したDocker image → nvcr.io/nvidia/tensorrt:22.12-py3
 
 
-YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_HALFKP_1024X2_8_96
+YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_HALFKA_HM_1024X2_8_96
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_KP256
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_HALFKPE9
@@ -484,6 +484,9 @@ ifneq (,$(findstring YANEURAOU_ENGINE_NNUE,$(YANEURAOU_EDITION)))
 		else ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_NNUE_HALFKP_1024X2_8_32)
 			CPPFLAGS += -DEVAL_NNUE_HALFKP_1024X2_8_32
 
+		else ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_NNUE_HALFKA_HM_1024X2_8_96)
+			CPPFLAGS += -DEVAL_NNUE_HALFKA_HM_1024X2_8_96
+
 		else ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_NNUE_HALFKP_VM_256X2_32_32)
 			CPPFLAGS += -DEVAL_NNUE_HALFKP_VM_256X2_32_32
 
@@ -502,6 +505,7 @@ ifneq (,$(findstring YANEURAOU_ENGINE_NNUE,$(YANEURAOU_EDITION)))
 		eval/nnue/nnue_test_command.cpp                                 \
 		eval/nnue/features/k.cpp                                        \
 		eval/nnue/features/p.cpp                                        \
+		eval/nnue/features/half_ka_hm.cpp                               \
 		eval/nnue/features/half_kp.cpp                                  \
 		eval/nnue/features/half_kp_vm.cpp                               \
 		eval/nnue/features/half_relative_kp.cpp                         \
