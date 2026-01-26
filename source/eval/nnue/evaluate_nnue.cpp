@@ -307,7 +307,13 @@ namespace NNUE {
 
         auto score = static_cast<Value>(output[0] / FV_SCALE);
 
-        // 1) ここ、下手にclipすると学習時には影響があるような気もするが…。
+		Value scale        = 1000;
+        Value king_bonus[] = {0,         scale * 1, scale * 2, scale * 3, scale * 3,
+                              scale * 3, scale * 2, scale * 1, 0};
+        score += king_bonus[rank_of(pos.square<KING>(pos.side_to_move()))];
+        score -= king_bonus[rank_of(pos.square<KING>(~pos.side_to_move()))];
+
+		// 1) ここ、下手にclipすると学習時には影響があるような気もするが…。
         // 2) accumulator.scoreは、差分計算の時に用いないので書き換えて問題ない。
         score = Math::clamp(score, -VALUE_MAX_EVAL, VALUE_MAX_EVAL);
 
