@@ -332,6 +332,7 @@ def main():
     parser.add_argument("--min-rating", type=int, default=3300)
     parser.add_argument("--include-equal", action="store_true", help=">= min rating")
     parser.add_argument("--rating-url", default=RATING_URL_DEFAULT)
+    parser.add_argument("--use-rating-filter", action="store_true", help="filter by rating list")
     parser.add_argument("--csa-base-url", default=CSA_BASE_URL_DEFAULT)
     parser.add_argument("--archive-base-url", default=ARCHIVE_BASE_URL_DEFAULT)
     parser.add_argument("--output", default="floodgate_3300.sfen")
@@ -349,11 +350,14 @@ def main():
     start = _dt.date.fromisoformat(args.start_date)
     end = _dt.date.fromisoformat(args.end_date)
 
-    rating_html = fetch_text(args.rating_url, args.user_agent, timeout=args.timeout)
-    strong_players = parse_strong_players(rating_html, args.min_rating, args.include_equal)
-    if not strong_players:
-        print("no strong players found", file=sys.stderr)
-        return 2
+    if args.use_rating_filter:
+        rating_html = fetch_text(args.rating_url, args.user_agent, timeout=args.timeout)
+        strong_players = parse_strong_players(rating_html, args.min_rating, args.include_equal)
+        if not strong_players:
+            print("no strong players found", file=sys.stderr)
+            return 2
+    else:
+        strong_players = None
 
     out_lines = []
     total = 0
@@ -431,8 +435,9 @@ def main():
                         if not black or not white:
                             continue
 
-                        if black not in strong_players or white not in strong_players:
-                            continue
+                        if strong_players is not None:
+                            if black not in strong_players or white not in strong_players:
+                                continue
 
                         moves = info["moves"]
                         if not moves:
@@ -486,8 +491,9 @@ def main():
             if not black or not white:
                 continue
 
-            if black not in strong_players or white not in strong_players:
-                continue
+            if strong_players is not None:
+                if black not in strong_players or white not in strong_players:
+                    continue
 
             moves = info["moves"]
             if not moves:
