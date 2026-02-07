@@ -11,6 +11,7 @@ public sealed class NnueAccumulator
     private readonly NnueFeatureTransformer transformer;
     private readonly NnueModel model;
     private readonly Stack<AccumulatorState> states = new();
+    private readonly Stack<AccumulatorState> statePool = new();
 
     /// <summary>
     /// NnueAccumulatorのインスタンスを初期化する。
@@ -52,7 +53,8 @@ public sealed class NnueAccumulator
     {
         EnsureTopState(positionAfterMove, allowKeyMismatch: true);
         AccumulatorState previous = states.Peek();
-        AccumulatorState next = previous.Clone();
+        AccumulatorState next = RentState();
+        CopyState(previous, next);
 
         transformer.PrepareForDelta(positionAfterMove);
         bool applied = transformer.TryApplyMoveDelta(
@@ -82,7 +84,8 @@ public sealed class NnueAccumulator
     {
         if (states.Count > 1)
         {
-            states.Pop();
+            AccumulatorState released = states.Pop();
+            ReleaseState(released);
         }
     }
 
@@ -91,6 +94,11 @@ public sealed class NnueAccumulator
     /// </summary>
     public void Reset()
     {
+        while (states.Count > 0)
+        {
+            ReleaseState(states.Pop());
+        }
+
         states.Clear();
     }
 
@@ -100,7 +108,7 @@ public sealed class NnueAccumulator
     public void Reset(Position position)
     {
         states.Clear();
-        var state = new AccumulatorState();
+        var state = RentState();
         RebuildState(position, state);
         states.Push(state);
     }
@@ -172,19 +180,44 @@ public sealed class NnueAccumulator
         public int Score { get; set; }
         public bool ScoreDirty { get; set; }
 
-        public AccumulatorState Clone()
+    }
+
+    /// <summary>
+    /// 使い回し用の状態オブジェクトを取得する。
+    /// </summary>
+    private AccumulatorState RentState()
+    {
+        if (statePool.Count > 0)
         {
-            var clone = new AccumulatorState
-            {
-                PositionKey = PositionKey,
-                SideToMove = SideToMove,
-                Score = Score,
-                ScoreDirty = ScoreDirty,
-            };
-            Array.Copy(BlackAccumulation, clone.BlackAccumulation, BlackAccumulation.Length);
-            Array.Copy(WhiteAccumulation, clone.WhiteAccumulation, WhiteAccumulation.Length);
-            Array.Copy(Features, clone.Features, Features.Length);
-            return clone;
+            return statePool.Pop();
         }
+
+        return new AccumulatorState();
+    }
+
+    /// <summary>
+    /// 状態オブジェクトを再利用プールへ返却する。
+    /// </summary>
+    private void ReleaseState(AccumulatorState state)
+    {
+        state.PositionKey = 0;
+        state.SideToMove = Color.BLACK;
+        state.Score = 0;
+        state.ScoreDirty = true;
+        statePool.Push(state);
+    }
+
+    /// <summary>
+    /// 状態の内容をコピーする。
+    /// </summary>
+    private static void CopyState(AccumulatorState source, AccumulatorState destination)
+    {
+        destination.PositionKey = source.PositionKey;
+        destination.SideToMove = source.SideToMove;
+        destination.Score = source.Score;
+        destination.ScoreDirty = source.ScoreDirty;
+        Array.Copy(source.BlackAccumulation, destination.BlackAccumulation, source.BlackAccumulation.Length);
+        Array.Copy(source.WhiteAccumulation, destination.WhiteAccumulation, source.WhiteAccumulation.Length);
+        Array.Copy(source.Features, destination.Features, source.Features.Length);
     }
 }
