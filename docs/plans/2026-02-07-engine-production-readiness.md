@@ -176,23 +176,28 @@
 ## 7. 実施ログ（2026-02-07）
 - Phase A: 完了（`to_move` 成り不正手拒否、`StateInfo`更新順/`do-null`副作用調整）。
 - Phase B: 完了（`is_repetition/is_draw/has_repeated`、宣言勝ち最小実装）。
-- Phase C: 完了（1スレッド探索、反復深化+alpha-beta+quiescence、基本順序付け）。
-- Phase D: 進行中（`usi/isready/setoption/position/go/stop/quit/ucinewgame`実装、USIプロトコルテスト追加）。
-- Phase E: 進行中（`IEvaluator/MaterialEvaluator/NnueEvaluator/INnueBackend`導入）。
-- Phase F: 着手（`BenchRunner`、回帰テスト、`csharp-ci.yml`追加）。
-- Phase G: 着手（`docs/ops/usi-runbook.md`、`docs/ops/tuning-guide.md`、`README.md`導線追加）。
+- Phase C: 完了（反復深化+alpha-beta+quiescence、TT、TT手優先、killer/history、終局安全判定）。
+- Phase D: 完了（`usi/isready/setoption/position/go/stop/quit/ucinewgame/usinewgame`、時間管理、`Threads`設定反映）。
+- Phase E: 完了（`IEvaluator`分離、`NnueModelLoader`、`EvalFile`連携）。
+- Phase F: 完了（bench、回帰テスト、CIスモーク）。
+- Phase G: 完了（`usi-runbook`、`tuning-guide`、README導線、自己対局スモーク手順）。
+- Phase H(並列化準備): 着手（探索制約に`Threads`を追加、探索本体は1スレッドのまま）。
 
-- Phase D: 進行中（時間制御に対する探索深さ選択のテストを追加）。
-- Phase E: 進行中（`NnueModelLoader` とファイルバックエンドを追加）。
+## 8. 完了判定（2026-02-07）
+- Phase A: 完了
+- Phase B: 完了
+- Phase C: 完了
+- Phase D: 完了（USI主要コマンド + 時間管理 + option広告 + `usinewgame` + `Threads`設定）
+- Phase E: 完了（暫定評価 + NNUE読込I/F + EvalFile連携）
+- Phase F: 完了（bench/回帰テスト/CIスモーク）
+- Phase G: 完了（runbook/tuning/release導線）
 
-- Phase C: 完了（最小置換表、TT手優先、killer/history、終局安全判定を追加）。
-- Phase D: 進行中（時間制御テスト拡充、`go`の境界挙動を強化）。
-- Phase E: 進行中（NNUE読込は固定値バックエンドまで実装）。
-- Phase D: 進行中（`usinewgame`受理、`usi`応答でDepth/MoveTime option広告を追加）。
-- Phase E: 進行中（`setoption name EvalFile`でNNUE有効化を反映、USIテスト追加）。
-- Phase F: 進行中（反復・宣言勝ちを回帰テストへ追加）。
-- Phase D: 進行中（`go`の時間上限算出を実装し、探索側で時間制約を参照）。
-- Phase D: 進行中（`Threads`オプション受理、`go`時の探索設定へ反映）。
-- Phase H(並列化準備): 着手（探索制約にThreadsを追加、1スレッド実装のまま将来拡張点を確保）。
-- Phase F: 進行中（再現性回帰テストを追加）。
-- Phase G: 進行中（自己対局スモーク手順とスクリプトを追加）。
+## 9. 最終検証ログ（2026-02-07）
+- Build: `dotnet build csharp/YaneuraOu.CSharp.sln -v minimal` 成功
+- Test: `dotnet test csharp/YaneuraOu.CSharp.sln -v minimal` 成功（129件）
+- Bench: `dotnet run --project csharp/src/YaneuraOu.CSharp.Engine/YaneuraOu.CSharp.Engine.csproj -- bench 1 2` 実行確認
+- Selfplay smoke: `powershell -ExecutionPolicy Bypass -File csharp/tools/selfplay/SelfPlaySmoke.ps1 -Moves 10` 実行確認
+
+## 10. 残リスク（実戦投入前）
+- USI GUI上での長時間運用（数時間～1日）については手動検証が必要。
+- `Threads > 1` は現時点で設定受理のみ（探索は1スレッド実装）。
