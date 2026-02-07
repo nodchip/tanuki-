@@ -304,12 +304,17 @@ public sealed class Position
         if (m.is_drop())
         {
             PieceType pt = m.move_dropped_piece();
-            if (pt == PieceType.KING || ShogiTypes.hand_count(hand[(int)us], pt) <= 0)
+            if (m.moved_after_piece() != ShogiTypes.make_piece(us, pt))
             {
                 return false;
             }
 
-            if (m.moved_after_piece() != ShogiTypes.make_piece(us, pt))
+            if (pt < PieceType.PAWN || pt >= PieceType.KING)
+            {
+                return false;
+            }
+
+            if (ShogiTypes.hand_count(hand[(int)us], pt) <= 0)
             {
                 return false;
             }

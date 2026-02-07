@@ -208,4 +208,21 @@ public class PositionStrictCompatibilityTests
         Assert.IsFalse(pos.pseudo_legal(rookNonPromote, false));
         Assert.IsTrue(pos.pseudo_legal(rookNonPromote, true));
     }
+
+    [TestMethod]
+    /// <summary>
+    /// 駒打ちでKING種別は擬似合法でないことを検証する。
+    /// </summary>
+    public void PseudoLegal_DropKingPieceType_ReturnsFalse()
+    {
+        var pos = new Position();
+        pos.set("9/9/9/9/9/9/9/9/9 b G 1", new StateInfo());
+        pos.put_piece(Piece.B_KING, Square.SQ_99);
+        pos.put_piece(Piece.W_KING, Square.SQ_11);
+
+        Move invalidKingDrop = ShogiTypes.make_move_drop(PieceType.KING, Square.SQ_55, Color.BLACK);
+
+        Assert.IsFalse(pos.pseudo_legal(invalidKingDrop, true));
+        Assert.IsFalse(pos.pseudo_legal(invalidKingDrop, false));
+    }
 }
