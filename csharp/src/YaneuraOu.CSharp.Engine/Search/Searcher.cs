@@ -120,7 +120,7 @@ public sealed class Searcher
         }
 
         ulong rootKey = position.state().key().ToUInt64();
-        Move ttMove = TryProbeTransposition(rootKey, depth, out _, out Move savedMove) ? savedMove : Move.none();
+        Move ttMove = TryGetTranspositionMove(rootKey, depth, out Move savedMove) ? savedMove : Move.none();
 
         Move bestMove = legal[0];
         int bestScore = int.MinValue;
@@ -145,7 +145,7 @@ public sealed class Searcher
             }
         }
 
-        StoreTransposition(rootKey, depth, bestScore, bestMove);
+        StoreTransposition(rootKey, depth, bestScore, bestMove, TranspositionBound.Exact);
         return (bestMove, bestScore, nodes);
     }
 
@@ -169,7 +169,8 @@ public sealed class Searcher
         }
 
         ulong key = position.state().key().ToUInt64();
-        if (TryProbeTransposition(key, depth, out int ttScore, out Move ttMove))
+        int originalAlpha = alpha;
+        if (TryProbeTransposition(key, depth, alpha, beta, out int ttScore, out Move ttMove))
         {
             LastTranspositionHitCount++;
             return ttScore;
@@ -179,14 +180,14 @@ public sealed class Searcher
         if (legal.Count == 0)
         {
             int noLegal = position.in_check() ? -MateScore + depth : 0;
-            StoreTransposition(key, depth, noLegal, Move.none());
+            StoreTransposition(key, depth, noLegal, Move.none(), TranspositionBound.Exact);
             return noLegal;
         }
 
         if (depth <= 0)
         {
             int q = Quiescence(position, alpha, beta, ref nodes);
-            StoreTransposition(key, 0, q, Move.none());
+            StoreTransposition(key, 0, q, Move.none(), TranspositionBound.Exact);
             return q;
         }
 
@@ -213,7 +214,7 @@ public sealed class Searcher
                     orderingContext.AddHistory(move, depth);
                 }
 
-                StoreTransposition(key, depth, beta, move);
+                StoreTransposition(key, depth, score, move, TranspositionBound.Lower);
                 return beta;
             }
 
@@ -229,7 +230,8 @@ public sealed class Searcher
             orderingContext.AddHistory(bestMove, depth);
         }
 
-        StoreTransposition(key, depth, best, bestMove);
+        TranspositionBound bound = best <= originalAlpha ? TranspositionBound.Upper : TranspositionBound.Exact;
+        StoreTransposition(key, depth, best, bestMove, bound);
         return best;
     }
 
@@ -343,12 +345,35 @@ public sealed class Searcher
     /// <summary>
     /// 置換表を参照する。
     /// </summary>
-    private bool TryProbeTransposition(ulong key, int depth, out int score, out Move bestMove)
+    private bool TryGetTranspositionMove(ulong key, int depth, out Move bestMove)
     {
         if (transpositionTable.TryGetValue(key, out TranspositionEntry entry) && entry.Depth >= depth)
         {
-            score = entry.Score;
             bestMove = entry.BestMove;
+            return true;
+        }
+
+        bestMove = Move.none();
+        return false;
+    }
+
+    /// <summary>
+    /// 置換表を参照する。
+    /// </summary>
+    private bool TryProbeTransposition(ulong key, int depth, int alpha, int beta, out int score, out Move bestMove)
+    {
+        if (transpositionTable.TryGetValue(key, out TranspositionEntry entry)
+            && TranspositionPolicy.TryResolve(
+                entry.Depth,
+                depth,
+                entry.Score,
+                entry.Bound,
+                alpha,
+                beta,
+                entry.BestMove,
+                out score,
+                out bestMove))
+        {
             return true;
         }
 
@@ -360,20 +385,20 @@ public sealed class Searcher
     /// <summary>
     /// 置換表へ結果を保存する。
     /// </summary>
-    private void StoreTransposition(ulong key, int depth, int score, Move bestMove)
+    private void StoreTransposition(ulong key, int depth, int score, Move bestMove, TranspositionBound bound)
     {
         if (transpositionTable.TryGetValue(key, out TranspositionEntry current) && current.Depth > depth)
         {
             return;
         }
 
-        transpositionTable[key] = new TranspositionEntry(depth, score, bestMove);
+        transpositionTable[key] = new TranspositionEntry(depth, score, bestMove, bound);
     }
 
     /// <summary>
     /// 置換表エントリを表す値型。
     /// </summary>
-    private readonly record struct TranspositionEntry(int Depth, int Score, Move BestMove);
+    private readonly record struct TranspositionEntry(int Depth, int Score, Move BestMove, TranspositionBound Bound);
 }
 
 /// <summary>
