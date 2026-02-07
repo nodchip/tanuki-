@@ -68,3 +68,11 @@
 ## 10. 補足
 - 現在の `eval/nn.bin` は本計画のローダ実装完了後に正式利用する。
 - それまでは既存のフォールバック評価（Material）と併用運用。
+
+## 11. C++基準データ生成手順（暫定）
+1. C++エンジンをビルドする。
+   - 例: `source` ディレクトリで `mingw32-make normal YANEURAOU_EDITION=YANEURAOU_ENGINE_NNUE COMPILER=g++ OS=Windows_NT TARGET_CPU=AVX2`
+2. 評価ケースJSONLを生成する。
+   - `powershell -ExecutionPolicy Bypass -File csharp/tools/nnue/GenerateNnueParityCases.ps1 -EnginePath source/YaneuraOu-by-gcc.exe -EvalDir ../eval -OutFile eval/nnue-parity-cases.jsonl`
+3. C#側の一致テストを実行する。
+   - `dotnet test csharp/YaneuraOu.CSharp.sln --filter "FullyQualifiedName~NnueParityTests" -v minimal`
