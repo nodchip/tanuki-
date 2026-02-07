@@ -5,9 +5,15 @@ using YaneuraOu.CSharp.Engine.Core.Types;
 namespace YaneuraOu.CSharp.Engine.Tests.Core.Positioning;
 
 [TestClass]
+/// <summary>
+/// Position の合法性判定に関する互換挙動を検証するテストクラス。
+/// </summary>
 public class PositionLegalityTests
 {
     [TestMethod]
+    /// <summary>
+    /// 二歩となる歩打ちは擬似合法でないことを検証する。
+    /// </summary>
     public void PseudoLegal_PawnDropNifu_ReturnsFalse()
     {
         var pos = new Position();
@@ -20,6 +26,9 @@ public class PositionLegalityTests
     }
 
     [TestMethod]
+    /// <summary>
+    /// 敵陣外での成り指し手は擬似合法でも legal_promote では不許可となることを検証する。
+    /// </summary>
     public void PseudoLegal_PromoteOutsidePromotionZone_ReturnsTrueForCompatibility()
     {
         var pos = new Position();
@@ -33,6 +42,9 @@ public class PositionLegalityTests
     }
 
     [TestMethod]
+    /// <summary>
+    /// 歩の最終段不成は擬似合法でないことを検証する。
+    /// </summary>
     public void PseudoLegal_PawnToLastRankWithoutPromotion_ReturnsFalse()
     {
         var pos = new Position();
@@ -45,6 +57,9 @@ public class PositionLegalityTests
     }
 
     [TestMethod]
+    /// <summary>
+    /// 歩の最終段成りは擬似合法であることを検証する。
+    /// </summary>
     public void PseudoLegal_PawnToLastRankWithPromotion_ReturnsTrue()
     {
         var pos = new Position();
@@ -57,6 +72,9 @@ public class PositionLegalityTests
     }
 
     [TestMethod]
+    /// <summary>
+    /// 打ち歩詰めとなる歩打ちは擬似合法で除外されることを検証する。
+    /// </summary>
     public void Legal_PawnDropMate_IsIllegal()
     {
         var pos = new Position();
@@ -73,6 +91,9 @@ public class PositionLegalityTests
     }
 
     [TestMethod]
+    /// <summary>
+    /// 詰みでない歩打ちは legal_pawn_drop で許可されることを検証する。
+    /// </summary>
     public void LegalPawnDrop_NotMate_ReturnsTrue()
     {
         var pos = new Position();
@@ -85,6 +106,9 @@ public class PositionLegalityTests
     }
 
     [TestMethod]
+    /// <summary>
+    /// 打ち歩詰め局面では legal_drop が false になることを検証する。
+    /// </summary>
     public void LegalDrop_PawnDropMate_ReturnsFalse()
     {
         var pos = new Position();
@@ -98,6 +122,9 @@ public class PositionLegalityTests
     }
 
     [TestMethod]
+    /// <summary>
+    /// 相手玉が打った歩を直接取れる場合は legal_drop が true になることを検証する。
+    /// </summary>
     public void LegalDrop_KingCanCapturePawn_ReturnsTrue()
     {
         var pos = new Position();
@@ -109,6 +136,9 @@ public class PositionLegalityTests
     }
 
     [TestMethod]
+    /// <summary>
+    /// 受け駒が pin で動けない場合は legal_drop が false になることを検証する。
+    /// </summary>
     public void LegalDrop_PinnedDefenderCannotCapture_ReturnsFalse()
     {
         var pos = new Position();
@@ -124,6 +154,9 @@ public class PositionLegalityTests
     }
 
     [TestMethod]
+    /// <summary>
+    /// 同一直線上の受けで pin を保てる場合は legal_drop が true になることを検証する。
+    /// </summary>
     public void LegalDrop_SameFilePinnedDefenderCanCapture_ReturnsTrue()
     {
         var pos = new Position();
@@ -138,6 +171,9 @@ public class PositionLegalityTests
     }
 
     [TestMethod]
+    /// <summary>
+    /// 王手中に王手回避へ寄与しない移動は擬似合法でないことを検証する。
+    /// </summary>
     public void PseudoLegal_InCheck_UnrelatedMove_ReturnsFalse()
     {
         var pos = new Position();
@@ -154,6 +190,9 @@ public class PositionLegalityTests
     }
 
     [TestMethod]
+    /// <summary>
+    /// 王手中の駒打ちは合駒のみ許可されることを検証する。
+    /// </summary>
     public void PseudoLegal_InCheck_DropThatDoesNotBlock_ReturnsFalse()
     {
         var pos = new Position();
@@ -171,6 +210,9 @@ public class PositionLegalityTests
     }
 
     [TestMethod]
+    /// <summary>
+    /// all=false では敵陣での歩の不成が擬似合法でないことを検証する。
+    /// </summary>
     public void PseudoLegal_DefaultMode_DisallowsUnpromotedPawnIntoEnemyField()
     {
         var pos = new Position();
