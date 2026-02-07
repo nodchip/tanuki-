@@ -31,6 +31,7 @@ public sealed class UsiEngine
     private readonly TimeManagement timeManagement = new();
     private bool isPondering;
     private LimitsType? lastLimits;
+    private SearchStopPolicy? activeStopPolicy;
 
     /// <summary>
     /// UsiEngineのインスタンスを初期化する。
@@ -177,6 +178,7 @@ public sealed class UsiEngine
             SearchResult result = searcher.Search(position, limits, OnSearchProgress);
             lastBestMove = EnsureLegalBestMove(result.BestMove);
             AddInfo($"search depth {limits.Depth} time {limits.MaxTimeMs} nodes {result.Nodes} score cp {result.Score}");
+            AddStopInfo(limits.StopPolicy, result.Nodes);
             AddNnueStatsInfo();
             response = $"bestmove {FormatBestMove(lastBestMove)}";
             return FlushInfo(response);
@@ -596,6 +598,7 @@ public sealed class UsiEngine
             thinkingCts = new CancellationTokenSource();
             limits.ShouldStop = () => thinkingCts.IsCancellationRequested;
             limits.StopPolicy?.SetExternalStop(limits.ShouldStop);
+            activeStopPolicy = limits.StopPolicy;
             thinkingTask = Task.Run(() => searcher.Search(position, limits, OnSearchProgress));
             AddInfo($"start thinking depth {limits.Depth} time {limits.MaxTimeMs} threads {limits.Threads}");
         }
@@ -626,6 +629,7 @@ public sealed class UsiEngine
             if (task.Status == TaskStatus.RanToCompletion)
             {
                 lastBestMove = EnsureLegalBestMove(task.Result.BestMove);
+                AddStopInfo(activeStopPolicy, task.Result.Nodes);
             }
         }
         catch (AggregateException)
@@ -639,6 +643,7 @@ public sealed class UsiEngine
             {
                 thinkingTask = null;
                 thinkingCts = null;
+                activeStopPolicy = null;
             }
         }
     }
@@ -784,6 +789,21 @@ public sealed class UsiEngine
             NnueIncrementalStats stats = incremental.GetStats();
             EmitInfoLine($"info string nnue stats rebuild={stats.RebuildCount} delta={stats.DeltaApplyCount} eval={stats.EvaluateCount}");
         }
+    }
+
+    /// <summary>
+    /// 探索停止理由をinfo stringへ出力する。
+    /// </summary>
+    private void AddStopInfo(SearchStopPolicy? stopPolicy, long nodes)
+    {
+        if (!options.DebugLog)
+        {
+            return;
+        }
+
+        string reason = stopPolicy?.LastReason ?? "none";
+        int elapsed = stopPolicy?.ElapsedMilliseconds ?? 0;
+        AddInfo($"stop reason={reason} elapsed={elapsed} nodes={nodes}");
     }
 
     /// <summary>

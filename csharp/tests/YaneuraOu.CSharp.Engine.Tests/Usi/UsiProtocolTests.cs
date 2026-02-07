@@ -516,6 +516,20 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// DebugLog有効時に探索停止理由がinfo stringで出力されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_DebugLogEnabled_EmitsStopReasonInfo()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+
+        string response = engine.HandleCommand("go byoyomi 100");
+
+        StringAssert.Contains(response, "info string stop reason=");
+    }
+
+    /// <summary>
     /// 反復深化の各depth完了時にinfoが出力されることを検証する。
     /// </summary>
     [TestMethod]
