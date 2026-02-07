@@ -324,11 +324,6 @@ public sealed class Position
                 return false;
             }
 
-            if (pt == PieceType.PAWN && HasUnpromotedPawnOnFile(us, FileOf(to)))
-            {
-                return false;
-            }
-
             if (pt == PieceType.PAWN && !legal_pawn_drop(us, to))
             {
                 return false;
