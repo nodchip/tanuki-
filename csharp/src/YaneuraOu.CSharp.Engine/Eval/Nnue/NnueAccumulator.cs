@@ -27,7 +27,13 @@ public sealed class NnueAccumulator
     public int EvaluateIncremental(Position position)
     {
         EnsureTopState(position);
-        return states.Peek().Score;
+        AccumulatorState top = states.Peek();
+        if (top.ScoreDirty)
+        {
+            EvaluateState(position, top);
+        }
+
+        return top.Score;
     }
 
     /// <summary>
@@ -63,7 +69,7 @@ public sealed class NnueAccumulator
         }
         else
         {
-            UpdateStateScore(positionAfterMove, next);
+            MarkStateDirty(positionAfterMove, next);
         }
 
         states.Push(next);
@@ -130,17 +136,27 @@ public sealed class NnueAccumulator
     {
         transformer.BuildAccumulation(position, model, Color.BLACK, state.BlackAccumulation);
         transformer.BuildAccumulation(position, model, Color.WHITE, state.WhiteAccumulation);
-        UpdateStateScore(position, state);
+        MarkStateDirty(position, state);
     }
 
     /// <summary>
-    /// 状態の評価値とキーを更新する。
+    /// 状態のキーと手番を更新し、評価を未確定化する。
     /// </summary>
-    private void UpdateStateScore(Position position, AccumulatorState state)
+    private void MarkStateDirty(Position position, AccumulatorState state)
     {
         state.PositionKey = position.state().key().ToUInt64();
+        state.SideToMove = position.side_to_move();
+        state.ScoreDirty = true;
+    }
+
+    /// <summary>
+    /// 状態の評価値を更新する。
+    /// </summary>
+    private void EvaluateState(Position position, AccumulatorState state)
+    {
         transformer.ConvertAccumulatorsToFeatures(position.side_to_move(), state.BlackAccumulation, state.WhiteAccumulation, state.Features);
         state.Score = model.Evaluate(state.Features);
+        state.ScoreDirty = false;
     }
 
     /// <summary>
@@ -152,14 +168,18 @@ public sealed class NnueAccumulator
         public int[] WhiteAccumulation { get; } = new int[NnueModel.HalfDimensions];
         public byte[] Features { get; } = new byte[NnueModel.HalfDimensions * 2];
         public ulong PositionKey { get; set; }
+        public Color SideToMove { get; set; }
         public int Score { get; set; }
+        public bool ScoreDirty { get; set; }
 
         public AccumulatorState Clone()
         {
             var clone = new AccumulatorState
             {
                 PositionKey = PositionKey,
+                SideToMove = SideToMove,
                 Score = Score,
+                ScoreDirty = ScoreDirty,
             };
             Array.Copy(BlackAccumulation, clone.BlackAccumulation, BlackAccumulation.Length);
             Array.Copy(WhiteAccumulation, clone.WhiteAccumulation, WhiteAccumulation.Length);

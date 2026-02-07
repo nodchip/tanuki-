@@ -88,6 +88,52 @@ public class NnueAccumulatorTests
     }
 
     /// <summary>
+    /// 王手移動時はフォールバックしても再計算評価と一致することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void PushMove_KingMove_FallbackMatchesRecompute()
+    {
+        var position = new Position();
+        position.set("4k4/9/9/9/9/9/9/4K4/9 b - 1", new StateInfo());
+        var accumulator = CreateInitializedAccumulator(position);
+
+        Move move = ShogiTypes.make_move(Square.SQ_58, Square.SQ_59, Piece.B_KING);
+        ApplyMoveAndAssert(position, accumulator, move);
+        UndoMoveAndAssert(position, accumulator, move);
+    }
+
+    /// <summary>
+    /// 連続手順の各plyで差分更新と再計算評価が一致することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void PushMove_MoveSequence_MatchesRecomputeOnEachPly()
+    {
+        var position = new Position();
+        position.set(Position.StartSfen, new StateInfo());
+        var accumulator = CreateInitializedAccumulator(position);
+        var stack = new Stack<Move>();
+        Move[] sequence =
+        {
+            ShogiTypes.make_move(Square.SQ_77, Square.SQ_76, Piece.B_PAWN),
+            ShogiTypes.make_move(Square.SQ_33, Square.SQ_34, Piece.W_PAWN),
+            ShogiTypes.make_move(Square.SQ_88, Square.SQ_22, Piece.B_BISHOP),
+            ShogiTypes.make_move(Square.SQ_31, Square.SQ_22, Piece.W_SILVER),
+        };
+
+        foreach (Move move in sequence)
+        {
+            ApplyMoveAndAssert(position, accumulator, move);
+            stack.Push(move);
+        }
+
+        while (stack.Count > 0)
+        {
+            Move move = stack.Pop();
+            UndoMoveAndAssert(position, accumulator, move);
+        }
+    }
+
+    /// <summary>
     /// Null手往復後も再計算評価と一致することを検証する。
     /// </summary>
     [TestMethod]
