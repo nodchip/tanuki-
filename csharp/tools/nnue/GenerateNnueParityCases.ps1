@@ -21,7 +21,15 @@ function Get-DefaultSfens {
         "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL b - 9",
         "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL w - 10",
         "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL b - 11",
-        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL w - 12"
+        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL w - 12",
+        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL b - 13",
+        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL w - 14",
+        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL b - 15",
+        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL w - 16",
+        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL b - 17",
+        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL w - 18",
+        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL b - 19",
+        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL w - 20"
     )
 }
 

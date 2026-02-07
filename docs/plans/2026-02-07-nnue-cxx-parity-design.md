@@ -92,4 +92,4 @@
 - 厳密照合（`NNUE_PARITY_STRICT=1`）実行結果:
   - `dotnet test csharp/YaneuraOu.CSharp.sln --filter "FullyQualifiedName~NnueParityTests" -v minimal`
   - 結果: 1件合格 / 失敗0
-- strict実行時の見かけ上GREEN防止として、`NnueParityTests` に最小件数ガードを追加（`MinimumStrictCases = 12`）。
+- strict実行時の見かけ上GREEN防止として、`NnueParityTests` に最小件数ガードを追加（`MinimumStrictCases = 20`）。
