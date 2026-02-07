@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Diagnostics;
 using YaneuraOu.CSharp.Engine.Core;
+using YaneuraOu.CSharp.Engine.Core.Board;
 using YaneuraOu.CSharp.Engine.Core.MoveGen;
 using YaneuraOu.CSharp.Engine.Core.Types;
 using YaneuraOu.CSharp.Engine.Eval;
@@ -19,6 +20,7 @@ public sealed class Searcher
     private readonly IIncrementalEvaluator? incrementalEvaluator;
     private readonly MoveOrderingContext orderingContext = new();
     private readonly Dictionary<ulong, TranspositionEntry> transpositionTable = new();
+    private readonly Stack<StateInfo> statePool = new();
 
     private Stopwatch? timer;
     private int maxTimeMs;
@@ -136,12 +138,20 @@ public sealed class Searcher
                 break;
             }
 
-            var st = new StateInfo();
-            position.do_move(move, st, position.gives_check(move));
-            incrementalEvaluator?.OnMoveApplied(position, move, st.capturedPiece, us);
-            int score = -AlphaBeta(position, depth - 1, int.MinValue + 1, int.MaxValue - 1, 1, ref nodes);
-            position.undo_move(move);
-            incrementalEvaluator?.OnMoveUndone(position, move);
+            StateInfo st = RentStateInfo();
+            int score;
+            try
+            {
+                position.do_move(move, st, position.gives_check(move));
+                incrementalEvaluator?.OnMoveApplied(position, move, st.capturedPiece, us);
+                score = -AlphaBeta(position, depth - 1, int.MinValue + 1, int.MaxValue - 1, 1, ref nodes);
+                position.undo_move(move);
+                incrementalEvaluator?.OnMoveUndone(position, move);
+            }
+            finally
+            {
+                ReturnStateInfo(st);
+            }
 
             if (score > bestScore)
             {
@@ -207,12 +217,20 @@ public sealed class Searcher
                 break;
             }
 
-            var st = new StateInfo();
-            position.do_move(move, st, position.gives_check(move));
-            incrementalEvaluator?.OnMoveApplied(position, move, st.capturedPiece, us);
-            int score = -AlphaBeta(position, depth - 1, -beta, -best, ply + 1, ref nodes);
-            position.undo_move(move);
-            incrementalEvaluator?.OnMoveUndone(position, move);
+            StateInfo st = RentStateInfo();
+            int score;
+            try
+            {
+                position.do_move(move, st, position.gives_check(move));
+                incrementalEvaluator?.OnMoveApplied(position, move, st.capturedPiece, us);
+                score = -AlphaBeta(position, depth - 1, -beta, -best, ply + 1, ref nodes);
+                position.undo_move(move);
+                incrementalEvaluator?.OnMoveUndone(position, move);
+            }
+            finally
+            {
+                ReturnStateInfo(st);
+            }
 
             if (score >= beta)
             {
@@ -296,12 +314,20 @@ public sealed class Searcher
                 break;
             }
 
-            var st = new StateInfo();
-            position.do_move(move, st, position.gives_check(move));
-            incrementalEvaluator?.OnMoveApplied(position, move, st.capturedPiece, us);
-            int score = -Quiescence(position, -beta, -alpha, ref nodes);
-            position.undo_move(move);
-            incrementalEvaluator?.OnMoveUndone(position, move);
+            StateInfo st = RentStateInfo();
+            int score;
+            try
+            {
+                position.do_move(move, st, position.gives_check(move));
+                incrementalEvaluator?.OnMoveApplied(position, move, st.capturedPiece, us);
+                score = -Quiescence(position, -beta, -alpha, ref nodes);
+                position.undo_move(move);
+                incrementalEvaluator?.OnMoveUndone(position, move);
+            }
+            finally
+            {
+                ReturnStateInfo(st);
+            }
 
             if (score >= beta)
             {
@@ -410,6 +436,40 @@ public sealed class Searcher
     /// 置換表エントリを表す値型。
     /// </summary>
     private readonly record struct TranspositionEntry(int Depth, int Score, Move BestMove, TranspositionBound Bound);
+
+    /// <summary>
+    /// StateInfoをプールから取得する。
+    /// </summary>
+    private StateInfo RentStateInfo()
+    {
+        if (statePool.Count > 0)
+        {
+            return statePool.Pop();
+        }
+
+        return new StateInfo();
+    }
+
+    /// <summary>
+    /// StateInfoを初期化してプールへ返却する。
+    /// </summary>
+    private void ReturnStateInfo(StateInfo state)
+    {
+        state.previous = null;
+        state.capturedPiece = Piece.NO_PIECE;
+        state.repetition = 0;
+        state.repetition_times = 0;
+        state.repetition_type = 0;
+        state.pliesFromNull = 0;
+        state.continuousCheck[(int)Color.BLACK] = 0;
+        state.continuousCheck[(int)Color.WHITE] = 0;
+        state.checkersBB = new Bitboard(0);
+        state.blockersForKing[(int)Color.BLACK] = new Bitboard(0);
+        state.blockersForKing[(int)Color.WHITE] = new Bitboard(0);
+        state.pinners[(int)Color.BLACK] = new Bitboard(0);
+        state.pinners[(int)Color.WHITE] = new Bitboard(0);
+        statePool.Push(state);
+    }
 }
 
 /// <summary>
@@ -429,3 +489,5 @@ public readonly record struct SearchProgress(
 /// 探索結果を表す値オブジェクト。
 /// </summary>
 public readonly record struct SearchResult(Move BestMove, int Score, int Nodes, int Depth);
+
+
