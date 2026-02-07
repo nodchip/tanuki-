@@ -1,8 +1,10 @@
-﻿param(
+param(
     [string]$EnginePath = "source/YaneuraOu-by-gcc.exe",
     [string]$EvalDir = "../eval",
     [string]$OutFile = "eval/nnue-parity-cases.jsonl",
-    [string]$SfenListFile = ""
+    [string]$SfenListFile = "",
+    [string]$FailureLogDir = "eval/parity-failures",
+    [switch]$KeepTempOnError
 )
 
 Set-StrictMode -Version Latest
@@ -19,53 +21,97 @@ function Get-DefaultSfens {
         "lnsgkgsnl/1r5b1/pp1pppppp/9/2p6/2P1P4/PP1P1PPPP/1B3R3/LNSGKGSNL b - 7",
         "lnsgkgsnl/1r5b1/pp1pppppp/9/2p6/2P1P4/PP1P1PPPP/1B3R3/LNSGKGSNL w - 8",
         "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL b - 9",
-        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL w - 10",
-        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL b - 11",
-        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL w - 12",
-        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL b - 13",
-        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL w - 14",
-        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL b - 15",
-        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL w - 16",
-        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL b - 17",
-        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL w - 18",
-        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL b - 19",
-        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL w - 20"
+        "lnsgkgsnl/1r5b1/pp1pppppp/9/9/2p1P4/PP1P1PPPP/1B3R3/LNSGKGSNL w - 10"
     )
 }
 
-function Invoke-Eval([string]$enginePath, [string]$evalDir, [string]$sfen) {
+function Save-FailureLog(
+    [string]$failureLogDir,
+    [string]$sfen,
+    [string]$inputText,
+    [string]$stdoutText,
+    [string]$stderrText,
+    [int]$exitCode,
+    [string]$reason
+) {
+    if (-not (Test-Path $failureLogDir)) {
+        New-Item -ItemType Directory -Path $failureLogDir | Out-Null
+    }
+
+    $timestamp = Get-Date -Format "yyyyMMdd-HHmmss-fff"
+    $id = [guid]::NewGuid().ToString("N").Substring(0, 8)
+    $basePath = Join-Path $failureLogDir ("parity-failure-{0}-{1}" -f $timestamp, $id)
+
+    $meta = @{
+        reason = $reason
+        exitCode = $exitCode
+        sfen = $sfen
+        generatedAt = (Get-Date).ToString("o")
+    } | ConvertTo-Json -Depth 4
+
+    Set-Content -Encoding UTF8 ($basePath + ".meta.json") $meta
+    Set-Content -Encoding UTF8 ($basePath + ".usi.txt") $inputText
+    Set-Content -Encoding UTF8 ($basePath + ".stdout.txt") $stdoutText
+    Set-Content -Encoding UTF8 ($basePath + ".stderr.txt") $stderrText
+    return $basePath
+}
+
+function Invoke-Eval(
+    [string]$enginePath,
+    [string]$evalDir,
+    [string]$sfen,
+    [string]$failureLogDir,
+    [switch]$keepTempOnError
+) {
     $tmpIn = Join-Path $env:TEMP ("yane_cmd_" + [guid]::NewGuid().ToString("N") + ".txt")
     $tmpOut = Join-Path $env:TEMP ("yane_out_" + [guid]::NewGuid().ToString("N") + ".txt")
     $tmpErr = Join-Path $env:TEMP ("yane_err_" + [guid]::NewGuid().ToString("N") + ".txt")
+    $keepTemp = $false
+    $inputText = @(
+        "setoption name EvalDir value $evalDir",
+        "isready",
+        "position sfen $sfen",
+        "e",
+        "quit"
+    ) -join [Environment]::NewLine
 
     try {
-        @(
-            "setoption name EvalDir value $evalDir",
-            "isready",
-            "position sfen $sfen",
-            "e",
-            "quit"
-        ) | Set-Content -Encoding ascii $tmpIn
+        $inputText | Set-Content -Encoding ascii $tmpIn
 
         $process = Start-Process -FilePath $enginePath -RedirectStandardInput $tmpIn -RedirectStandardOutput $tmpOut -RedirectStandardError $tmpErr -NoNewWindow -PassThru -Wait
+        $stdoutText = if (Test-Path $tmpOut) { (Get-Content $tmpOut -Raw) } else { "" }
+        $stderrText = if (Test-Path $tmpErr) { (Get-Content $tmpErr -Raw) } else { "" }
+
         if ($process.ExitCode -ne 0) {
-            $stderr = if (Test-Path $tmpErr) { (Get-Content $tmpErr -Raw) } else { "" }
-            throw "エンジン終了コードが非0です: $($process.ExitCode)`n$stderr"
+            $logBase = Save-FailureLog -failureLogDir $failureLogDir -sfen $sfen -inputText $inputText -stdoutText $stdoutText -stderrText $stderrText -exitCode $process.ExitCode -reason "non-zero-exit"
+            if ($keepTempOnError) { $keepTemp = $true }
+            throw "エンジン終了コードが非0です: $($process.ExitCode)`nlog: $logBase"
         }
 
         $outLines = if (Test-Path $tmpOut) { Get-Content $tmpOut } else { @() }
         $line = $outLines | Where-Object { $_ -match "^eval = " } | Select-Object -Last 1
         if (-not $line) {
-            throw "評価値を取得できませんでした。SFEN: $sfen"
+            $logBase = Save-FailureLog -failureLogDir $failureLogDir -sfen $sfen -inputText $inputText -stdoutText $stdoutText -stderrText $stderrText -exitCode $process.ExitCode -reason "missing-eval-line"
+            if ($keepTempOnError) { $keepTemp = $true }
+            throw "評価値を取得できませんでした。SFEN: $sfen`nlog: $logBase"
         }
 
         $scoreText = $line -replace "^eval =\s*", ""
-        return [int]$scoreText
+        try {
+            return [int]$scoreText
+        }
+        catch {
+            $logBase = Save-FailureLog -failureLogDir $failureLogDir -sfen $sfen -inputText $inputText -stdoutText $stdoutText -stderrText $stderrText -exitCode $process.ExitCode -reason "invalid-eval-format"
+            if ($keepTempOnError) { $keepTemp = $true }
+            throw "評価値の形式が不正です: '$scoreText'`nlog: $logBase"
+        }
     }
     finally {
-        if (Test-Path $tmpIn) { Remove-Item $tmpIn -Force }
-        if (Test-Path $tmpOut) { Remove-Item $tmpOut -Force }
-        if (Test-Path $tmpErr) { Remove-Item $tmpErr -Force }
+        if (-not $keepTemp) {
+            if (Test-Path $tmpIn) { Remove-Item $tmpIn -Force }
+            if (Test-Path $tmpOut) { Remove-Item $tmpOut -Force }
+            if (Test-Path $tmpErr) { Remove-Item $tmpErr -Force }
+        }
     }
 }
 
@@ -84,7 +130,7 @@ else {
 
 $records = New-Object System.Collections.Generic.List[string]
 foreach ($sfen in $sfens) {
-    $score = Invoke-Eval -enginePath $EnginePath -evalDir $EvalDir -sfen $sfen
+    $score = Invoke-Eval -enginePath $EnginePath -evalDir $EvalDir -sfen $sfen -failureLogDir $FailureLogDir -keepTempOnError:$KeepTempOnError
     $json = @{ sfen = $sfen; expectedScore = $score } | ConvertTo-Json -Compress
     $records.Add($json)
     Write-Host "ok: $sfen => $score"
