@@ -2,6 +2,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using YaneuraOu.CSharp.Engine.Core;
 using YaneuraOu.CSharp.Engine.Core.MoveGen;
 using YaneuraOu.CSharp.Engine.Core.Types;
+using YaneuraOu.CSharp.Engine.Eval;
 using YaneuraOu.CSharp.Engine.Search;
 
 namespace YaneuraOu.CSharp.Engine.Tests.Searching;
@@ -12,6 +13,24 @@ namespace YaneuraOu.CSharp.Engine.Tests.Searching;
 /// </summary>
 public class SearcherBasicTests
 {
+    [TestMethod]
+    /// <summary>
+    /// 差分更新フック実装評価器が探索中に呼び出されることを検証する。
+    /// </summary>
+    public void Search_WithIncrementalEvaluator_InvokesMoveHooks()
+    {
+        var pos = new Position();
+        pos.set(Position.StartSfen, new StateInfo());
+        var evaluator = new CountingIncrementalEvaluator();
+        var searcher = new Searcher(evaluator);
+
+        searcher.Search(pos, new SearchLimits { Depth = 2 });
+
+        Assert.AreEqual(1, evaluator.ResetCount);
+        Assert.IsTrue(evaluator.MoveAppliedCount > 0);
+        Assert.AreEqual(evaluator.MoveAppliedCount, evaluator.MoveUndoneCount);
+    }
+
     [TestMethod]
     /// <summary>
     /// 深さ1探索で bestmove が返ることを検証する。
@@ -100,5 +119,35 @@ public class SearcherBasicTests
         SearchResult result = searcher.Search(pos, new SearchLimits { Depth = 1 });
 
         Assert.IsTrue(result.Score <= -90_000);
+    }
+
+    /// <summary>
+    /// 呼び出し回数検証用の差分更新評価器。
+    /// </summary>
+    private sealed class CountingIncrementalEvaluator : IEvaluator, IIncrementalEvaluator
+    {
+        public int ResetCount { get; private set; }
+        public int MoveAppliedCount { get; private set; }
+        public int MoveUndoneCount { get; private set; }
+
+        public int Evaluate(Position position)
+        {
+            return 0;
+        }
+
+        public void ResetIncrementalState(Position position)
+        {
+            ResetCount++;
+        }
+
+        public void OnMoveApplied(Position positionAfterMove, Move move, Piece capturedPiece, Color movingSide)
+        {
+            MoveAppliedCount++;
+        }
+
+        public void OnMoveUndone(Position positionAfterUndo, Move move)
+        {
+            MoveUndoneCount++;
+        }
     }
 }

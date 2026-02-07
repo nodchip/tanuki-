@@ -1,11 +1,12 @@
-﻿using YaneuraOu.CSharp.Engine.Core;
+using YaneuraOu.CSharp.Engine.Core;
+using YaneuraOu.CSharp.Engine.Core.Types;
 
 namespace YaneuraOu.CSharp.Engine.Eval;
 
 /// <summary>
 /// NNUEモデルまたは固定値から評価値を返すバックエンド。
 /// </summary>
-public sealed class FileNnueBackend : INnueBackend
+public sealed class FileNnueBackend : INnueBackend, IIncrementalNnueBackend
 {
     private readonly bool useFixedScore;
     private readonly int fixedScore;
@@ -45,5 +46,44 @@ public sealed class FileNnueBackend : INnueBackend
         }
 
         return accumulator!.EvaluateIncremental(position);
+    }
+
+    /// <summary>
+    /// 探索開始局面で差分状態を初期化する。
+    /// </summary>
+    public void ResetIncrementalState(Position position)
+    {
+        if (useFixedScore)
+        {
+            return;
+        }
+
+        accumulator!.Reset(position);
+    }
+
+    /// <summary>
+    /// do_move適用後に差分状態を進める。
+    /// </summary>
+    public void OnMoveApplied(Position positionAfterMove, Move move, Piece capturedPiece, Color movingSide)
+    {
+        if (useFixedScore)
+        {
+            return;
+        }
+
+        accumulator!.PushMove(positionAfterMove, move, capturedPiece, movingSide);
+    }
+
+    /// <summary>
+    /// undo_move適用後に差分状態を戻す。
+    /// </summary>
+    public void OnMoveUndone(Position positionAfterUndo, Move move)
+    {
+        if (useFixedScore)
+        {
+            return;
+        }
+
+        accumulator!.Pop();
     }
 }

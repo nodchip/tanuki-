@@ -16,6 +16,7 @@ public sealed class Searcher
     private const int MateScore = 100_000;
 
     private readonly IEvaluator evaluator;
+    private readonly IIncrementalEvaluator? incrementalEvaluator;
     private readonly MoveOrderingContext orderingContext = new();
     private readonly Dictionary<ulong, TranspositionEntry> transpositionTable = new();
 
@@ -32,6 +33,7 @@ public sealed class Searcher
     public Searcher(IEvaluator? evaluator = null)
     {
         this.evaluator = evaluator ?? new MaterialEvaluator();
+        incrementalEvaluator = this.evaluator as IIncrementalEvaluator;
     }
 
     /// <summary>
@@ -53,6 +55,7 @@ public sealed class Searcher
         stopPolicy = limits.StopPolicy;
         totalNodes = 0;
         timer = Stopwatch.StartNew();
+        incrementalEvaluator?.ResetIncrementalState(position);
 
         Move bestMove = Move.none();
         int bestScore = int.MinValue;
@@ -135,8 +138,10 @@ public sealed class Searcher
 
             var st = new StateInfo();
             position.do_move(move, st, position.gives_check(move));
+            incrementalEvaluator?.OnMoveApplied(position, move, st.capturedPiece, us);
             int score = -AlphaBeta(position, depth - 1, int.MinValue + 1, int.MaxValue - 1, 1, ref nodes);
             position.undo_move(move);
+            incrementalEvaluator?.OnMoveUndone(position, move);
 
             if (score > bestScore)
             {
@@ -193,6 +198,7 @@ public sealed class Searcher
 
         int best = alpha;
         Move bestMove = Move.none();
+        Color us = position.side_to_move();
 
         foreach (Move move in MoveOrdering.Order(position, legal, orderingContext, ply, ttMove))
         {
@@ -203,8 +209,10 @@ public sealed class Searcher
 
             var st = new StateInfo();
             position.do_move(move, st, position.gives_check(move));
+            incrementalEvaluator?.OnMoveApplied(position, move, st.capturedPiece, us);
             int score = -AlphaBeta(position, depth - 1, -beta, -best, ply + 1, ref nodes);
             position.undo_move(move);
+            incrementalEvaluator?.OnMoveUndone(position, move);
 
             if (score >= beta)
             {
@@ -280,6 +288,7 @@ public sealed class Searcher
         }
 
         MoveList captures = MoveGenerator.GenerateCaptures(position);
+        Color us = position.side_to_move();
         foreach (Move move in MoveOrdering.Order(position, captures, orderingContext))
         {
             if (ShouldStopNow())
@@ -289,8 +298,10 @@ public sealed class Searcher
 
             var st = new StateInfo();
             position.do_move(move, st, position.gives_check(move));
+            incrementalEvaluator?.OnMoveApplied(position, move, st.capturedPiece, us);
             int score = -Quiescence(position, -beta, -alpha, ref nodes);
             position.undo_move(move);
+            incrementalEvaluator?.OnMoveUndone(position, move);
 
             if (score >= beta)
             {
