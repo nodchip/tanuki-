@@ -6,13 +6,13 @@ using YaneuraOu.CSharp.Engine.Eval;
 namespace YaneuraOu.CSharp.Engine.Tests.Eval;
 
 /// <summary>
-/// NNUEアキュムレータの整合性を検証するテストクラス。
+/// NNUEアキュムレータの差分更新を検証するテストクラス。
 /// </summary>
 [TestClass]
 public class NnueAccumulatorTests
 {
     /// <summary>
-    /// 初期局面で差分評価と全再計算が一致することを検証する。
+    /// 初期局面で差分評価と再計算評価が一致することを検証する。
     /// </summary>
     [TestMethod]
     public void EvaluateIncremental_InitialPosition_MatchesRecompute()
@@ -28,48 +28,84 @@ public class NnueAccumulatorTests
     }
 
     /// <summary>
-    /// do_move/undo_move後も差分評価と全再計算が一致することを検証する。
+    /// 通常手の差分更新が再計算評価と一致することを検証する。
     /// </summary>
     [TestMethod]
-    public void EvaluateIncremental_AfterMoveCycle_MatchesRecompute()
+    public void PushMove_NormalMove_MatchesRecompute()
     {
         var position = new Position();
         position.set(Position.StartSfen, new StateInfo());
-        var accumulator = new NnueAccumulator(new NnueFeatureTransformer(), CreateModel());
+        var accumulator = CreateInitializedAccumulator(position);
 
-        int before = accumulator.EvaluateIncremental(position);
         Move move = ShogiTypes.make_move(Square.SQ_77, Square.SQ_76, Piece.B_PAWN);
-        position.do_move(move, new StateInfo(), position.gives_check(move));
-
-        int afterMoveIncremental = accumulator.EvaluateIncremental(position);
-        int afterMoveRecompute = accumulator.EvaluateByRecompute(position);
-        Assert.AreEqual(afterMoveRecompute, afterMoveIncremental);
-
-        position.undo_move(move);
-        int afterUndoIncremental = accumulator.EvaluateIncremental(position);
-        int afterUndoRecompute = accumulator.EvaluateByRecompute(position);
-        Assert.AreEqual(afterUndoRecompute, afterUndoIncremental);
-        Assert.AreEqual(before, afterUndoIncremental);
+        ApplyMoveAndAssert(position, accumulator, move);
+        UndoMoveAndAssert(position, accumulator, move);
     }
 
     /// <summary>
-    /// do_null_move/undo_null_move後も差分評価と全再計算が一致することを検証する。
+    /// 捕獲手の差分更新が再計算評価と一致することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void PushMove_CaptureMove_MatchesRecompute()
+    {
+        var position = new Position();
+        position.set("4k4/9/9/9/9/9/4P4/4p4/4K4 b - 1", new StateInfo());
+        var accumulator = CreateInitializedAccumulator(position);
+
+        Move move = ShogiTypes.make_move(Square.SQ_57, Square.SQ_58, Piece.B_PAWN);
+        ApplyMoveAndAssert(position, accumulator, move);
+        UndoMoveAndAssert(position, accumulator, move);
+    }
+
+    /// <summary>
+    /// 成り手の差分更新が再計算評価と一致することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void PushMove_PromotionMove_MatchesRecompute()
+    {
+        var position = new Position();
+        position.set("4k4/6P2/9/9/9/9/9/9/4K4 b - 1", new StateInfo());
+        var accumulator = CreateInitializedAccumulator(position);
+
+        Move move = ShogiTypes.make_move_promote(Square.SQ_72, Square.SQ_71, Piece.B_PAWN);
+        ApplyMoveAndAssert(position, accumulator, move);
+        UndoMoveAndAssert(position, accumulator, move);
+    }
+
+    /// <summary>
+    /// 打ち手の差分更新が再計算評価と一致することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void PushMove_DropMove_MatchesRecompute()
+    {
+        var position = new Position();
+        position.set("4k4/9/9/9/9/9/9/9/4K4 b P 1", new StateInfo());
+        var accumulator = CreateInitializedAccumulator(position);
+
+        Move move = ShogiTypes.make_move_drop(PieceType.PAWN, Square.SQ_55, Color.BLACK);
+        ApplyMoveAndAssert(position, accumulator, move);
+        UndoMoveAndAssert(position, accumulator, move);
+    }
+
+    /// <summary>
+    /// Null手往復後も再計算評価と一致することを検証する。
     /// </summary>
     [TestMethod]
     public void EvaluateIncremental_AfterNullMoveCycle_MatchesRecompute()
     {
         var position = new Position();
         position.set(Position.StartSfen, new StateInfo());
-        var accumulator = new NnueAccumulator(new NnueFeatureTransformer(), CreateModel());
-
+        var accumulator = CreateInitializedAccumulator(position);
         int before = accumulator.EvaluateIncremental(position);
 
         position.do_null_move(new StateInfo());
+        accumulator.Reset(position);
         int afterNullIncremental = accumulator.EvaluateIncremental(position);
         int afterNullRecompute = accumulator.EvaluateByRecompute(position);
         Assert.AreEqual(afterNullRecompute, afterNullIncremental);
 
         position.undo_null_move();
+        accumulator.Reset(position);
         int afterUndoIncremental = accumulator.EvaluateIncremental(position);
         int afterUndoRecompute = accumulator.EvaluateByRecompute(position);
         Assert.AreEqual(afterUndoRecompute, afterUndoIncremental);
@@ -77,7 +113,45 @@ public class NnueAccumulatorTests
     }
 
     /// <summary>
-    /// テスト用のNNUEモデルを生成する。
+    /// 指定局面で初期化済みのアキュムレータを生成する。
+    /// </summary>
+    private static NnueAccumulator CreateInitializedAccumulator(Position position)
+    {
+        var accumulator = new NnueAccumulator(new NnueFeatureTransformer(), CreateModel());
+        accumulator.Reset(position);
+        return accumulator;
+    }
+
+    /// <summary>
+    /// 1手進めて差分評価と再計算評価が一致することを検証する。
+    /// </summary>
+    private static void ApplyMoveAndAssert(Position position, NnueAccumulator accumulator, Move move)
+    {
+        Color movingSide = position.side_to_move();
+        var st = new StateInfo();
+        position.do_move(move, st, position.gives_check(move));
+        accumulator.PushMove(position, move, st.capturedPiece, movingSide);
+
+        int incremental = accumulator.EvaluateIncremental(position);
+        int recompute = accumulator.EvaluateByRecompute(position);
+        Assert.AreEqual(recompute, incremental);
+    }
+
+    /// <summary>
+    /// 1手戻して差分評価と再計算評価が一致することを検証する。
+    /// </summary>
+    private static void UndoMoveAndAssert(Position position, NnueAccumulator accumulator, Move move)
+    {
+        position.undo_move(move);
+        accumulator.Pop();
+
+        int incremental = accumulator.EvaluateIncremental(position);
+        int recompute = accumulator.EvaluateByRecompute(position);
+        Assert.AreEqual(recompute, incremental);
+    }
+
+    /// <summary>
+    /// テスト用のNNUEモデルを構築する。
     /// </summary>
     private static NnueModel CreateModel()
     {
@@ -85,6 +159,11 @@ public class NnueAccumulatorTests
         for (int i = 0; i < model.FtBiases.Length; i++)
         {
             model.FtBiases[i] = (short)(i % 16);
+        }
+
+        for (int i = 0; i < model.FtWeights.Length; i++)
+        {
+            model.FtWeights[i] = (short)((i % 7) - 3);
         }
 
         for (int i = 0; i < model.OutputWeights.Length; i++)
