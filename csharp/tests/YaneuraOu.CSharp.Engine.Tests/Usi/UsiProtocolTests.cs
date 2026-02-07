@@ -100,6 +100,22 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// usinewgameコマンドでも開始局面に戻ることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_UsiNewGame_ResetsPosition()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+
+        engine.HandleCommand("position startpos moves 7g7f 3c3d");
+        engine.HandleCommand("usinewgame");
+        string response = engine.HandleCommand("go depth 1");
+
+        StringAssert.StartsWith(response, "bestmove ");
+        Assert.AreNotEqual("bestmove resign", response);
+    }
+
+    /// <summary>
     /// go depth指定が時間制御より優先されることを検証する。
     /// </summary>
     [TestMethod]
@@ -172,5 +188,19 @@ public class UsiProtocolTests
         string response = engine.HandleCommand("go depth 1");
 
         Assert.AreEqual("bestmove resign", response);
+    }
+
+    /// <summary>
+    /// usi応答に主要オプションが含まれることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_Usi_IncludesEngineOptions()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+
+        string response = engine.HandleCommand("usi");
+
+        StringAssert.Contains(response, "option name Depth type spin");
+        StringAssert.Contains(response, "option name MoveTime type spin");
     }
 }

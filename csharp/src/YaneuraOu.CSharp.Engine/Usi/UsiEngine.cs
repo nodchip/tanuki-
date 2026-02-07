@@ -50,7 +50,12 @@ public sealed class UsiEngine
 
         if (string.Equals(trimmed, "usi", StringComparison.OrdinalIgnoreCase))
         {
-            return $"id name {name}\nid author {author}\nusiok";
+            return
+                $"id name {name}\n" +
+                $"id author {author}\n" +
+                "option name Depth type spin default 1 min 1 max 64\n" +
+                "option name MoveTime type spin default 1000 min 1 max 600000\n" +
+                "usiok";
         }
 
         if (string.Equals(trimmed, "isready", StringComparison.OrdinalIgnoreCase))
@@ -58,7 +63,8 @@ public sealed class UsiEngine
             return "readyok";
         }
 
-        if (string.Equals(trimmed, "ucinewgame", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(trimmed, "ucinewgame", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "usinewgame", StringComparison.OrdinalIgnoreCase))
         {
             ResetToStartPosition();
             return string.Empty;

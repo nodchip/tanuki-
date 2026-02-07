@@ -188,3 +188,4 @@
 - Phase C: 完了（最小置換表、TT手優先、killer/history、終局安全判定を追加）。
 - Phase D: 進行中（時間制御テスト拡充、`go`の境界挙動を強化）。
 - Phase E: 進行中（NNUE読込は固定値バックエンドまで実装）。
+- Phase D: 進行中（`usinewgame`受理、`usi`応答でDepth/MoveTime option広告を追加）。
