@@ -68,6 +68,24 @@ public class TimeManagementTests
     }
 
     /// <summary>
+    /// RoundUpToFullSecond有効時に最大時間が秒単位へ切り上がることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Init_WithByoyomiAndRoundUpToFullSecond_RoundsUpMaximumTime()
+    {
+        var limits = new LimitsType
+        {
+            ByoyomiMs = 2000,
+            RoundUpToFullSecond = true,
+        };
+        var sut = new TimeManagement();
+
+        sut.Init(limits, Color.BLACK);
+
+        Assert.AreEqual(2000, sut.MaximumTimeMs);
+    }
+
+    /// <summary>
     /// SlowMover指定時に最適時間が倍率で変化することを検証する。
     /// </summary>
     [TestMethod]

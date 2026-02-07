@@ -57,7 +57,8 @@ public sealed class TimeManagement
         int inc = limits.IncMs[sideIndex];
         int byoyomi = limits.ByoyomiMs;
         int safetyMargin = ComputeSafetyMargin(remain, byoyomi);
-        int available = Math.Max(0, remain + inc + byoyomi - safetyMargin - limits.MoveOverheadMs);
+        int hardLimit = Math.Max(0, remain + inc + byoyomi - limits.MoveOverheadMs);
+        int available = Math.Max(0, hardLimit - safetyMargin);
         if (available <= 0)
         {
             MinimumTimeMs = 0;
@@ -89,6 +90,27 @@ public sealed class TimeManagement
         MinimumTimeMs = Math.Min(available, baseMinimum);
         OptimumTimeMs = Math.Max(MinimumTimeMs, Math.Min(scaledOptimum, available));
         MaximumTimeMs = Math.Max(OptimumTimeMs, Math.Min(Math.Max(OptimumTimeMs, reserve), available));
+
+        if (limits.RoundUpToFullSecond)
+        {
+            MinimumTimeMs = RoundUpToSecond(MinimumTimeMs, hardLimit);
+            OptimumTimeMs = Math.Max(MinimumTimeMs, RoundUpToSecond(OptimumTimeMs, hardLimit));
+            MaximumTimeMs = Math.Max(OptimumTimeMs, RoundUpToSecond(MaximumTimeMs, hardLimit));
+        }
+    }
+
+    /// <summary>
+    /// 時間を1秒単位へ切り上げつつ上限を超えないようにする。
+    /// </summary>
+    private static int RoundUpToSecond(int valueMs, int hardLimitMs)
+    {
+        if (valueMs <= 0 || hardLimitMs <= 0)
+        {
+            return 0;
+        }
+
+        int rounded = ((valueMs + 999) / 1000) * 1000;
+        return Math.Min(rounded, hardLimitMs);
     }
 
     /// <summary>

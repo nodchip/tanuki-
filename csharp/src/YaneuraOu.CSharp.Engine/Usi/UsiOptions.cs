@@ -31,6 +31,11 @@ public sealed class UsiOptions
     public int SlowMover { get; set; } = 100;
 
     /// <summary>
+    /// 秒未満を1秒単位に切り上げるかどうか。
+    /// </summary>
+    public bool RoundUpToFullSecond { get; set; }
+
+    /// <summary>
     /// 既定の探索スレッド数。
     /// </summary>
     public int Threads { get; set; } = 1;

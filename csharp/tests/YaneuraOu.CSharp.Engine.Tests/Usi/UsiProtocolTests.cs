@@ -222,6 +222,7 @@ public class UsiProtocolTests
         StringAssert.Contains(response, "option name MoveOverhead type spin");
         StringAssert.Contains(response, "option name MinimumThinkingTime type spin");
         StringAssert.Contains(response, "option name SlowMover type spin");
+        StringAssert.Contains(response, "option name RoundUpToFullSecond type check");
         StringAssert.Contains(response, "option name Threads type spin");
         StringAssert.Contains(response, "option name Hash type spin");
         StringAssert.Contains(response, "option name Ponder type check");
@@ -320,6 +321,20 @@ public class UsiProtocolTests
         engine.HandleCommand("go byoyomi 2000");
 
         Assert.AreEqual(1850, engine.LastSearchTimeLimitMs);
+    }
+
+    /// <summary>
+    /// RoundUpToFullSecond有効時にgo byoyomiの時間上限が秒単位へ切り上がることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionRoundUpToFullSecond_AffectsByoyomiTimeLimit()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name RoundUpToFullSecond value true");
+
+        engine.HandleCommand("go byoyomi 2000");
+
+        Assert.AreEqual(2000, engine.LastSearchTimeLimitMs);
     }
 
     /// <summary>

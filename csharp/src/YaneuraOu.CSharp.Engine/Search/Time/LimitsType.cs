@@ -34,6 +34,11 @@ public sealed class LimitsType
     public int SlowMover { get; set; } = 100;
 
     /// <summary>
+    /// 秒未満の思考時間を1秒単位へ切り上げるかどうか。
+    /// </summary>
+    public bool RoundUpToFullSecond { get; set; }
+
+    /// <summary>
     /// 蝗ｺ螳壽晁・凾髢・繝溘Μ遘・繧剃ｿ晄戟縺吶ｋ縲・    /// </summary>
     public int MoveTimeMs { get; set; }
 
