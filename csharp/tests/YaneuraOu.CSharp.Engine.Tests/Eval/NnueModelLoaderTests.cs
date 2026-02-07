@@ -1,5 +1,6 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using YaneuraOu.CSharp.Engine.Core;
+using YaneuraOu.CSharp.Engine.Core.Types;
 using YaneuraOu.CSharp.Engine.Eval;
 
 namespace YaneuraOu.CSharp.Engine.Tests.Eval;
@@ -122,6 +123,32 @@ public class NnueModelLoaderTests
         INnueBackend backend = loader.Load(RepoNnBinPath);
 
         Assert.IsTrue(backend.IsEnabled);
+    }
+
+    /// <summary>
+    /// eval/nn.bin を読み込んだバックエンドが局面依存の評価値を返すことを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Load_RepoNnBin_EvaluateDependsOnPosition()
+    {
+        if (string.IsNullOrEmpty(RepoNnBinPath))
+        {
+            Assert.Inconclusive("eval/nn.bin が見つからないためスキップ");
+            return;
+        }
+
+        var loader = new NnueModelLoader();
+        INnueBackend backend = loader.Load(RepoNnBinPath);
+        var position = new Position();
+        position.set(Position.StartSfen, new StateInfo());
+
+        int before = backend.Evaluate(position);
+
+        Move move = ShogiTypes.make_move(Square.SQ_77, Square.SQ_76, Piece.B_PAWN);
+        position.do_move(move, new StateInfo(), position.gives_check(move));
+        int after = backend.Evaluate(position);
+
+        Assert.AreNotEqual(before, after);
     }
 
     /// <summary>

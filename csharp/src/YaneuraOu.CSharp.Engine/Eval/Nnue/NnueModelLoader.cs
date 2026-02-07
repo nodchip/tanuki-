@@ -1,5 +1,4 @@
-using System.Buffers.Binary;
-using System.Text;
+﻿using System.Text;
 
 namespace YaneuraOu.CSharp.Engine.Eval;
 
@@ -28,9 +27,9 @@ public sealed class NnueModelLoader
                 return new FileNnueBackend(textScore);
             }
 
-            if (TryReadScoreFromBinary(data, out int binaryScore))
+            if (ContainsNnueSignature(data))
             {
-                return new FileNnueBackend(binaryScore);
+                return new FileNnueBackend(data);
             }
         }
         catch (IOException)
@@ -58,26 +57,6 @@ public sealed class NnueModelLoader
 
         string text = Encoding.UTF8.GetString(data).Trim();
         return int.TryParse(text, out score);
-    }
-
-    /// <summary>
-    /// バイナリ形式の評価値を読み取る。
-    /// </summary>
-    private static bool TryReadScoreFromBinary(byte[] data, out int score)
-    {
-        score = 0;
-        if (data.Length < sizeof(int))
-        {
-            return false;
-        }
-
-        if (!ContainsNnueSignature(data))
-        {
-            return false;
-        }
-
-        score = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0, sizeof(int)));
-        return true;
     }
 
     /// <summary>
