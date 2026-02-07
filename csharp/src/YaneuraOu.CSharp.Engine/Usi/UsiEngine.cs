@@ -97,6 +97,8 @@ public sealed class UsiEngine
                 "option name MinimumThinkingTime type spin default 2000 min 1 max 100000\n" +
                 "option name SlowMover type spin default 100 min 1 max 1000\n" +
                 "option name RoundUpToFullSecond type check default false\n" +
+                "option name NetworkDelay type spin default 0 min 0 max 10000\n" +
+                "option name NetworkDelay2 type spin default 0 min 0 max 10000\n" +
                 "option name Threads type spin default 1 min 1 max 256\n" +
                 "option name Hash type spin default 64 min 1 max 8192\n" +
                 "option name Ponder type check default false\n" +
@@ -272,6 +274,22 @@ public sealed class UsiEngine
             AddInfo($"RoundUpToFullSecond={options.RoundUpToFullSecond.ToString().ToLowerInvariant()}");
         }
 
+        if (optionName.Equals("NetworkDelay", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(optionValue, out int networkDelay)
+            && networkDelay >= 0)
+        {
+            options.NetworkDelayMs = networkDelay;
+            AddInfo($"NetworkDelay={networkDelay}");
+        }
+
+        if (optionName.Equals("NetworkDelay2", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(optionValue, out int networkDelay2)
+            && networkDelay2 >= 0)
+        {
+            options.NetworkDelay2Ms = networkDelay2;
+            AddInfo($"NetworkDelay2={networkDelay2}");
+        }
+
         if (optionName.Equals("Threads", StringComparison.OrdinalIgnoreCase)
             && int.TryParse(optionValue, out int threads)
             && threads > 0)
@@ -408,6 +426,8 @@ public sealed class UsiEngine
             MinimumThinkingTimeMs = options.MinimumThinkingTimeMs,
             SlowMover = options.SlowMover,
             RoundUpToFullSecond = options.RoundUpToFullSecond,
+            NetworkDelayMs = options.NetworkDelayMs,
+            NetworkDelay2Ms = options.NetworkDelay2Ms,
         };
 
         for (int i = 1; i < parts.Length; i++)

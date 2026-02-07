@@ -86,6 +86,42 @@ public class TimeManagementTests
     }
 
     /// <summary>
+    /// NetworkDelay指定時に最大時間がその分だけ短縮されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Init_WithByoyomiAndNetworkDelay_SubtractsFromMaximum()
+    {
+        var limits = new LimitsType
+        {
+            ByoyomiMs = 2000,
+            NetworkDelayMs = 120,
+        };
+        var sut = new TimeManagement();
+
+        sut.Init(limits, Color.BLACK);
+
+        Assert.AreEqual(1880, sut.MaximumTimeMs);
+    }
+
+    /// <summary>
+    /// NetworkDelay2指定時にハード上限がその分だけ短縮されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Init_WithByoyomiAndNetworkDelay2_SubtractsHardLimit()
+    {
+        var limits = new LimitsType
+        {
+            ByoyomiMs = 2000,
+            NetworkDelay2Ms = 300,
+        };
+        var sut = new TimeManagement();
+
+        sut.Init(limits, Color.BLACK);
+
+        Assert.AreEqual(1700, sut.MaximumTimeMs);
+    }
+
+    /// <summary>
     /// SlowMover指定時に最適時間が倍率で変化することを検証する。
     /// </summary>
     [TestMethod]

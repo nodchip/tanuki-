@@ -39,6 +39,16 @@ public sealed class LimitsType
     public bool RoundUpToFullSecond { get; set; }
 
     /// <summary>
+    /// 通常時のネットワーク遅延見込み(ミリ秒)を保持する。
+    /// </summary>
+    public int NetworkDelayMs { get; set; }
+
+    /// <summary>
+    /// 切れ負け回避用の最大ネットワーク遅延見込み(ミリ秒)を保持する。
+    /// </summary>
+    public int NetworkDelay2Ms { get; set; }
+
+    /// <summary>
     /// 蝗ｺ螳壽晁・凾髢・繝溘Μ遘・繧剃ｿ晄戟縺吶ｋ縲・    /// </summary>
     public int MoveTimeMs { get; set; }
 

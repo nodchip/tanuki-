@@ -36,6 +36,16 @@ public sealed class UsiOptions
     public bool RoundUpToFullSecond { get; set; }
 
     /// <summary>
+    /// 通常時のネットワーク遅延見込み(ミリ秒)。
+    /// </summary>
+    public int NetworkDelayMs { get; set; }
+
+    /// <summary>
+    /// 切れ負け回避用の最大ネットワーク遅延見込み(ミリ秒)。
+    /// </summary>
+    public int NetworkDelay2Ms { get; set; }
+
+    /// <summary>
     /// 既定の探索スレッド数。
     /// </summary>
     public int Threads { get; set; } = 1;

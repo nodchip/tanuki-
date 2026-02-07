@@ -57,8 +57,11 @@ public sealed class TimeManagement
         int inc = limits.IncMs[sideIndex];
         int byoyomi = limits.ByoyomiMs;
         int safetyMargin = ComputeSafetyMargin(remain, byoyomi);
-        int hardLimit = Math.Max(0, remain + inc + byoyomi - limits.MoveOverheadMs);
-        int available = Math.Max(0, hardLimit - safetyMargin);
+        int hardLimit = Math.Max(0, remain + inc + byoyomi - limits.MoveOverheadMs - limits.NetworkDelay2Ms);
+        int softMargin = limits.NetworkDelayMs > 0 || limits.NetworkDelay2Ms > 0
+            ? limits.NetworkDelayMs
+            : safetyMargin;
+        int available = Math.Max(0, hardLimit - softMargin);
         if (available <= 0)
         {
             MinimumTimeMs = 0;
