@@ -45,7 +45,7 @@ public sealed class TimeManagement
 
         if (limits.MoveTimeMs > 0)
         {
-            int fixedMs = limits.MoveTimeMs;
+            int fixedMs = Math.Max(0, limits.MoveTimeMs - limits.MoveOverheadMs);
             MinimumTimeMs = fixedMs;
             OptimumTimeMs = fixedMs;
             MaximumTimeMs = fixedMs;
@@ -57,7 +57,7 @@ public sealed class TimeManagement
         int inc = limits.IncMs[sideIndex];
         int byoyomi = limits.ByoyomiMs;
         int safetyMargin = ComputeSafetyMargin(remain, byoyomi);
-        int available = Math.Max(0, remain + inc + byoyomi - safetyMargin);
+        int available = Math.Max(0, remain + inc + byoyomi - safetyMargin - limits.MoveOverheadMs);
         if (available <= 0)
         {
             MinimumTimeMs = 0;

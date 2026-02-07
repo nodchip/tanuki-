@@ -93,6 +93,7 @@ public sealed class UsiEngine
                 $"id author {author}\n" +
                 "option name Depth type spin default 64 min 1 max 128\n" +
                 "option name MoveTime type spin default 1000 min 1 max 600000\n" +
+                "option name MoveOverhead type spin default 0 min 0 max 10000\n" +
                 "option name Threads type spin default 1 min 1 max 256\n" +
                 "option name Hash type spin default 64 min 1 max 8192\n" +
                 "option name Ponder type check default false\n" +
@@ -238,6 +239,14 @@ public sealed class UsiEngine
             AddInfo($"MoveTime={moveTime}");
         }
 
+        if (optionName.Equals("MoveOverhead", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(optionValue, out int moveOverhead)
+            && moveOverhead >= 0)
+        {
+            options.MoveOverheadMs = moveOverhead;
+            AddInfo($"MoveOverhead={moveOverhead}");
+        }
+
         if (optionName.Equals("Threads", StringComparison.OrdinalIgnoreCase)
             && int.TryParse(optionValue, out int threads)
             && threads > 0)
@@ -370,6 +379,7 @@ public sealed class UsiEngine
         {
             StartTime = DateTimeOffset.UtcNow,
             Depth = options.DefaultDepth,
+            MoveOverheadMs = options.MoveOverheadMs,
         };
 
         for (int i = 1; i < parts.Length; i++)

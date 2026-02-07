@@ -50,6 +50,24 @@ public class TimeManagementTests
     }
 
     /// <summary>
+    /// MoveOverhead指定時に持ち時間配分が短縮されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Init_WithByoyomiAndMoveOverhead_SubtractsOverhead()
+    {
+        var limits = new LimitsType
+        {
+            ByoyomiMs = 2000,
+            MoveOverheadMs = 100,
+        };
+        var sut = new TimeManagement();
+
+        sut.Init(limits, Color.BLACK);
+
+        Assert.AreEqual(1850, sut.MaximumTimeMs);
+    }
+
+    /// <summary>
     /// 残り時間と加算指定時に手番側の時間で配分されることを検証する。
     /// </summary>
     [TestMethod]

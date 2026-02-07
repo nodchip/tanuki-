@@ -19,6 +19,11 @@ public sealed class LimitsType
     public int ByoyomiMs { get; set; }
 
     /// <summary>
+    /// 1手ごとの固定オーバーヘッド(ミリ秒)を保持する。
+    /// </summary>
+    public int MoveOverheadMs { get; set; }
+
+    /// <summary>
     /// 蝗ｺ螳壽晁・凾髢・繝溘Μ遘・繧剃ｿ晄戟縺吶ｋ縲・    /// </summary>
     public int MoveTimeMs { get; set; }
 

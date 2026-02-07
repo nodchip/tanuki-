@@ -219,6 +219,7 @@ public class UsiProtocolTests
 
         StringAssert.Contains(response, "option name Depth type spin");
         StringAssert.Contains(response, "option name MoveTime type spin");
+        StringAssert.Contains(response, "option name MoveOverhead type spin");
         StringAssert.Contains(response, "option name Threads type spin");
         StringAssert.Contains(response, "option name Hash type spin");
         StringAssert.Contains(response, "option name Ponder type check");
@@ -303,6 +304,20 @@ public class UsiProtocolTests
         engine.HandleCommand("go byoyomi 2000");
 
         Assert.AreEqual(1950, engine.LastSearchTimeLimitMs);
+    }
+
+    /// <summary>
+    /// MoveOverhead指定時にgo byoyomiの時間上限が短縮されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionMoveOverhead_AffectsByoyomiTimeLimit()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name MoveOverhead value 100");
+
+        engine.HandleCommand("go byoyomi 2000");
+
+        Assert.AreEqual(1850, engine.LastSearchTimeLimitMs);
     }
 
     /// <summary>

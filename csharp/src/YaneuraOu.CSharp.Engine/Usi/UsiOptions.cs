@@ -16,6 +16,11 @@ public sealed class UsiOptions
     public int DefaultMoveTimeMs { get; set; } = 1000;
 
     /// <summary>
+    /// 1手あたりの固定オーバーヘッド(ミリ秒)。
+    /// </summary>
+    public int MoveOverheadMs { get; set; }
+
+    /// <summary>
     /// 既定の探索スレッド数。
     /// </summary>
     public int Threads { get; set; } = 1;
