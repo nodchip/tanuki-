@@ -34,3 +34,10 @@
 - 深さ固定で実行する場合は `-Depth 1`（既定値）を使用する。
 - 秒読み系で実行する場合は `-ByoyomiMs 1000` のように指定する。
 - スクリプトは `bestmove` 応答数と例外文字列を自動検証し、異常時は終了コード1を返す。
+
+## 7. NNUE parity strict
+- C++版エンジン実行ファイルを `source/YaneuraOu-by-gcc.exe` に配置する。
+- `eval/nn.bin` を配置する。
+- PowerShell で `csharp/tools/nnue/RunNnueParityStrict.ps1` を実行する。
+- 既定で `600` 局面を生成し、`eval/nnue-parity-cases.jsonl` を作成する。
+- strictテストは `NNUE_PARITY_STRICT=1` を一時設定して `NnueParityTests` のみ実行する。
