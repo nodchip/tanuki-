@@ -291,6 +291,36 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// 再現ログ局面でgo byoyomi 3000を実行した際に深さ情報が進行することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_ReproPositionByoyomi3000_EmitsProgressiveDepthInfo()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        var outputs = new List<string>();
+        engine.OutputSink = outputs.Add;
+        engine.HandleCommand("position startpos moves 3i3h 3c3d 2g2f 4a3b 7g7f 2b8h+ 7i8h 3a2b 5i5h 2b3c 8g8f 8c8d");
+
+        string response = engine.HandleCommand("go btime 0 wtime 0 byoyomi 3000");
+
+        Assert.IsTrue(response.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Any(line => line.StartsWith("bestmove ", StringComparison.Ordinal)));
+
+        List<int> depths = outputs
+            .Where(line => line.StartsWith("info depth ", StringComparison.Ordinal))
+            .Select(ParseDepthFromInfoLine)
+            .Where(depth => depth > 0)
+            .ToList();
+
+        Assert.IsTrue(depths.Count >= 2);
+        Assert.IsTrue(depths[^1] >= 2);
+        for (int i = 1; i < depths.Count; i++)
+        {
+            Assert.IsTrue(depths[i] >= depths[i - 1]);
+        }
+    }
+
+    /// <summary>
     /// go持ち時間指定時に手番側の時間から上限を算出することを検証する。
     /// </summary>
     [TestMethod]
@@ -440,5 +470,19 @@ public class UsiProtocolTests
 
         Assert.AreEqual(string.Empty, response);
         Assert.IsFalse(engine.ShouldQuit);
+    }
+
+    /// <summary>
+    /// info depth行から深さを抽出する。
+    /// </summary>
+    private static int ParseDepthFromInfoLine(string line)
+    {
+        string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 3)
+        {
+            return 0;
+        }
+
+        return int.TryParse(parts[2], out int depth) ? depth : 0;
     }
 }
