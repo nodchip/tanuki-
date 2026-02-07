@@ -9,7 +9,7 @@ namespace YaneuraOu.CSharp.Engine.Core;
 
 public sealed class Position
 {
-    public const string StartSfen = "lnsgkgsnl/1r5b1/p1pppp1pp/6p2/9/2P6/PP1PPPPPP/1B5R1/LNSGKGSNL b - 1";
+    public const string StartSfen = "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1";
     private const int MaxRepetitionPly = 16;
     private static bool zobristInitialized;
 
