@@ -208,3 +208,7 @@
 - `OutputSink` を導入し、`Program` で標準出力へ接続。
 - 出力項目: `depth/seldepth/score(cp|mate)/nodes/nps/time/hashfull/currmove/pv`。
 - `score mate` 判定閾値: `abs(score) >= 100000 - 512`。
+
+## 12. 追加実施ログ（2026-02-07）
+- `SelfPlaySmoke.ps1` を拡張し、`-Depth` / `-ByoyomiMs` を切替指定可能にした。
+- スモーク実行後に `bestmove` 応答件数と例外文字列を自動検証し、異常時に終了コード1を返すようにした。
