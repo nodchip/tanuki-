@@ -86,4 +86,19 @@ public class SearcherBasicTests
 
         Assert.IsTrue(searcher.LastTranspositionHitCount > 0);
     }
+
+    [TestMethod]
+    /// <summary>
+    /// 手番側の玉が不在の局面では大差負け評価を返すことを検証する。
+    /// </summary>
+    public void Search_SideToMoveKingMissing_ReturnsLargeNegativeScore()
+    {
+        var pos = new Position();
+        pos.set("4k4/9/9/9/9/9/9/9/9 b - 1", new StateInfo());
+        var searcher = new Searcher();
+
+        SearchResult result = searcher.Search(pos, new SearchLimits { Depth = 1 });
+
+        Assert.IsTrue(result.Score <= -90_000);
+    }
 }

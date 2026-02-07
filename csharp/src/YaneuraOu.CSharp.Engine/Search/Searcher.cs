@@ -100,6 +100,12 @@ public sealed class Searcher
     {
         nodes++;
 
+        int terminal = EvaluateTerminal(position, depth);
+        if (terminal != int.MinValue)
+        {
+            return terminal;
+        }
+
         ulong key = position.state().key().ToUInt64();
         if (TryProbeTransposition(key, depth, out int ttScore, out Move ttMove))
         {
@@ -107,19 +113,19 @@ public sealed class Searcher
             return ttScore;
         }
 
+        MoveList legal = MoveGenerator.GenerateLegal(position);
+        if (legal.Count == 0)
+        {
+            int noLegal = position.in_check() ? -MateScore + depth : 0;
+            StoreTransposition(key, depth, noLegal, Move.none());
+            return noLegal;
+        }
+
         if (depth <= 0)
         {
             int q = Quiescence(position, alpha, beta, ref nodes);
             StoreTransposition(key, 0, q, Move.none());
             return q;
-        }
-
-        MoveList legal = MoveGenerator.GenerateLegal(position);
-        if (legal.Count == 0)
-        {
-            int terminal = position.in_check() ? -MateScore + depth : 0;
-            StoreTransposition(key, depth, terminal, Move.none());
-            return terminal;
         }
 
         int best = alpha;
@@ -158,6 +164,27 @@ public sealed class Searcher
 
         StoreTransposition(key, depth, best, bestMove);
         return best;
+    }
+
+    /// <summary>
+    /// 早期終局判定を行い、非終局ならint.MinValueを返す。
+    /// </summary>
+    private int EvaluateTerminal(Position position, int depth)
+    {
+        Color us = position.side_to_move();
+        Color them = us == Color.BLACK ? Color.WHITE : Color.BLACK;
+
+        if (position.king_square(us) == Square.SQ_NB)
+        {
+            return -MateScore + depth;
+        }
+
+        if (position.king_square(them) == Square.SQ_NB)
+        {
+            return MateScore - depth;
+        }
+
+        return int.MinValue;
     }
 
     /// <summary>
