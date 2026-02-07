@@ -62,8 +62,11 @@ public sealed class TimeManagement
             return;
         }
 
-        int baseTime = remain > 0 ? Math.Max(1, remain / 30) : 0;
-        int reserve = remain > 0 ? Math.Max(1, remain / 8) : available;
+        int movesToGo = limits.MovesToGo > 0 ? limits.MovesToGo : 30;
+        int baseTime = remain > 0 ? Math.Max(1, remain / Math.Max(1, movesToGo)) : 0;
+        int reserve = remain > 0
+            ? (limits.MovesToGo > 0 ? Math.Max(1, remain / Math.Max(1, limits.MovesToGo)) : Math.Max(1, remain / 8))
+            : available;
         int optimum = baseTime + inc + byoyomi;
         if (optimum <= 0)
         {

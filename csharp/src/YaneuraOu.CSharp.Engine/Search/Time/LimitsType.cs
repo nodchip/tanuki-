@@ -1,75 +1,68 @@
-using YaneuraOu.CSharp.Engine.Core.Types;
+﻿using YaneuraOu.CSharp.Engine.Core.Types;
 
 namespace YaneuraOu.CSharp.Engine.Search.Time;
 
 /// <summary>
-/// USIのgoコマンドから構築される探索制約を表すクラス。
-/// </summary>
+/// USI縺ｮgo繧ｳ繝槭Φ繝峨°繧画ｧ狗ｯ峨＆繧後ｋ謗｢邏｢蛻ｶ邏・ｒ陦ｨ縺吶け繝ｩ繧ｹ縲・/// </summary>
 public sealed class LimitsType
 {
     /// <summary>
-    /// 先手/後手の残り時間(ミリ秒)を保持する。
-    /// </summary>
+    /// 蜈域焔/蠕梧焔縺ｮ谿九ｊ譎る俣(繝溘Μ遘・繧剃ｿ晄戟縺吶ｋ縲・    /// </summary>
     public int[] TimeMs { get; } = new int[2];
 
     /// <summary>
-    /// 先手/後手の加算時間(ミリ秒)を保持する。
-    /// </summary>
+    /// 蜈域焔/蠕梧焔縺ｮ蜉邂玲凾髢・繝溘Μ遘・繧剃ｿ晄戟縺吶ｋ縲・    /// </summary>
     public int[] IncMs { get; } = new int[2];
 
     /// <summary>
-    /// 秒読み(ミリ秒)を保持する。
-    /// </summary>
+    /// 遘定ｪｭ縺ｿ(繝溘Μ遘・繧剃ｿ晄戟縺吶ｋ縲・    /// </summary>
     public int ByoyomiMs { get; set; }
 
     /// <summary>
-    /// 固定思考時間(ミリ秒)を保持する。
-    /// </summary>
+    /// 蝗ｺ螳壽晁・凾髢・繝溘Μ遘・繧剃ｿ晄戟縺吶ｋ縲・    /// </summary>
     public int MoveTimeMs { get; set; }
 
     /// <summary>
-    /// 探索深さ上限を保持する。
-    /// </summary>
+    /// 謗｢邏｢豺ｱ縺穂ｸ企剞繧剃ｿ晄戟縺吶ｋ縲・    /// </summary>
     public int Depth { get; set; }
 
     /// <summary>
-    /// ノード数上限を保持する。0以下は無制限。
-    /// </summary>
+    /// 繝弱・繝画焚荳企剞繧剃ｿ晄戟縺吶ｋ縲・莉･荳九・辟｡蛻ｶ髯舌・    /// </summary>
     public long Nodes { get; set; }
 
     /// <summary>
-    /// mate探索指定値を保持する。0以下は未指定。
-    /// </summary>
+    /// mate謗｢邏｢謖・ｮ壼､繧剃ｿ晄戟縺吶ｋ縲・莉･荳九・譛ｪ謖・ｮ壹・    /// </summary>
     public int Mate { get; set; }
 
     /// <summary>
-    /// 無制限探索かどうかを保持する。
+    /// 残り手数指定を保持する。0以下は未指定。
     /// </summary>
+    public int MovesToGo { get; set; }
+
+    /// <summary>
+    /// 辟｡蛻ｶ髯先爾邏｢縺九←縺・°繧剃ｿ晄戟縺吶ｋ縲・    /// </summary>
     public bool Infinite { get; set; }
 
     /// <summary>
-    /// ponder探索かどうかを保持する。
-    /// </summary>
+    /// ponder謗｢邏｢縺九←縺・°繧剃ｿ晄戟縺吶ｋ縲・    /// </summary>
     public bool Ponder { get; set; }
 
     /// <summary>
-    /// 探索開始時刻を保持する。
-    /// </summary>
+    /// 謗｢邏｢髢句ｧ区凾蛻ｻ繧剃ｿ晄戟縺吶ｋ縲・    /// </summary>
     public DateTimeOffset StartTime { get; set; } = DateTimeOffset.UtcNow;
 
     /// <summary>
-    /// 先手/後手の残り時間を設定する。
-    /// </summary>
+    /// 蜈域焔/蠕梧焔縺ｮ谿九ｊ譎る俣繧定ｨｭ螳壹☆繧九・    /// </summary>
     public void SetTime(Color side, int milliseconds)
     {
         TimeMs[(int)side] = Math.Max(0, milliseconds);
     }
 
     /// <summary>
-    /// 先手/後手の加算時間を設定する。
-    /// </summary>
+    /// 蜈域焔/蠕梧焔縺ｮ蜉邂玲凾髢薙ｒ險ｭ螳壹☆繧九・    /// </summary>
     public void SetIncrement(Color side, int milliseconds)
     {
         IncMs[(int)side] = Math.Max(0, milliseconds);
     }
 }
+

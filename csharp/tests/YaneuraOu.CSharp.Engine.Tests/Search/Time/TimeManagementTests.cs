@@ -65,4 +65,24 @@ public class TimeManagementTests
         Assert.AreEqual(400, sut.OptimumTimeMs);
         Assert.AreEqual(400, sut.MaximumTimeMs);
     }
+
+    /// <summary>
+    /// movestogo指定時に残り手数を考慮した配分になることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Init_WithMovesToGo_UsesShortHorizonBudget()
+    {
+        var limits = new LimitsType
+        {
+            MovesToGo = 10,
+        };
+        limits.SetTime(Color.BLACK, 3000);
+        limits.SetIncrement(Color.BLACK, 300);
+        var sut = new TimeManagement();
+
+        sut.Init(limits, Color.BLACK);
+
+        Assert.AreEqual(600, sut.OptimumTimeMs);
+        Assert.AreEqual(600, sut.MaximumTimeMs);
+    }
 }

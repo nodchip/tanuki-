@@ -418,6 +418,10 @@ public sealed class UsiEngine
                     limits.Mate = Math.Max(0, value);
                     i++;
                     break;
+                case "movestogo":
+                    limits.MovesToGo = Math.Max(0, value);
+                    i++;
+                    break;
             }
         }
 

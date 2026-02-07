@@ -382,6 +382,19 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// go movestogo指定時に残り手数を考慮した時間上限が使われることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GoWithMovesToGo_UsesShortHorizonTimeLimit()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+
+        engine.HandleCommand("go btime 3000 wtime 3000 binc 300 movestogo 10");
+
+        Assert.AreEqual(600, engine.LastSearchTimeLimitMs);
+    }
+
+    /// <summary>
     /// Threadsオプション設定がgo実行時の探索設定へ反映されることを検証する。
     /// </summary>
     [TestMethod]
