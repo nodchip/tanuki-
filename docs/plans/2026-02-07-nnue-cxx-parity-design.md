@@ -76,6 +76,8 @@
    - `powershell -ExecutionPolicy Bypass -File csharp/tools/nnue/GenerateNnueParityCases.ps1 -EnginePath source/YaneuraOu-by-gcc.exe -EvalDir ../eval -OutFile eval/nnue-parity-cases.jsonl`
 3. C#側の一致テストを実行する。
    - `dotnet test csharp/YaneuraOu.CSharp.sln --filter "FullyQualifiedName~NnueParityTests" -v minimal`
+4. 一括ワークフロー（生成 + strict照合）を実行する。
+   - `powershell -ExecutionPolicy Bypass -File csharp/tools/nnue/RunNnueParityStrict.ps1 -EnginePath source/YaneuraOu-by-gcc.exe -EvalDir ../eval -CasesOutFile eval/nnue-parity-cases.jsonl`
 
 ## 12. 照合ログ（2026-02-07）
 - C++ `YANEURAOU_ENGINE_NNUE` を `source/YaneuraOu-by-gcc.exe` としてビルド確認。
