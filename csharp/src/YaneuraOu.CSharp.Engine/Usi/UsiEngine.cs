@@ -99,6 +99,7 @@ public sealed class UsiEngine
                 "option name MultiPV type spin default 1 min 1 max 16\n" +
                 "option name USI_AnalyseMode type check default false\n" +
                 "option name DebugLog type check default false\n" +
+                "option name NnueIncrementalStrict type check default false\n" +
                 "option name EvalFile type string default \n" +
                 "usiok";
             return FlushInfo(response);
@@ -279,10 +280,24 @@ public sealed class UsiEngine
             AddInfo($"DebugLog={options.DebugLog.ToString().ToLowerInvariant()}");
         }
 
+        if (optionName.Equals("NnueIncrementalStrict", StringComparison.OrdinalIgnoreCase))
+        {
+            options.NnueIncrementalStrict = ParseBooleanOption(optionValue);
+            AddInfo($"NnueIncrementalStrict={options.NnueIncrementalStrict.ToString().ToLowerInvariant()}");
+            if (!string.IsNullOrWhiteSpace(options.EvalFilePath))
+            {
+                nnueBackend = nnueLoader.Load(options.EvalFilePath, options.NnueIncrementalStrict);
+                searcher = CreateSearcher();
+                AddInfo(nnueBackend.IsEnabled
+                    ? $"NNUE reloaded strict={options.NnueIncrementalStrict.ToString().ToLowerInvariant()}: {options.EvalFilePath}"
+                    : $"NNUE disabled: failed to load {options.EvalFilePath}");
+            }
+        }
+
         if (optionName.Equals("EvalFile", StringComparison.OrdinalIgnoreCase))
         {
             options.EvalFilePath = optionValue;
-            nnueBackend = nnueLoader.Load(optionValue);
+            nnueBackend = nnueLoader.Load(optionValue, options.NnueIncrementalStrict);
             searcher = CreateSearcher();
             AddInfo(nnueBackend.IsEnabled
                 ? $"NNUE enabled: {optionValue}"

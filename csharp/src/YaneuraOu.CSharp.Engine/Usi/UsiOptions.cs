@@ -49,4 +49,9 @@ public sealed class UsiOptions
     /// デバッグログ出力を有効化するかどうか。
     /// </summary>
     public bool DebugLog { get; set; }
+
+    /// <summary>
+    /// NNUE増分評価の厳密照合を有効化するかどうか。
+    /// </summary>
+    public bool NnueIncrementalStrict { get; set; }
 }

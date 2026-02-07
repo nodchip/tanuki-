@@ -19,6 +19,11 @@ public sealed class NnueModelLoader
     /// </summary>
     public INnueBackend Load(string modelPath)
     {
+        return Load(modelPath, false);
+    }
+
+    public INnueBackend Load(string modelPath, bool verifyIncremental)
+    {
         if (string.IsNullOrWhiteSpace(modelPath) || !File.Exists(modelPath))
         {
             return new NullNnueBackend();
@@ -54,7 +59,7 @@ public sealed class NnueModelLoader
                 return new NullNnueBackend();
             }
 
-            return new FileNnueBackend(model);
+            return new FileNnueBackend(model, verifyIncremental);
         }
         catch (IOException)
         {

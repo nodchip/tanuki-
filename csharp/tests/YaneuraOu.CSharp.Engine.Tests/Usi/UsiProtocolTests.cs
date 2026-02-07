@@ -225,6 +225,7 @@ public class UsiProtocolTests
         StringAssert.Contains(response, "option name MultiPV type spin");
         StringAssert.Contains(response, "option name USI_AnalyseMode type check");
         StringAssert.Contains(response, "option name DebugLog type check");
+        StringAssert.Contains(response, "option name NnueIncrementalStrict type check");
     }
 
     /// <summary>
@@ -482,6 +483,20 @@ public class UsiProtocolTests
         string response = engine.HandleCommand("setoption name Hash value 128");
 
         StringAssert.Contains(response, "info string Hash=128");
+    }
+
+    /// <summary>
+    /// NnueIncrementalStrictオプション設定を受理してinfo stringに反映することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionNnueIncrementalStrict_EmitsInfoString()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+
+        string response = engine.HandleCommand("setoption name NnueIncrementalStrict value true");
+
+        StringAssert.Contains(response, "info string NnueIncrementalStrict=true");
     }
 
     /// <summary>

@@ -56,6 +56,40 @@ public class NnueModelLoaderTests
     }
 
     /// <summary>
+    /// strict指定で読み込んだNNUEバックエンドが照合統計を更新することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Load_ExistingFileWithStrictEnabled_CollectsVerificationStats()
+    {
+        string modelPath = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllBytes(modelPath, BuildValidMinimalNnueBinary());
+            var loader = new NnueModelLoader();
+            var position = new Position();
+            position.set(Position.StartSfen, new StateInfo());
+
+            INnueBackend backend = loader.Load(modelPath, true);
+            Assert.IsTrue(backend.IsEnabled);
+            Assert.IsInstanceOfType<IIncrementalNnueBackend>(backend);
+
+            var incremental = (IIncrementalNnueBackend)backend;
+            incremental.ResetIncrementalState(position);
+            _ = backend.Evaluate(position);
+            NnueIncrementalStats stats = incremental.GetStats();
+
+            Assert.IsTrue(stats.VerificationCount > 0);
+        }
+        finally
+        {
+            if (File.Exists(modelPath))
+            {
+                File.Delete(modelPath);
+            }
+        }
+    }
+
+    /// <summary>
     /// NNUEヘッダのみの不完全バイナリを読み込んだ場合に無効バックエンドを返すことを検証する。
     /// </summary>
     [TestMethod]
@@ -265,5 +299,60 @@ public class NnueModelLoaderTests
         archBytes.CopyTo(bytes, 12);
 
         return bytes;
+    }
+
+    /// <summary>
+    /// strictモードの単体テスト用に最小限の有効NNUEバイナリを生成する。
+    /// </summary>
+    private static byte[] BuildValidMinimalNnueBinary()
+    {
+        const string architecture = "Features=HalfKP(Friend)[125388 -> 256x2],Network=AffineTransform[32<-512](ClippedReLU[32](AffineTransform[32<-32](ClippedReLU[32](AffineTransform[32<-512](InputSlice[512(0:512)])))))";
+        byte[] archBytes = System.Text.Encoding.ASCII.GetBytes(architecture);
+
+        var model = new NnueModel();
+        var bytes = new List<byte>(2_700_000);
+
+        bytes.AddRange(BitConverter.GetBytes(NnueHeaderVersion));
+        bytes.AddRange(BitConverter.GetBytes(0x12345678u));
+        bytes.AddRange(BitConverter.GetBytes((uint)archBytes.Length));
+        bytes.AddRange(archBytes);
+
+        bytes.AddRange(new byte[4]);
+        foreach (short value in model.FtBiases)
+        {
+            bytes.AddRange(BitConverter.GetBytes(value));
+        }
+
+        foreach (short value in model.FtWeights)
+        {
+            bytes.AddRange(BitConverter.GetBytes(value));
+        }
+
+        bytes.AddRange(new byte[4]);
+        foreach (int value in model.Layer1Biases)
+        {
+            bytes.AddRange(BitConverter.GetBytes(value));
+        }
+
+        foreach (sbyte value in model.Layer1Weights)
+        {
+            bytes.Add(unchecked((byte)value));
+        }
+        foreach (int value in model.Layer2Biases)
+        {
+            bytes.AddRange(BitConverter.GetBytes(value));
+        }
+
+        foreach (sbyte value in model.Layer2Weights)
+        {
+            bytes.Add(unchecked((byte)value));
+        }
+        bytes.AddRange(BitConverter.GetBytes(model.OutputBias));
+        foreach (sbyte value in model.OutputWeights)
+        {
+            bytes.Add(unchecked((byte)value));
+        }
+
+        return bytes.ToArray();
     }
 }
