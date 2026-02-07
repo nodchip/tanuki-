@@ -570,6 +570,31 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// LazySMPで選出結果がnoneのときに非none候補へフォールバックすることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void ResolveLazySmpResult_SelectedNone_FallsBackToNonNone()
+    {
+        MethodInfo? method = typeof(UsiEngine).GetMethod(
+            "ResolveLazySmpResult",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.IsNotNull(method);
+
+        SearchResult[] workers =
+        [
+            new SearchResult(Move.none(), int.MinValue, 0, 1),
+            new SearchResult(new Move(0x2345), 50, 500, 2),
+            new SearchResult(Move.none(), int.MinValue, 0, 1),
+        ];
+        SearchResult selected = workers[0];
+
+        object? result = method.Invoke(null, [workers, selected]);
+        Assert.IsNotNull(result);
+        SearchResult resolved = (SearchResult)result;
+        Assert.AreEqual(workers[1].BestMove.to_u32(), resolved.BestMove.to_u32());
+    }
+
+    /// <summary>
     /// LazySMP有効時でも秒読み超過が過大にならないことを検証する。
     /// </summary>
     [TestMethod]

@@ -29,6 +29,7 @@ public sealed class UsiEngine
     private CancellationTokenSource? thinkingCts;
     private readonly object thinkingLock = new();
     private readonly List<string> infoMessages = new();
+    private readonly List<Searcher> lazySmpSearchers = new();
     private readonly TimeManagement timeManagement = new();
     private bool isPondering;
     private LimitsType? lastLimits;
@@ -298,6 +299,7 @@ public sealed class UsiEngine
         {
             options.UseNullMovePruning = ParseBooleanOption(optionValue);
             searcher = CreateSearcher();
+            InvalidateLazySmpSearchers();
             AddInfo($"UseNullMovePruning={options.UseNullMovePruning.ToString().ToLowerInvariant()}");
         }
 
@@ -305,6 +307,7 @@ public sealed class UsiEngine
         {
             options.UseLmr = ParseBooleanOption(optionValue);
             searcher = CreateSearcher();
+            InvalidateLazySmpSearchers();
             AddInfo($"UseLmr={options.UseLmr.ToString().ToLowerInvariant()}");
         }
 
@@ -312,6 +315,7 @@ public sealed class UsiEngine
         {
             options.UseAspirationWindow = ParseBooleanOption(optionValue);
             searcher = CreateSearcher();
+            InvalidateLazySmpSearchers();
             AddInfo($"UseAspirationWindow={options.UseAspirationWindow.ToString().ToLowerInvariant()}");
         }
 
@@ -365,6 +369,7 @@ public sealed class UsiEngine
             {
                 nnueBackend = nnueLoader.Load(options.EvalFilePath, options.NnueIncrementalStrict);
                 searcher = CreateSearcher();
+                InvalidateLazySmpSearchers();
                 AddInfo(nnueBackend.IsEnabled
                     ? $"NNUE reloaded strict={options.NnueIncrementalStrict.ToString().ToLowerInvariant()}: {options.EvalFilePath}"
                     : $"NNUE disabled: failed to load {options.EvalFilePath}");
@@ -376,6 +381,7 @@ public sealed class UsiEngine
             options.EvalFilePath = optionValue;
             nnueBackend = nnueLoader.Load(optionValue, options.NnueIncrementalStrict);
             searcher = CreateSearcher();
+            InvalidateLazySmpSearchers();
             AddInfo(nnueBackend.IsEnabled
                 ? $"NNUE enabled: {optionValue}"
                 : $"NNUE disabled: failed to load {optionValue}");
@@ -703,6 +709,7 @@ public sealed class UsiEngine
 
         AddInfo($"lazysmp workers={workers}");
         string rootSfen = position.sfen();
+        EnsureLazySmpSearchers(workers);
         var sharedTimer = Stopwatch.StartNew();
         Func<bool> sharedStop = () =>
         {
@@ -722,7 +729,7 @@ public sealed class UsiEngine
             {
                 var workerPosition = new Position();
                 workerPosition.set(rootSfen, new StateInfo());
-                Searcher workerSearcher = CreateParallelWorkerSearcher();
+                Searcher workerSearcher = lazySmpSearchers[capturedWorkerId];
                 SearchLimits workerLimits = CloneWorkerLimits(limits, sharedStop);
                 int latestPvLength = 0;
                 int latestCompletedDepth = 0;
@@ -768,9 +775,14 @@ public sealed class UsiEngine
         }
 
         (int WorkerId, SearchResult Result, int PvLength, int CompletedDepth) selected = tasks[winnerIndex].Result;
+        SearchResult resolved = ResolveLazySmpResult(workerResults, selected.Result);
+        if (resolved.BestMove.to_u32() != selected.Result.BestMove.to_u32())
+        {
+            AddInfo("lazysmp fallback to non-resign worker");
+        }
 
         AddInfo($"lazysmp selected_worker={selected.WorkerId} score={selected.Result.Score} depth={selected.Result.Depth}");
-        return selected.Result;
+        return resolved;
     }
 
     /// <summary>
@@ -790,6 +802,25 @@ public sealed class UsiEngine
         };
 
         return new Searcher(evaluator, features);
+    }
+
+    /// <summary>
+    /// LazySMP用の探索器を必要数まで確保する。
+    /// </summary>
+    private void EnsureLazySmpSearchers(int workers)
+    {
+        while (lazySmpSearchers.Count < workers)
+        {
+            lazySmpSearchers.Add(CreateParallelWorkerSearcher());
+        }
+    }
+
+    /// <summary>
+    /// LazySMP用探索器キャッシュを無効化する。
+    /// </summary>
+    private void InvalidateLazySmpSearchers()
+    {
+        lazySmpSearchers.Clear();
     }
 
     /// <summary>
@@ -880,6 +911,27 @@ public sealed class UsiEngine
         }
 
         return best;
+    }
+
+    /// <summary>
+    /// LazySMPの選出結果を安全に確定する。
+    /// </summary>
+    private static SearchResult ResolveLazySmpResult(SearchResult[] workers, SearchResult selected)
+    {
+        if (selected.BestMove.to_u32() != Move.none().to_u32())
+        {
+            return selected;
+        }
+
+        for (int i = 0; i < workers.Length; i++)
+        {
+            if (workers[i].BestMove.to_u32() != Move.none().to_u32())
+            {
+                return workers[i];
+            }
+        }
+
+        return selected;
     }
 
     /// <summary>
