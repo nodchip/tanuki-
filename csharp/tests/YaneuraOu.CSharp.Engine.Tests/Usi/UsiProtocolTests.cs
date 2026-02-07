@@ -299,4 +299,32 @@ public class UsiProtocolTests
 
         Assert.AreEqual(4, engine.LastSearchThreads);
     }
+
+    /// <summary>
+    /// ponderhitコマンドを受理できることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_PonderHit_IsAccepted()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+
+        string response = engine.HandleCommand("ponderhit");
+
+        Assert.AreEqual(string.Empty, response);
+        Assert.IsFalse(engine.ShouldQuit);
+    }
+
+    /// <summary>
+    /// gameoverコマンドを受理できることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GameOver_IsAccepted()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+
+        string response = engine.HandleCommand("gameover lose");
+
+        Assert.AreEqual(string.Empty, response);
+        Assert.IsFalse(engine.ShouldQuit);
+    }
 }
