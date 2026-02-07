@@ -1,4 +1,5 @@
-﻿using YaneuraOu.CSharp.Engine.Usi;
+﻿using YaneuraOu.CSharp.Engine.Bench;
+using YaneuraOu.CSharp.Engine.Usi;
 
 namespace YaneuraOu.CSharp.Engine;
 
@@ -8,10 +9,16 @@ namespace YaneuraOu.CSharp.Engine;
 public static class Program
 {
     /// <summary>
-    /// USIコマンドループを開始する。
+    /// プログラムを開始する。
     /// </summary>
     public static void Main(string[] args)
     {
+        if (args.Length > 0 && string.Equals(args[0], "bench", StringComparison.OrdinalIgnoreCase))
+        {
+            RunBench(args);
+            return;
+        }
+
         var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
 
         while (!engine.ShouldQuit)
@@ -34,5 +41,18 @@ public static class Program
                 Console.WriteLine(output);
             }
         }
+    }
+
+    /// <summary>
+    /// ベンチコマンドを実行する。
+    /// </summary>
+    private static void RunBench(string[] args)
+    {
+        int depth = args.Length >= 2 && int.TryParse(args[1], out int parsedDepth) ? parsedDepth : 3;
+        int iterations = args.Length >= 3 && int.TryParse(args[2], out int parsedIterations) ? parsedIterations : 4;
+
+        var runner = new BenchRunner();
+        BenchResult result = runner.Run(depth, iterations);
+        Console.WriteLine($"info string bench depth {result.Depth} iterations {result.Iterations} nodes {result.Nodes} time {result.ElapsedMilliseconds} nps {result.NodesPerSecond}");
     }
 }
