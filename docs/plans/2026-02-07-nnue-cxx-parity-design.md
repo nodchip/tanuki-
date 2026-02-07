@@ -94,7 +94,7 @@
 - 厳密照合（`NNUE_PARITY_STRICT=1`）実行結果:
   - `dotnet test csharp/YaneuraOu.CSharp.sln --filter "FullyQualifiedName~NnueParityTests" -v minimal`
   - 結果: 1件合格 / 失敗0
-- strict実行時の見かけ上GREEN防止として、`NnueParityTests` に最小件数ガードを追加（`MinimumStrictCases = 40`）。
+- strict実行時の見かけ上GREEN防止として、`NnueParityTests` に最小件数ガードを追加（`MinimumStrictCases = 100`）。
 
 ## 14. 照合ログ（2026-02-07 追加）
 - `SfenSampler` により合法局面をランダム生成するCLIを追加。
@@ -102,3 +102,9 @@
 - parity一括実行スクリプトを拡張し、`GenerateSfenCount` 指定で「SFEN生成→JSONL生成→strict照合」を1コマンド化。
   - `powershell -ExecutionPolicy Bypass -File csharp/tools/nnue/RunNnueParityStrict.ps1 -EnginePath source/YaneuraOu-by-gcc.exe -EvalDir ../eval -CasesOutFile eval/nnue-parity-cases.jsonl -GenerateSfenCount 40 -GenerateSfenSeed 20260207 -GenerateSfenMinPlies 8 -GenerateSfenMaxPlies 40`
 - 上記実行で `eval/nnue-parity-cases.jsonl` を40件に更新し、`NNUE_PARITY_STRICT=1` で一致を確認。
+
+## 15. 照合ログ（2026-02-07 追加）
+- parityケースを100件へ拡張。
+  - `dotnet run --project csharp/src/YaneuraOu.CSharp.Engine -- parity-sfen 100 20260207 8 60 eval/nnue-parity-sfens.txt`
+  - `powershell -ExecutionPolicy Bypass -File csharp/tools/nnue/GenerateNnueParityCases.ps1 -EnginePath source/YaneuraOu-by-gcc.exe -EvalDir ../eval -OutFile eval/nnue-parity-cases.jsonl -SfenListFile eval/nnue-parity-sfens.txt`
+- strict照合の下限を100件へ引き上げ、`NNUE_PARITY_STRICT=1` で一致を確認。
