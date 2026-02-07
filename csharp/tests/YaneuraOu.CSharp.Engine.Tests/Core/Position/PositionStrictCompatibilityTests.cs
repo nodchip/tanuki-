@@ -122,6 +122,25 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
+    /// pin されている駒が玉との一直線から外れる移動は legal でないことを検証する。
+    /// </summary>
+    public void Legal_PinnedPieceOffLineMove_ReturnsFalse()
+    {
+        var pos = new Position();
+        pos.set("9/9/9/9/9/9/9/9/9 b - 1", new StateInfo());
+        pos.put_piece(Piece.B_KING, Square.SQ_59);
+        pos.put_piece(Piece.W_KING, Square.SQ_11);
+        pos.put_piece(Piece.B_GOLD, Square.SQ_58);
+        pos.put_piece(Piece.W_ROOK, Square.SQ_51);
+
+        Move offLineMove = ShogiTypes.make_move(Square.SQ_58, Square.SQ_48, Piece.B_GOLD);
+
+        Assert.IsTrue(pos.pseudo_legal(offLineMove, true));
+        Assert.IsFalse(pos.legal(offLineMove));
+    }
+
+    [TestMethod]
+    /// <summary>
     /// 擬似合法でない歩打ちでも legal(drop) は true を返すことを検証する。
     /// </summary>
     public void Legal_DropMove_ReturnsTrueEvenWhenPseudoLegalIsFalse()
