@@ -54,10 +54,36 @@ public class NnueModelLoaderTests
     }
 
     /// <summary>
-    /// バイナリ形式のモデルファイルを読み込んだ場合に有効バックエンドを返すことを検証する。
+    /// NNUEヘッダ署名を含むバイナリ形式モデルを読み込んだ場合に有効バックエンドを返すことを検証する。
     /// </summary>
     [TestMethod]
-    public void Load_BinaryFile_ReturnsEnabledBackend()
+    public void Load_BinaryFileWithHeaderSignature_ReturnsEnabledBackend()
+    {
+        string modelPath = Path.GetTempFileName();
+        try
+        {
+            byte[] bytes = CreateSignedBinaryModelBytes(0x1234);
+            File.WriteAllBytes(modelPath, bytes);
+            var loader = new NnueModelLoader();
+
+            INnueBackend backend = loader.Load(modelPath);
+
+            Assert.IsTrue(backend.IsEnabled);
+        }
+        finally
+        {
+            if (File.Exists(modelPath))
+            {
+                File.Delete(modelPath);
+            }
+        }
+    }
+
+    /// <summary>
+    /// NNUEヘッダ署名を持たないバイナリ形式モデルを読み込んだ場合に無効バックエンドを返すことを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Load_BinaryFileWithoutHeaderSignature_ReturnsDisabledBackend()
     {
         string modelPath = Path.GetTempFileName();
         try
@@ -68,7 +94,7 @@ public class NnueModelLoaderTests
 
             INnueBackend backend = loader.Load(modelPath);
 
-            Assert.IsTrue(backend.IsEnabled);
+            Assert.IsFalse(backend.IsEnabled);
         }
         finally
         {
@@ -116,5 +142,17 @@ public class NnueModelLoaderTests
         }
 
         return string.Empty;
+    }
+
+    /// <summary>
+    /// NNUEヘッダ署名を含む最小バイナリモデルを生成する。
+    /// </summary>
+    private static byte[] CreateSignedBinaryModelBytes(int seed)
+    {
+        byte[] bytes = new byte[128];
+        BitConverter.GetBytes(seed).CopyTo(bytes, 0);
+        byte[] signature = System.Text.Encoding.ASCII.GetBytes("Features=HalfKP");
+        signature.CopyTo(bytes, 16);
+        return bytes;
     }
 }

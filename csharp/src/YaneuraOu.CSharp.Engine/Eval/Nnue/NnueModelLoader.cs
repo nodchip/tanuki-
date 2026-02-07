@@ -8,6 +8,8 @@ namespace YaneuraOu.CSharp.Engine.Eval;
 /// </summary>
 public sealed class NnueModelLoader
 {
+    private static readonly byte[] NnueFeatureSignature = Encoding.ASCII.GetBytes("Features=HalfKP");
+
     /// <summary>
     /// モデルファイルを読み込んでNNUEバックエンドを返す。
     /// </summary>
@@ -69,7 +71,43 @@ public sealed class NnueModelLoader
             return false;
         }
 
+        if (!ContainsNnueSignature(data))
+        {
+            return false;
+        }
+
         score = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0, sizeof(int)));
         return true;
+    }
+
+    /// <summary>
+    /// バイナリデータにNNUE特徴量署名が含まれるかを判定する。
+    /// </summary>
+    private static bool ContainsNnueSignature(byte[] data)
+    {
+        if (data.Length < NnueFeatureSignature.Length)
+        {
+            return false;
+        }
+
+        for (int i = 0; i <= data.Length - NnueFeatureSignature.Length; i++)
+        {
+            bool matched = true;
+            for (int j = 0; j < NnueFeatureSignature.Length; j++)
+            {
+                if (data[i + j] != NnueFeatureSignature[j])
+                {
+                    matched = false;
+                    break;
+                }
+            }
+
+            if (matched)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
