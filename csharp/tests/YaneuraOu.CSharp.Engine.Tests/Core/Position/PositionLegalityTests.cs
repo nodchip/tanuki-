@@ -20,7 +20,7 @@ public class PositionLegalityTests
     }
 
     [TestMethod]
-    public void PseudoLegal_PromoteOutsidePromotionZone_ReturnsFalse()
+    public void PseudoLegal_PromoteOutsidePromotionZone_ReturnsTrueForCompatibility()
     {
         var pos = new Position();
         pos.set("4k4/9/9/9/9/9/9/9/4K4 b - 1", new StateInfo());
@@ -28,7 +28,8 @@ public class PositionLegalityTests
 
         Move invalidPromote = ShogiTypes.make_move_promote(Square.SQ_57, Square.SQ_56, Piece.B_PAWN);
 
-        Assert.IsFalse(pos.pseudo_legal(invalidPromote));
+        Assert.IsTrue(pos.pseudo_legal(invalidPromote));
+        Assert.IsFalse(pos.legal_promote(invalidPromote));
     }
 
     [TestMethod]

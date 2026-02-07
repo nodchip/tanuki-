@@ -172,4 +172,40 @@ public class PositionStrictCompatibilityTests
         Assert.IsTrue(pos.pseudo_legal(knightNoPromote, true));
         Assert.IsTrue(pos.pseudo_legal(knightNoPromote, false));
     }
+
+    [TestMethod]
+    /// <summary>
+    /// 成れない駒（玉/金/成駒）の成り指し手は擬似合法でないことを検証する。
+    /// </summary>
+    public void PseudoLegal_PromoteNonPromotablePiece_ReturnsFalse()
+    {
+        var pos = new Position();
+        pos.set("9/9/9/9/9/9/9/9/9 b - 1", new StateInfo());
+        pos.put_piece(Piece.B_KING, Square.SQ_99);
+        pos.put_piece(Piece.W_KING, Square.SQ_11);
+        pos.put_piece(Piece.B_GOLD, Square.SQ_44);
+
+        Move invalidPromote = ShogiTypes.make_move_promote(Square.SQ_44, Square.SQ_43, Piece.B_GOLD);
+
+        Assert.IsFalse(pos.pseudo_legal(invalidPromote, true));
+        Assert.IsFalse(pos.pseudo_legal(invalidPromote, false));
+    }
+
+    [TestMethod]
+    /// <summary>
+    /// all=false では大駒の敵陣不成を禁止し、all=true では許可することを検証する。
+    /// </summary>
+    public void PseudoLegal_RookNonPromoteInPromotionZone_DiffersByAllFlag()
+    {
+        var pos = new Position();
+        pos.set("9/9/9/9/9/9/9/9/9 b - 1", new StateInfo());
+        pos.put_piece(Piece.B_KING, Square.SQ_99);
+        pos.put_piece(Piece.W_KING, Square.SQ_11);
+        pos.put_piece(Piece.B_ROOK, Square.SQ_43);
+
+        Move rookNonPromote = ShogiTypes.make_move(Square.SQ_43, Square.SQ_42, Piece.B_ROOK);
+
+        Assert.IsFalse(pos.pseudo_legal(rookNonPromote, false));
+        Assert.IsTrue(pos.pseudo_legal(rookNonPromote, true));
+    }
 }

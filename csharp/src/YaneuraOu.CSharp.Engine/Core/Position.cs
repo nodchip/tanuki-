@@ -1012,7 +1012,7 @@ public sealed class Position
                 return false;
             }
 
-            return IsPromotionZone(us, from) || IsPromotionZone(us, to);
+            return true;
         }
 
         if (IsForcedPromotion(us, raw, to))
