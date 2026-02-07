@@ -64,4 +64,20 @@ public class EngineRegressionTests
 
         Assert.AreEqual(Move.win().to_u32(), pos.DeclarationWin().to_u32());
     }
+
+    /// <summary>
+    /// 同一局面を同一条件で探索したときに最善手が再現することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Search_SamePositionSameDepth_IsDeterministic()
+    {
+        var position = new Position();
+        position.set(Position.StartSfen, new StateInfo());
+        var searcher = new Searcher();
+
+        SearchResult first = searcher.Search(position, new SearchLimits { Depth = 2 });
+        SearchResult second = searcher.Search(position, new SearchLimits { Depth = 2 });
+
+        Assert.AreEqual(first.BestMove.to_u32(), second.BestMove.to_u32());
+    }
 }

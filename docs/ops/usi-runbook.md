@@ -27,3 +27,8 @@
 - 入力したUSIコマンド列。
 - エンジン出力（`bestmove`/`info string`）。
 - 実行バイナリ（Debug/Release）とコミットID。
+
+## 6. 自己対局スモーク
+- PowerShell で `csharp/tools/selfplay/SelfPlaySmoke.ps1` を実行する。
+- 既定は40手分の疎通確認。手数を変更する場合は `-Moves 200` のように指定する。
+- 途中でプロセスが停止しないこと、`bestmove` が継続して出力されることを確認する。
