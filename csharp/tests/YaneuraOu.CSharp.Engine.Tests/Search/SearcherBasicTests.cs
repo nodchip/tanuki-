@@ -70,4 +70,20 @@ public class SearcherBasicTests
 
         Assert.AreEqual(Move.none().to_u32(), result.BestMove.to_u32());
     }
+
+    [TestMethod]
+    /// <summary>
+    /// 同一局面を繰り返し探索するとTTヒットが発生することを検証する。
+    /// </summary>
+    public void Search_RepeatedPosition_ProducesTranspositionHit()
+    {
+        var pos = new Position();
+        pos.set(Position.StartSfen, new StateInfo());
+        var searcher = new Searcher();
+
+        searcher.Search(pos, new SearchLimits { Depth = 2 });
+        searcher.Search(pos, new SearchLimits { Depth = 2 });
+
+        Assert.IsTrue(searcher.LastTranspositionHitCount > 0);
+    }
 }

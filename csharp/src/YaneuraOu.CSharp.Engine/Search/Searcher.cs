@@ -1,4 +1,5 @@
-﻿using YaneuraOu.CSharp.Engine.Core;
+﻿using System.Collections.Generic;
+using YaneuraOu.CSharp.Engine.Core;
 using YaneuraOu.CSharp.Engine.Core.MoveGen;
 using YaneuraOu.CSharp.Engine.Core.Types;
 using YaneuraOu.CSharp.Engine.Eval;
@@ -11,7 +12,9 @@ namespace YaneuraOu.CSharp.Engine.Search;
 public sealed class Searcher
 {
     private const int MateScore = 100_000;
+
     private readonly IEvaluator evaluator;
+    private readonly Dictionary<ulong, TranspositionEntry> transpositionTable = new();
 
     /// <summary>
     /// Searcherのインスタンスを初期化する。
@@ -22,11 +25,18 @@ public sealed class Searcher
     }
 
     /// <summary>
+    /// 直近探索でのTTヒット件数を返す。
+    /// </summary>
+    public int LastTranspositionHitCount { get; private set; }
+
+    /// <summary>
     /// 探索を実行して最善手を返す。
     /// </summary>
     public SearchResult Search(Position position, SearchLimits limits)
     {
         int depth = limits.Depth <= 0 ? 1 : limits.Depth;
+
+        LastTranspositionHitCount = 0;
 
         Move bestMove = Move.none();
         int bestScore = int.MinValue;
@@ -85,36 +95,50 @@ public sealed class Searcher
     {
         nodes++;
 
+        ulong key = position.state().key().ToUInt64();
+        if (TryProbeTransposition(key, depth, out int ttScore))
+        {
+            LastTranspositionHitCount++;
+            return ttScore;
+        }
+
         if (depth <= 0)
         {
-            return Quiescence(position, alpha, beta, ref nodes);
+            int q = Quiescence(position, alpha, beta, ref nodes);
+            StoreTransposition(key, 0, q);
+            return q;
         }
 
         MoveList legal = MoveGenerator.GenerateLegal(position);
         if (legal.Count == 0)
         {
-            return position.in_check() ? -MateScore + depth : 0;
+            int terminal = position.in_check() ? -MateScore + depth : 0;
+            StoreTransposition(key, depth, terminal);
+            return terminal;
         }
 
+        int best = alpha;
         foreach (Move move in MoveOrdering.Order(position, legal))
         {
             var st = new StateInfo();
             position.do_move(move, st, position.gives_check(move));
-            int score = -AlphaBeta(position, depth - 1, -beta, -alpha, ref nodes);
+            int score = -AlphaBeta(position, depth - 1, -beta, -best, ref nodes);
             position.undo_move(move);
 
             if (score >= beta)
             {
+                StoreTransposition(key, depth, beta);
                 return beta;
             }
 
-            if (score > alpha)
+            if (score > best)
             {
-                alpha = score;
+                best = score;
             }
         }
 
-        return alpha;
+        StoreTransposition(key, depth, best);
+        return best;
     }
 
     /// <summary>
@@ -155,6 +179,39 @@ public sealed class Searcher
 
         return alpha;
     }
+
+    /// <summary>
+    /// 置換表を参照する。
+    /// </summary>
+    private bool TryProbeTransposition(ulong key, int depth, out int score)
+    {
+        if (transpositionTable.TryGetValue(key, out TranspositionEntry entry) && entry.Depth >= depth)
+        {
+            score = entry.Score;
+            return true;
+        }
+
+        score = 0;
+        return false;
+    }
+
+    /// <summary>
+    /// 置換表へ結果を保存する。
+    /// </summary>
+    private void StoreTransposition(ulong key, int depth, int score)
+    {
+        if (transpositionTable.TryGetValue(key, out TranspositionEntry current) && current.Depth > depth)
+        {
+            return;
+        }
+
+        transpositionTable[key] = new TranspositionEntry(depth, score);
+    }
+
+    /// <summary>
+    /// 置換表エントリを表す値型。
+    /// </summary>
+    private readonly record struct TranspositionEntry(int Depth, int Score);
 }
 
 /// <summary>
