@@ -85,3 +85,10 @@
   - C++: `58`
   - C#: `-5314`
 - 現状の C# NNUE は擬似重み計算であり、C++ 1:1の重み展開・推論ではないため一致しない。
+
+## 13. 照合ログ（2026-02-07 更新）
+- C# 側に `nn.bin` 実パラメータ読み込み（FeatureTransformer + 3層ネットワーク）を実装。
+- HalfKP(BonaPiece)ベース特徴量へ置換し、`eval/nn.bin` を直接推論可能にした。
+- 厳密照合（`NNUE_PARITY_STRICT=1`）実行結果:
+  - `dotnet test csharp/YaneuraOu.CSharp.sln --filter "FullyQualifiedName~NnueParityTests" -v minimal`
+  - 結果: 1件合格 / 失敗0

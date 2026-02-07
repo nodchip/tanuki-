@@ -11,53 +11,48 @@ namespace YaneuraOu.CSharp.Engine.Tests.Eval;
 public class NnueFeatureTransformerTests
 {
     /// <summary>
-    /// 開始局面で特徴量が生成されることを検証する。
+    /// 初期局面で変換後特徴量が512次元で生成されることを検証する。
     /// </summary>
     [TestMethod]
-    public void Transform_StartPosition_ReturnsNonEmptyFeatures()
+    public void Transform_StartPosition_Returns512Features()
     {
         var transformer = new NnueFeatureTransformer();
+        var model = CreateDummyModel();
         var position = new Position();
         position.set(Position.StartSfen, new StateInfo());
 
-        int[] features = transformer.Transform(position);
+        byte[] transformed = transformer.Transform(position, model);
 
-        Assert.IsTrue(features.Length > 0);
+        Assert.AreEqual(512, transformed.Length);
     }
 
     /// <summary>
-    /// 手番を反転した同一局面で特徴量が一致することを検証する。
+    /// 変換後特徴量が0..127に収まることを検証する。
     /// </summary>
     [TestMethod]
-    public void Transform_SideToMoveFlippedPosition_ReturnsSameFeatures()
+    public void Transform_OutputValues_AreClampedToByteRange()
     {
         var transformer = new NnueFeatureTransformer();
-        var black = new Position();
-        var white = new Position();
-        black.set("lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1", new StateInfo());
-        white.set("lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL w - 1", new StateInfo());
+        var model = CreateDummyModel();
+        var position = new Position();
+        position.set("4k4/9/9/9/4P4/9/9/9/4K4 b - 1", new StateInfo());
 
-        int[] blackFeatures = transformer.Transform(black);
-        int[] whiteFeatures = transformer.Transform(white);
+        byte[] features = transformer.Transform(position, model);
 
-        CollectionAssert.AreEqual(blackFeatures, whiteFeatures);
+        Assert.IsTrue(features.All(v => v <= 127));
     }
 
     /// <summary>
-    /// 手駒が増えると特徴量数が増えることを検証する。
+    /// ダミーモデルを生成する。
     /// </summary>
-    [TestMethod]
-    public void Transform_PositionWithHands_IncreasesFeatureCount()
+    private static NnueModel CreateDummyModel()
     {
-        var transformer = new NnueFeatureTransformer();
-        var withoutHands = new Position();
-        var withHands = new Position();
-        withoutHands.set("4k4/9/9/9/9/9/9/9/4K4 b - 1", new StateInfo());
-        withHands.set("4k4/9/9/9/9/9/9/9/4K4 b RP2p 1", new StateInfo());
+        var model = new NnueModel();
+        for (int i = 0; i < model.FtBiases.Length; i++)
+        {
+            model.FtBiases[i] = (short)(i % 8);
+        }
 
-        int[] baseline = transformer.Transform(withoutHands);
-        int[] hands = transformer.Transform(withHands);
-
-        Assert.IsTrue(hands.Length > baseline.Length);
+        return model;
     }
 }

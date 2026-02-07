@@ -1,4 +1,5 @@
-﻿using System.Buffers.Binary;
+using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace YaneuraOu.CSharp.Engine.Eval;
@@ -10,6 +11,8 @@ public sealed class NnueModelLoader
 {
     private const uint ExpectedNnueVersion = 0x7AF32F16u;
     private const int HeaderPrefixSize = 12;
+    private const int TransformerHashSize = 4;
+    private const int NetworkHashSize = 4;
 
     /// <summary>
     /// モデルファイルを読み込んでNNUEバックエンドを返す。
@@ -29,18 +32,29 @@ public sealed class NnueModelLoader
                 return new FileNnueBackend(textScore);
             }
 
-            if (TryReadNnueHeader(data, out NnueModelMetadata metadata)
-                && metadata.Version == ExpectedNnueVersion
-                && metadata.Architecture.Contains("Features=HalfKP", StringComparison.Ordinal))
+            if (!TryReadNnueHeader(data, out NnueModelMetadata metadata))
             {
-                byte[] payload = data.AsSpan(metadata.HeaderByteLength).ToArray();
-                if (payload.Length == 0)
-                {
-                    return new NullNnueBackend();
-                }
-
-                return new FileNnueBackend(payload);
+                return new NullNnueBackend();
             }
+
+            if (metadata.Version != ExpectedNnueVersion
+                || !metadata.Architecture.Contains("Features=HalfKP", StringComparison.Ordinal)
+                || !metadata.Architecture.Contains("Network=", StringComparison.Ordinal))
+            {
+                return new NullNnueBackend();
+            }
+
+            if (!TryParseHalfKpModel(data.AsSpan(metadata.HeaderByteLength), out NnueModel? model))
+            {
+                return new NullNnueBackend();
+            }
+
+            if (model is null)
+            {
+                return new NullNnueBackend();
+            }
+
+            return new FileNnueBackend(model);
         }
         catch (IOException)
         {
@@ -50,8 +64,6 @@ public sealed class NnueModelLoader
         {
             return new NullNnueBackend();
         }
-
-        return new NullNnueBackend();
     }
 
     /// <summary>
@@ -131,5 +143,67 @@ public sealed class NnueModelLoader
         };
 
         return true;
+    }
+
+    /// <summary>
+    /// HalfKP 256x2-32-32 形式のNNUE本体を読み取る。
+    /// </summary>
+    private static bool TryParseHalfKpModel(ReadOnlySpan<byte> payload, out NnueModel? model)
+    {
+        model = null;
+        try
+        {
+            int cursor = 0;
+            if (payload.Length < TransformerHashSize + NetworkHashSize)
+            {
+                return false;
+            }
+
+            var parsed = new NnueModel();
+
+            cursor += TransformerHashSize;
+            int ftBiasBytes = parsed.FtBiases.Length * sizeof(short);
+            NnueModel.ReadInt16Array(payload.Slice(cursor, ftBiasBytes), parsed.FtBiases);
+            cursor += ftBiasBytes;
+
+            int ftWeightBytes = parsed.FtWeights.Length * sizeof(short);
+            NnueModel.ReadInt16Array(payload.Slice(cursor, ftWeightBytes), parsed.FtWeights);
+            cursor += ftWeightBytes;
+
+            cursor += NetworkHashSize;
+
+            int l1BiasBytes = parsed.Layer1Biases.Length * sizeof(int);
+            NnueModel.ReadInt32Array(payload.Slice(cursor, l1BiasBytes), parsed.Layer1Biases);
+            cursor += l1BiasBytes;
+
+            int l1WeightBytes = parsed.Layer1Weights.Length;
+            payload.Slice(cursor, l1WeightBytes).CopyTo(MemoryMarshal.AsBytes(parsed.Layer1Weights.AsSpan()));
+            cursor += l1WeightBytes;
+
+            int l2BiasBytes = parsed.Layer2Biases.Length * sizeof(int);
+            NnueModel.ReadInt32Array(payload.Slice(cursor, l2BiasBytes), parsed.Layer2Biases);
+            cursor += l2BiasBytes;
+
+            int l2WeightBytes = parsed.Layer2Weights.Length;
+            payload.Slice(cursor, l2WeightBytes).CopyTo(MemoryMarshal.AsBytes(parsed.Layer2Weights.AsSpan()));
+            cursor += l2WeightBytes;
+
+            parsed.OutputBias = BinaryPrimitives.ReadInt32LittleEndian(payload.Slice(cursor, 4));
+            cursor += 4;
+
+            int outputWeightBytes = parsed.OutputWeights.Length;
+            payload.Slice(cursor, outputWeightBytes).CopyTo(MemoryMarshal.AsBytes(parsed.OutputWeights.AsSpan()));
+
+            model = parsed;
+            return true;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
     }
 }

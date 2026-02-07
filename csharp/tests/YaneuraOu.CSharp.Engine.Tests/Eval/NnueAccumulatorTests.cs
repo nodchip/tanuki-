@@ -12,14 +12,14 @@ namespace YaneuraOu.CSharp.Engine.Tests.Eval;
 public class NnueAccumulatorTests
 {
     /// <summary>
-    /// 初回評価で差分評価と全再計算評価が一致することを検証する。
+    /// 初期局面で差分評価と全再計算が一致することを検証する。
     /// </summary>
     [TestMethod]
     public void EvaluateIncremental_InitialPosition_MatchesRecompute()
     {
         var position = new Position();
         position.set(Position.StartSfen, new StateInfo());
-        var accumulator = new NnueAccumulator(new NnueFeatureTransformer(), CreateModelBytes());
+        var accumulator = new NnueAccumulator(new NnueFeatureTransformer(), CreateModel());
 
         int incremental = accumulator.EvaluateIncremental(position);
         int recompute = accumulator.EvaluateByRecompute(position);
@@ -28,14 +28,14 @@ public class NnueAccumulatorTests
     }
 
     /// <summary>
-    /// do_move/undo_move 後も差分評価と全再計算評価が一致することを検証する。
+    /// do_move/undo_move後も差分評価と全再計算が一致することを検証する。
     /// </summary>
     [TestMethod]
     public void EvaluateIncremental_AfterMoveCycle_MatchesRecompute()
     {
         var position = new Position();
         position.set(Position.StartSfen, new StateInfo());
-        var accumulator = new NnueAccumulator(new NnueFeatureTransformer(), CreateModelBytes());
+        var accumulator = new NnueAccumulator(new NnueFeatureTransformer(), CreateModel());
 
         int before = accumulator.EvaluateIncremental(position);
         Move move = ShogiTypes.make_move(Square.SQ_77, Square.SQ_76, Piece.B_PAWN);
@@ -53,14 +53,14 @@ public class NnueAccumulatorTests
     }
 
     /// <summary>
-    /// do_null_move/undo_null_move 後も差分評価と全再計算評価が一致することを検証する。
+    /// do_null_move/undo_null_move後も差分評価と全再計算が一致することを検証する。
     /// </summary>
     [TestMethod]
     public void EvaluateIncremental_AfterNullMoveCycle_MatchesRecompute()
     {
         var position = new Position();
         position.set(Position.StartSfen, new StateInfo());
-        var accumulator = new NnueAccumulator(new NnueFeatureTransformer(), CreateModelBytes());
+        var accumulator = new NnueAccumulator(new NnueFeatureTransformer(), CreateModel());
 
         int before = accumulator.EvaluateIncremental(position);
 
@@ -77,18 +77,21 @@ public class NnueAccumulatorTests
     }
 
     /// <summary>
-    /// テスト用のNNUEバイト列を生成する。
+    /// テスト用のNNUEモデルを生成する。
     /// </summary>
-    private static byte[] CreateModelBytes()
+    private static NnueModel CreateModel()
     {
-        var data = new byte[512];
-        byte[] signature = System.Text.Encoding.ASCII.GetBytes("Features=HalfKP");
-        signature.CopyTo(data, 32);
-        for (int i = 0; i < data.Length; i++)
+        var model = new NnueModel();
+        for (int i = 0; i < model.FtBiases.Length; i++)
         {
-            data[i] ^= (byte)(i * 37);
+            model.FtBiases[i] = (short)(i % 16);
         }
 
-        return data;
+        for (int i = 0; i < model.OutputWeights.Length; i++)
+        {
+            model.OutputWeights[i] = 1;
+        }
+
+        return model;
     }
 }

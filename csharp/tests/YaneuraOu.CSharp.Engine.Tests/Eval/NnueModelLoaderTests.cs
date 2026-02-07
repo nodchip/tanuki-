@@ -56,10 +56,10 @@ public class NnueModelLoaderTests
     }
 
     /// <summary>
-    /// NNUEヘッダ署名を含むバイナリ形式モデルを読み込んだ場合に有効バックエンドを返すことを検証する。
+    /// NNUEヘッダのみの不完全バイナリを読み込んだ場合に無効バックエンドを返すことを検証する。
     /// </summary>
     [TestMethod]
-    public void Load_BinaryFileWithHeaderSignature_ReturnsEnabledBackend()
+    public void Load_BinaryFileWithHeaderSignature_ReturnsDisabledBackend()
     {
         string modelPath = Path.GetTempFileName();
         try
@@ -70,7 +70,7 @@ public class NnueModelLoaderTests
 
             INnueBackend backend = loader.Load(modelPath);
 
-            Assert.IsTrue(backend.IsEnabled);
+            Assert.IsFalse(backend.IsEnabled);
         }
         finally
         {

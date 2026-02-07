@@ -23,10 +23,10 @@ public sealed class FileNnueBackend : INnueBackend
     /// <summary>
     /// バイナリモデルモードのインスタンスを初期化する。
     /// </summary>
-    public FileNnueBackend(byte[] modelBytes)
+    public FileNnueBackend(NnueModel model)
     {
         useFixedScore = false;
-        accumulator = new NnueAccumulator(new NnueFeatureTransformer(), modelBytes);
+        accumulator = new NnueAccumulator(new NnueFeatureTransformer(), model);
     }
 
     /// <summary>
