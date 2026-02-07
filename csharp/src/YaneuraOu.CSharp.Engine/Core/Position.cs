@@ -51,6 +51,12 @@ public sealed class Position
         gamePly = int.TryParse(parts[3], out int gp) ? gp : 1;
 
         st.hand = hand[(int)sideToMove];
+        st.repetition = 0;
+        st.repetition_times = 0;
+        st.pliesFromNull = 0;
+        st.checkersBB = new Bitboard(0);
+        st.continuousCheck[(int)Color.BLACK] = 0;
+        st.continuousCheck[(int)Color.WHITE] = 0;
 
         return this;
     }
@@ -529,7 +535,9 @@ public sealed class Position
     {
         moveHistory.Push(CreateSnapshot());
 
+        StateInfo prevSt = st;
         Color us = sideToMove;
+        Color them = Opposite(us);
         Piece captured = Piece.NO_PIECE;
 
         if (m.is_drop())
@@ -566,13 +574,28 @@ public sealed class Position
             put_piece(movedAfter, to);
         }
 
-        newSt.previous = st;
+        newSt.previous = prevSt;
         newSt.capturedPiece = captured;
-        newSt.hand = hand[(int)us];
+        newSt.repetition = 0;
+        newSt.repetition_times = 0;
+        newSt.pliesFromNull = prevSt.pliesFromNull + 1;
+        newSt.continuousCheck[(int)us] = givesCheck ? prevSt.continuousCheck[(int)us] + 2 : 0;
+        newSt.continuousCheck[(int)them] = prevSt.continuousCheck[(int)them];
+        if (givesCheck)
+        {
+            Square enemyKing = kingSquare[(int)them];
+            newSt.checkersBB = enemyKing == Square.SQ_NB ? new Bitboard(0) : attackers_to(us, enemyKing);
+        }
+        else
+        {
+            newSt.checkersBB = new Bitboard(0);
+        }
+
         st = newSt;
 
-        sideToMove = Opposite(sideToMove);
+        sideToMove = them;
         gamePly++;
+        st.hand = hand[(int)sideToMove];
     }
 
     public void do_move(Move m, StateInfo newSt)
@@ -594,8 +617,17 @@ public sealed class Position
     {
         nullMoveHistory.Push(CreateSnapshot());
 
-        newSt.previous = st;
+        StateInfo prevSt = st;
+        Color us = sideToMove;
+
+        newSt.previous = prevSt;
         newSt.capturedPiece = Piece.NO_PIECE;
+        newSt.repetition = 0;
+        newSt.repetition_times = 0;
+        newSt.pliesFromNull = 0;
+        newSt.checkersBB = new Bitboard(0);
+        Array.Copy(prevSt.continuousCheck, newSt.continuousCheck, prevSt.continuousCheck.Length);
+        newSt.continuousCheck[(int)us] = 0;
         st = newSt;
 
         sideToMove = Opposite(sideToMove);
