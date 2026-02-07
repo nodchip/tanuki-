@@ -54,3 +54,11 @@ Target: `csharp/src/YaneuraOu.CSharp.Engine/Core/Position.cs`
 ## Execution Policy
 - TDD で小さい条件単位に RED->GREEN。
 - 各変更後に対象テスト、最後に `dotnet test` と `dotnet build` を実行。
+
+## Completion Status (2026-02-07)
+- [x] `to_move(Move16)` の分岐互換を実装し、特殊手/通常手/成り/手番不一致/空升の境界テストを固定。
+- [x] `pseudo_legal(Move, bool all)` の主要分岐（drop/non-drop、王手時の合駒制約、`all` 差分）を実装し、厳密互換テストを固定。
+- [x] `legal(Move)` の king move 判定と pin 判定（一直線維持/逸脱）をテストで固定。
+- [x] `legal_promote(Move)` の敵陣判定および非成り時 true をテストで固定。
+- [x] UTF-8 日本語コメント規約に合わせ、関連テストコメントを整備。
+- [x] 最新検証: `dotnet build csharp/YaneuraOu.CSharp.sln -v minimal` 成功、`dotnet test csharp/YaneuraOu.CSharp.sln -v minimal` 成功（83/83）。
