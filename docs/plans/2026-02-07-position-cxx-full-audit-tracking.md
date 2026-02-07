@@ -103,3 +103,40 @@ Scope: Execution Plan 1-3
 Execution Plan 4-5:
 1. 差分ごとの最小再現シナリオとテスト案を付与
 2. `Critical -> Major -> Minor` 順の修正バックログを確定
+
+## 6. Repro Scenarios and Test Ideas
+| ID | 最小再現シナリオ | 追加テスト案 | 推奨修正 |
+|---|---|---|---|
+| D-CRIT-01 | 先手番で金の成り `Move16`（不正）を `to_move` に入力する | `PositionToMoveTests` に「非成駒の成りMove16はMove.none」を追加 | `to_move` の `m16.is_promote()` 分岐で `is_non_promotable_piece` 相当チェックを追加 |
+| D-CRIT-02 | 同一局面を往復して `do_move/undo_move` 後の `state` と反復情報を比較 | `PositionMoveCycleTests` に `do/undo` 反復情報同値性テストを追加 | `StateInfo` に `continuousCheck` / `repetition_type` 等を追加し、`do_move/do_null_move` で更新 |
+| D-MAJ-01 | 玉移動判定で占有差し替えが必要な局面（移動元除去で利きが変わる） | `PositionAttackTests` に `attackers_to` の occupied 差し替え版比較テスト追加 | `attackers_to(Square, Bitboard occ)` を実装し、合法判定で利用 |
+| D-MAJ-02 | pin 局面で玉移動先の被攻撃判定を C++ `effected_to` 相当と比較 | `PositionStrictCompatibilityTests` に king move 比較ケースを追加 | `effected_to` 相当ヘルパを追加して `legal` を C++ 寄せ |
+| D-MAJ-03 | `do_null_move` 後に連続王手カウンタ/反復判定が残留する局面を作る | `PositionMoveCycleTests` に null move 前後での `StateInfo` 検証追加 | `do_null_move` で `continuousCheck` と反復系を C++ 同様に初期化 |
+| D-MAJ-04 | 同一局面で `key_after(m)` と `do_move` 後 `state.key()` を比較 | `PositionHashTests` を追加して一致を検証 | `key_after` を C++ ロジック準拠で実装 |
+| D-MAJ-05 | 4回同一局面（通常千日手/連続王手千日手）を再現 | `PositionRepetitionTests` を新設し `is_repetition` を検証 | `is_draw/is_repetition/has_repeated` を段階実装 |
+| D-MAJ-06 | 入玉条件を満たす局面で宣言勝ち可否を比較 | `PositionDeclarationWinTests` を新設 | `update_entering_point/DeclarationWin` を移植 |
+| D-MIN-01 | C++ 側テスト移植時に補助API不足で書きづらいケース | 移植対象テストで API 代替の有無を記録 | 補助APIを必要最小限追加 |
+| D-MIN-02 | 手動で盤面を崩したとき整合性検証手段がない | `PositionDebugTests` に整合性検査を追加 | `pos_is_ok` 相当の簡易版を導入 |
+| D-MIN-03 | 盤面反転検証を `flipped_sfen` 文字列比較だけで行う | `PositionSfenTests` に局面反転の構造比較を追加 | `flip()` 相当APIを追加 |
+
+## 7. Prioritized Fix Backlog
+### 7.1 Critical (着手順)
+1. D-CRIT-01: `to_move` で非成駒の成りを `Move.none()` 化する。
+2. D-CRIT-02: `StateInfo` の反復・連続王手関連フィールドを拡張し、`do_move/undo_move/do_null_move` の副作用を C++ 寄せにする。
+
+### 7.2 Major (Critical完了後)
+1. D-MAJ-05: `is_repetition/is_draw/has_repeated` の移植。
+2. D-MAJ-03: `do_null_move` の反復・連続王手初期化の一致化。
+3. D-MAJ-01: `attackers_to(sq, occ)` 追加。
+4. D-MAJ-02: `legal` の `effected_to` 相当化。
+5. D-MAJ-04: `key_after` 実装。
+6. D-MAJ-06: 宣言勝ちロジック移植。
+
+### 7.3 Minor (最後に対応)
+1. D-MIN-02: `pos_is_ok` 相当の追加。
+2. D-MIN-03: `flip()` 相当の追加。
+3. D-MIN-01: 補助API追加。
+
+## 8. Batch 2 Outcome (Plan step 4-5)
+- [x] 差分ごとの最小再現シナリオとテスト案を付与
+- [x] `Critical -> Major -> Minor` 順の修正バックログを確定
