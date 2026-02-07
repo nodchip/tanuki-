@@ -98,4 +98,33 @@ public class UsiProtocolTests
         StringAssert.StartsWith(afterReset, "bestmove ");
         Assert.AreNotEqual("bestmove resign", afterReset);
     }
+
+    /// <summary>
+    /// go depth指定が時間制御より優先されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GoDepth_OverridesTimeControlDepth()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+
+        string response = engine.HandleCommand("go depth 2 movetime 10000");
+
+        StringAssert.StartsWith(response, "bestmove ");
+        Assert.AreEqual(2, engine.LastSearchDepth);
+    }
+
+    /// <summary>
+    /// go infiniteで既定深さより深い探索深さが選ばれることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GoInfinite_SelectsExtendedDepth()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name Depth value 1");
+
+        string response = engine.HandleCommand("go infinite");
+
+        StringAssert.StartsWith(response, "bestmove ");
+        Assert.AreEqual(3, engine.LastSearchDepth);
+    }
 }

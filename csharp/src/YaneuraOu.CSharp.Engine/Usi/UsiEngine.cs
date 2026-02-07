@@ -33,6 +33,11 @@ public sealed class UsiEngine
     public bool ShouldQuit { get; private set; }
 
     /// <summary>
+    /// 直近の探索で使用した深さを返す。
+    /// </summary>
+    public int LastSearchDepth { get; private set; }
+
+    /// <summary>
     /// USIコマンドを処理して応答文字列を返す。
     /// </summary>
     public string HandleCommand(string command)
@@ -85,6 +90,7 @@ public sealed class UsiEngine
         if (trimmed.StartsWith("go", StringComparison.OrdinalIgnoreCase))
         {
             SearchLimits limits = ParseGoLimits(trimmed);
+            LastSearchDepth = limits.Depth;
             SearchResult result = searcher.Search(position, limits);
             lastBestMove = result.BestMove;
             return $"bestmove {FormatBestMove(result.BestMove)}";

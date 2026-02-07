@@ -181,3 +181,6 @@
 - Phase E: 進行中（`IEvaluator/MaterialEvaluator/NnueEvaluator/INnueBackend`導入）。
 - Phase F: 着手（`BenchRunner`、回帰テスト、`csharp-ci.yml`追加）。
 - Phase G: 着手（`docs/ops/usi-runbook.md`、`docs/ops/tuning-guide.md`、`README.md`導線追加）。
+
+- Phase D: 進行中（時間制御に対する探索深さ選択のテストを追加）。
+- Phase E: 進行中（`NnueModelLoader` とファイルバックエンドを追加）。
