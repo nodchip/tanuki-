@@ -11,6 +11,7 @@ namespace YaneuraOu.CSharp.Engine.Tests.Eval;
 [TestClass]
 public class NnueModelLoaderTests
 {
+    private const uint NnueHeaderVersion = 0x7AF32F16u;
     private static readonly string RepoNnBinPath = ResolveRepoNnBinPath();
 
     /// <summary>
@@ -63,7 +64,7 @@ public class NnueModelLoaderTests
         string modelPath = Path.GetTempFileName();
         try
         {
-            byte[] bytes = CreateSignedBinaryModelBytes(0x1234);
+            byte[] bytes = CreateSignedBinaryModelBytes(NnueHeaderVersion, 0x1234);
             File.WriteAllBytes(modelPath, bytes);
             var loader = new NnueModelLoader();
 
@@ -90,6 +91,32 @@ public class NnueModelLoaderTests
         try
         {
             byte[] bytes = { 0x34, 0x12, 0x00, 0x00, 0xFE, 0xED };
+            File.WriteAllBytes(modelPath, bytes);
+            var loader = new NnueModelLoader();
+
+            INnueBackend backend = loader.Load(modelPath);
+
+            Assert.IsFalse(backend.IsEnabled);
+        }
+        finally
+        {
+            if (File.Exists(modelPath))
+            {
+                File.Delete(modelPath);
+            }
+        }
+    }
+
+    /// <summary>
+    /// NNUEヘッダのバージョンが不一致のバイナリ形式モデルを読み込んだ場合に無効バックエンドを返すことを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Load_BinaryFileWithInvalidHeaderVersion_ReturnsDisabledBackend()
+    {
+        string modelPath = Path.GetTempFileName();
+        try
+        {
+            byte[] bytes = CreateSignedBinaryModelBytes(0x00000001u, 0x1234);
             File.WriteAllBytes(modelPath, bytes);
             var loader = new NnueModelLoader();
 
@@ -174,12 +201,17 @@ public class NnueModelLoaderTests
     /// <summary>
     /// NNUEヘッダ署名を含む最小バイナリモデルを生成する。
     /// </summary>
-    private static byte[] CreateSignedBinaryModelBytes(int seed)
+    private static byte[] CreateSignedBinaryModelBytes(uint version, uint hash)
     {
+        const string arch = "Features=HalfKP";
+        byte[] archBytes = System.Text.Encoding.ASCII.GetBytes(arch);
         byte[] bytes = new byte[128];
-        BitConverter.GetBytes(seed).CopyTo(bytes, 0);
-        byte[] signature = System.Text.Encoding.ASCII.GetBytes("Features=HalfKP");
-        signature.CopyTo(bytes, 16);
+
+        BitConverter.GetBytes(version).CopyTo(bytes, 0);
+        BitConverter.GetBytes(hash).CopyTo(bytes, 4);
+        BitConverter.GetBytes((uint)archBytes.Length).CopyTo(bytes, 8);
+        archBytes.CopyTo(bytes, 12);
+
         return bytes;
     }
 }

@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Buffers.Binary;
+using System.Text;
 
 namespace YaneuraOu.CSharp.Engine.Eval;
 
@@ -7,7 +8,8 @@ namespace YaneuraOu.CSharp.Engine.Eval;
 /// </summary>
 public sealed class NnueModelLoader
 {
-    private static readonly byte[] NnueFeatureSignature = Encoding.ASCII.GetBytes("Features=HalfKP");
+    private const uint ExpectedNnueVersion = 0x7AF32F16u;
+    private const int HeaderPrefixSize = 12;
 
     /// <summary>
     /// モデルファイルを読み込んでNNUEバックエンドを返す。
@@ -27,7 +29,9 @@ public sealed class NnueModelLoader
                 return new FileNnueBackend(textScore);
             }
 
-            if (ContainsNnueSignature(data))
+            if (TryReadNnueHeader(data, out uint version, out string architecture)
+                && version == ExpectedNnueVersion
+                && architecture.Contains("Features=HalfKP", StringComparison.Ordinal))
             {
                 return new FileNnueBackend(data);
             }
@@ -60,33 +64,32 @@ public sealed class NnueModelLoader
     }
 
     /// <summary>
-    /// バイナリデータにNNUE特徴量署名が含まれるかを判定する。
+    /// NNUEヘッダを読み取り、バージョンとアーキテクチャ文字列を返す。
     /// </summary>
-    private static bool ContainsNnueSignature(byte[] data)
+    private static bool TryReadNnueHeader(byte[] data, out uint version, out string architecture)
     {
-        if (data.Length < NnueFeatureSignature.Length)
+        version = 0;
+        architecture = string.Empty;
+        if (data.Length < HeaderPrefixSize)
         {
             return false;
         }
 
-        for (int i = 0; i <= data.Length - NnueFeatureSignature.Length; i++)
+        ReadOnlySpan<byte> span = data;
+        version = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(0, 4));
+        uint archSize = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(8, 4));
+        if (archSize == 0 || archSize > 1024)
         {
-            bool matched = true;
-            for (int j = 0; j < NnueFeatureSignature.Length; j++)
-            {
-                if (data[i + j] != NnueFeatureSignature[j])
-                {
-                    matched = false;
-                    break;
-                }
-            }
-
-            if (matched)
-            {
-                return true;
-            }
+            return false;
         }
 
-        return false;
+        int end = HeaderPrefixSize + (int)archSize;
+        if (end > data.Length)
+        {
+            return false;
+        }
+
+        architecture = Encoding.ASCII.GetString(data, HeaderPrefixSize, (int)archSize);
+        return true;
     }
 }
