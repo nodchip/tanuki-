@@ -8,7 +8,7 @@ public sealed class UsiOptions
     /// <summary>
     /// 既定の探索深さ。
     /// </summary>
-    public int DefaultDepth { get; set; } = 1;
+    public int DefaultDepth { get; set; } = 64;
 
     /// <summary>
     /// 既定の思考時間(ミリ秒)。

@@ -265,6 +265,19 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// go byoyomiでdepth未指定時に既定深さ上限が使われることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GoByoyomiWithoutDepth_UsesDefaultDepthCap()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+
+        engine.HandleCommand("go byoyomi 3000");
+
+        Assert.AreEqual(64, engine.LastSearchDepth);
+    }
+
+    /// <summary>
     /// go byoyomi指定時に時間上限へ反映されることを検証する。
     /// </summary>
     [TestMethod]

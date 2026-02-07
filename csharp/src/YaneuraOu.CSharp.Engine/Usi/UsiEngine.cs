@@ -89,7 +89,7 @@ public sealed class UsiEngine
             response =
                 $"id name {name}\n" +
                 $"id author {author}\n" +
-                "option name Depth type spin default 1 min 1 max 64\n" +
+                "option name Depth type spin default 64 min 1 max 128\n" +
                 "option name MoveTime type spin default 1000 min 1 max 600000\n" +
                 "option name Threads type spin default 1 min 1 max 256\n" +
                 "option name Hash type spin default 64 min 1 max 8192\n" +
