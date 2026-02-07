@@ -516,6 +516,11 @@ public sealed class Position
             return Move.none();
         }
 
+        if (m16.is_promote() && IsNonPromotablePiece(pc))
+        {
+            return Move.none();
+        }
+
         Piece movedAfter = m16.is_promote() ? ShogiTypes.make_promoted_piece(pc) : pc;
         return new Move((uint)m16.to_u16() + ((uint)movedAfter << 16));
     }
@@ -1066,6 +1071,15 @@ public sealed class Position
         }
 
         return (rawType == PieceType.PAWN || rawType == PieceType.LANCE) && rank == 8;
+    }
+
+    /// <summary>
+    /// 成れない駒（玉・金・成駒）かを判定する。
+    /// </summary>
+    private static bool IsNonPromotablePiece(Piece piece)
+    {
+        PieceType type = ShogiTypes.type_of(piece);
+        return type == PieceType.GOLD || type == PieceType.KING || type >= PieceType.PRO_PAWN;
     }
 
     private bool IsCaptureOrInterpose(Color us, Square checkerSq, Square to)

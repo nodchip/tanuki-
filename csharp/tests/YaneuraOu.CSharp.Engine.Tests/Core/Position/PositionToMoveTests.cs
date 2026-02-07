@@ -129,6 +129,23 @@ public class PositionToMoveTests
 
     [TestMethod]
     /// <summary>
+    /// 非成駒（ここでは金）の成りMove16は to_move で Move.none() になることを検証する。
+    /// </summary>
+    public void ToMove_PromoteNonPromotablePiece_ReturnsNone()
+    {
+        var pos = new Position();
+        pos.set("9/9/9/9/9/9/9/9/9 b - 1", new StateInfo());
+        pos.put_piece(Piece.B_KING, Square.SQ_99);
+        pos.put_piece(Piece.W_KING, Square.SQ_11);
+        pos.put_piece(Piece.B_GOLD, Square.SQ_44);
+
+        Move move = pos.to_move(ShogiTypes.make_move_promote16(Square.SQ_44, Square.SQ_43));
+
+        Assert.AreEqual(Move.none().to_u32(), move.to_u32());
+    }
+
+    [TestMethod]
+    /// <summary>
     /// 成り指し手の移動元・移動先が敵陣外なら legal_promote が false になることを検証する。
     /// </summary>
     public void LegalPromote_PromoteOutsideZone_ReturnsFalse()
