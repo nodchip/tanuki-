@@ -15,6 +15,8 @@ namespace YaneuraOu.CSharp.Engine.Search;
 public sealed class Searcher
 {
     private const int MateScore = 100_000;
+    private const int NullMoveDepthThreshold = 3;
+    private const int NullMoveReductionBase = 2;
 
     private readonly IEvaluator evaluator;
     private readonly IIncrementalEvaluator? incrementalEvaluator;
@@ -44,6 +46,11 @@ public sealed class Searcher
     public int LastTranspositionHitCount { get; private set; }
 
     /// <summary>
+    /// 直近探索でのNull Move枝刈り発生件数を返す。
+    /// </summary>
+    public int LastNullMovePruningCount { get; private set; }
+
+    /// <summary>
     /// 探索を実行して最善手を返す。
     /// </summary>
     public SearchResult Search(Position position, SearchLimits limits, Action<SearchProgress>? progress = null)
@@ -51,6 +58,7 @@ public sealed class Searcher
         int depth = limits.Depth <= 0 ? 1 : limits.Depth;
 
         LastTranspositionHitCount = 0;
+        LastNullMovePruningCount = 0;
         maxTimeMs = limits.MaxTimeMs;
         maxNodes = limits.NodesLimit;
         shouldStopCallback = limits.ShouldStop;
@@ -322,6 +330,35 @@ public sealed class Searcher
             return q;
         }
 
+        if (CanTryNullMove(position, depth, beta))
+        {
+            StateInfo nullState = RentStateInfo();
+            int nullScore;
+            try
+            {
+                position.do_null_move(nullState);
+                incrementalEvaluator?.ResetIncrementalState(position);
+
+                int reduction = NullMoveReductionBase + depth / 4;
+                int nullDepth = Math.Max(0, depth - 1 - reduction);
+                nullScore = -AlphaBeta(position, nullDepth, -beta, -beta + 1, ply + 1, ref nodes);
+
+                position.undo_null_move();
+                incrementalEvaluator?.ResetIncrementalState(position);
+            }
+            finally
+            {
+                ReturnStateInfo(nullState);
+            }
+
+            if (nullScore >= beta)
+            {
+                LastNullMovePruningCount++;
+                StoreTransposition(key, depth, nullScore, Move.none(), TranspositionBound.Lower);
+                return beta;
+            }
+        }
+
         int best = alpha;
         Move bestMove = Move.none();
         Color us = position.side_to_move();
@@ -468,6 +505,24 @@ public sealed class Searcher
         }
 
         return alpha;
+    }
+
+    /// <summary>
+    /// Null Move枝刈りを試行可能かを判定する。
+    /// </summary>
+    private static bool CanTryNullMove(Position position, int depth, int beta)
+    {
+        if (depth < NullMoveDepthThreshold)
+        {
+            return false;
+        }
+
+        if (position.in_check())
+        {
+            return false;
+        }
+
+        return Math.Abs(beta) < MateScore - 1024;
     }
 
     /// <summary>

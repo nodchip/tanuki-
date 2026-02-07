@@ -139,6 +139,24 @@ public class SearcherBasicTests
     }
 
     /// <summary>
+    /// Null Move枝刈りが探索中に発生することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void AlphaBeta_WithNarrowWindow_TriggersNullMovePruning()
+    {
+        var pos = new Position();
+        pos.set(Position.StartSfen, new StateInfo());
+        var searcher = new Searcher(new ConstantEvaluator(300));
+        int nodes = 0;
+
+        int score = InvokeAlphaBeta(searcher, pos, 4, -11000, -10000, 0, ref nodes);
+
+        Assert.IsTrue(nodes > 0);
+        Assert.IsTrue(score >= -11000);
+        Assert.IsTrue(searcher.LastNullMovePruningCount > 0);
+    }
+
+    /// <summary>
     /// 呼び出し回数検証用の差分更新評価器。
     /// </summary>
     private sealed class CountingIncrementalEvaluator : IEvaluator, IIncrementalEvaluator
@@ -180,6 +198,24 @@ public class SearcherBasicTests
     }
 
     /// <summary>
+    /// 常に固定値を返す評価器。
+    /// </summary>
+    private sealed class ConstantEvaluator : IEvaluator
+    {
+        private readonly int score;
+
+        public ConstantEvaluator(int score)
+        {
+            this.score = score;
+        }
+
+        public int Evaluate(Position position)
+        {
+            return score;
+        }
+    }
+
+    /// <summary>
     /// private静止探索をテストから呼び出す。
     /// </summary>
     private static int InvokeQuiescence(Searcher searcher, Position position, int alpha, int beta, ref int nodes)
@@ -189,6 +225,19 @@ public class SearcherBasicTests
         object?[] args = { position, alpha, beta, nodes };
         int score = (int)method.Invoke(searcher, args)!;
         nodes = (int)args[3]!;
+        return score;
+    }
+
+    /// <summary>
+    /// private alpha-beta探索をテストから呼び出す。
+    /// </summary>
+    private static int InvokeAlphaBeta(Searcher searcher, Position position, int depth, int alpha, int beta, int ply, ref int nodes)
+    {
+        MethodInfo? method = typeof(Searcher).GetMethod("AlphaBeta", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.IsNotNull(method);
+        object?[] args = { position, depth, alpha, beta, ply, nodes };
+        int score = (int)method.Invoke(searcher, args)!;
+        nodes = (int)args[5]!;
         return score;
     }
 }
