@@ -130,10 +130,10 @@ public class UsiProtocolTests
     }
 
     /// <summary>
-    /// go infiniteで既定深さより深い探索深さが選ばれることを検証する。
+    /// go infiniteで既定深さが維持されることを検証する。
     /// </summary>
     [TestMethod]
-    public void HandleCommand_GoInfinite_SelectsExtendedDepth()
+    public void HandleCommand_GoInfinite_UsesDefaultDepth()
     {
         var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
         engine.HandleCommand("setoption name Depth value 1");
@@ -141,17 +141,17 @@ public class UsiProtocolTests
         string response = engine.HandleCommand("go infinite");
 
         Assert.AreEqual(string.Empty, response);
-        Assert.AreEqual(3, engine.LastSearchDepth);
+        Assert.AreEqual(1, engine.LastSearchDepth);
 
         string stopResponse = engine.HandleCommand("stop");
         StringAssert.StartsWith(stopResponse, "bestmove ");
     }
 
     /// <summary>
-    /// setoption MoveTimeがgoの探索深さ選択に反映されることを検証する。
+    /// setoption MoveTimeがgoの時間上限に反映されることを検証する。
     /// </summary>
     [TestMethod]
-    public void HandleCommand_SetOptionMoveTime_AffectsGoDepth()
+    public void HandleCommand_SetOptionMoveTime_AffectsTimeLimit()
     {
         var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
         engine.HandleCommand("setoption name Depth value 1");
@@ -160,14 +160,14 @@ public class UsiProtocolTests
         string response = engine.HandleCommand("go");
 
         StringAssert.StartsWith(response, "bestmove ");
-        Assert.AreEqual(3, engine.LastSearchDepth);
+        Assert.AreEqual(5000, engine.LastSearchTimeLimitMs);
     }
 
     /// <summary>
-    /// 手番側の持ち時間に応じて探索深さが選ばれることを検証する。
+    /// 手番側の持ち時間に応じて探索時間上限が算出されることを検証する。
     /// </summary>
     [TestMethod]
-    public void HandleCommand_GoTimeControl_UsesSideToMoveTime()
+    public void HandleCommand_GoTimeControl_UsesSideToMoveTimeBudget()
     {
         var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
         engine.HandleCommand("setoption name Depth value 1");
@@ -176,7 +176,7 @@ public class UsiProtocolTests
         string response = engine.HandleCommand("go btime 100 wtime 200000");
 
         StringAssert.StartsWith(response, "bestmove ");
-        Assert.AreEqual(3, engine.LastSearchDepth);
+        Assert.AreEqual(25000, engine.LastSearchTimeLimitMs);
     }
 
     /// <summary>
@@ -288,7 +288,7 @@ public class UsiProtocolTests
 
         engine.HandleCommand("go btime 1000 wtime 3000 winc 300");
 
-        Assert.AreEqual(110, engine.LastSearchTimeLimitMs);
+        Assert.AreEqual(400, engine.LastSearchTimeLimitMs);
     }
 
     /// <summary>

@@ -2,6 +2,7 @@
 using YaneuraOu.CSharp.Engine.Core.Types;
 using YaneuraOu.CSharp.Engine.Eval;
 using YaneuraOu.CSharp.Engine.Search;
+using YaneuraOu.CSharp.Engine.Search.Time;
 
 namespace YaneuraOu.CSharp.Engine.Usi;
 
@@ -26,7 +27,9 @@ public sealed class UsiEngine
     private CancellationTokenSource? thinkingCts;
     private readonly object thinkingLock = new();
     private readonly List<string> infoMessages = new();
+    private readonly TimeManagement timeManagement = new();
     private bool isPondering;
+    private LimitsType? lastLimits;
 
     /// <summary>
     /// UsiEngineのインスタンスを初期化する。
@@ -122,6 +125,7 @@ public sealed class UsiEngine
         if (string.Equals(trimmed, "ponderhit", StringComparison.OrdinalIgnoreCase))
         {
             isPondering = false;
+            timeManagement.NotifyPonderHit();
             AddInfo("ponderhit accepted");
             return FlushInfo(string.Empty);
         }
@@ -157,12 +161,10 @@ public sealed class UsiEngine
         {
             SearchLimits limits = ParseGoLimits(trimmed);
             LastSearchDepth = limits.Depth;
-            LastSearchTimeLimitMs = limits.MaxTimeMs;
+            LastSearchTimeLimitMs = limits.StopPolicy?.MaximumTimeMs ?? limits.MaxTimeMs;
             LastSearchThreads = limits.Threads;
-            bool infinite = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                .Any(p => p.Equals("infinite", StringComparison.OrdinalIgnoreCase));
-            bool ponder = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                .Any(p => p.Equals("ponder", StringComparison.OrdinalIgnoreCase));
+            bool infinite = lastLimits?.Infinite ?? false;
+            bool ponder = lastLimits?.Ponder ?? false;
 
             if (infinite || ponder)
             {
@@ -339,21 +341,24 @@ public sealed class UsiEngine
     {
         string[] parts = command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
-        int depth = 0;
-        int movetimeMs = 0;
-        int byoyomiMs = 0;
-        int btimeMs = 0;
-        int wtimeMs = 0;
-        int bincMs = 0;
-        int wincMs = 0;
-        bool infinite = false;
+        var limits = new LimitsType
+        {
+            StartTime = DateTimeOffset.UtcNow,
+            Depth = options.DefaultDepth,
+        };
 
         for (int i = 1; i < parts.Length; i++)
         {
             string token = parts[i].ToLowerInvariant();
             if (token == "infinite")
             {
-                infinite = true;
+                limits.Infinite = true;
+                continue;
+            }
+
+            if (token == "ponder")
+            {
+                limits.Ponder = true;
                 continue;
             }
 
@@ -370,101 +375,71 @@ public sealed class UsiEngine
             switch (token)
             {
                 case "depth":
-                    depth = value;
+                    limits.Depth = Math.Max(1, value);
                     i++;
                     break;
                 case "movetime":
-                    movetimeMs = value;
+                    limits.MoveTimeMs = Math.Max(0, value);
                     i++;
                     break;
                 case "byoyomi":
-                    byoyomiMs = value;
+                    limits.ByoyomiMs = Math.Max(0, value);
                     i++;
                     break;
                 case "btime":
-                    btimeMs = value;
+                    limits.SetTime(Color.BLACK, value);
                     i++;
                     break;
                 case "wtime":
-                    wtimeMs = value;
+                    limits.SetTime(Color.WHITE, value);
                     i++;
                     break;
                 case "binc":
-                    bincMs = value;
+                    limits.SetIncrement(Color.BLACK, value);
                     i++;
                     break;
                 case "winc":
-                    wincMs = value;
+                    limits.SetIncrement(Color.WHITE, value);
+                    i++;
+                    break;
+                case "nodes":
+                    limits.Nodes = Math.Max(0, value);
+                    i++;
+                    break;
+                case "mate":
+                    limits.Mate = Math.Max(0, value);
                     i++;
                     break;
             }
         }
 
-        int timeLimitMs = SelectTimeLimitFromTimeControl(movetimeMs, byoyomiMs, btimeMs, wtimeMs, bincMs, wincMs, infinite);
-
-        if (depth <= 0)
+        if (!limits.Infinite
+            && limits.MoveTimeMs <= 0
+            && limits.ByoyomiMs <= 0
+            && limits.TimeMs[0] <= 0
+            && limits.TimeMs[1] <= 0
+            && limits.IncMs[0] <= 0
+            && limits.IncMs[1] <= 0)
         {
-            depth = SelectDepthFromTimeLimit(timeLimitMs, infinite);
+            limits.MoveTimeMs = options.DefaultMoveTimeMs;
+        }
+
+        timeManagement.Init(limits, position.side_to_move());
+        SearchStopPolicy stopPolicy = new(timeManagement, limits.Infinite, limits.Nodes, null);
+        lastLimits = limits;
+        if (limits.Mate > 0)
+        {
+            AddInfo($"go mate {limits.Mate} is not fully implemented; fallback to normal search");
         }
 
         return new SearchLimits
         {
-            Depth = Math.Max(1, depth),
-            MaxTimeMs = Math.Max(0, timeLimitMs),
+            Depth = Math.Max(1, limits.Depth),
+            MaxTimeMs = Math.Max(0, timeManagement.MaximumTimeMs),
+            NodesLimit = limits.Nodes,
             Threads = Math.Max(1, options.Threads),
+            StopPolicy = stopPolicy,
         };
-    }
-
-    /// <summary>
-    /// 時間情報から探索時間上限を決定する。
-    /// </summary>
-    private int SelectTimeLimitFromTimeControl(int movetimeMs, int byoyomiMs, int btimeMs, int wtimeMs, int bincMs, int wincMs, bool infinite)
-    {
-        if (infinite)
-        {
-            return 0;
-        }
-
-        if (movetimeMs > 0)
-        {
-            return movetimeMs;
-        }
-
-        if (byoyomiMs > 0)
-        {
-            return byoyomiMs;
-        }
-
-        int sideTime = position.side_to_move() == Color.BLACK ? btimeMs + bincMs : wtimeMs + wincMs;
-        if (sideTime > 0)
-        {
-            return Math.Max(1, sideTime / 30);
-        }
-
-        return options.DefaultMoveTimeMs;
-    }
-
-    /// <summary>
-    /// 時間上限から暫定的な探索深さを決定する。
-    /// </summary>
-    private int SelectDepthFromTimeLimit(int timeLimitMs, bool infinite)
-    {
-        if (infinite)
-        {
-            return options.DefaultDepth + 2;
-        }
-
-        if (timeLimitMs >= 5000)
-        {
-            return options.DefaultDepth + 2;
-        }
-
-        if (timeLimitMs >= 2000)
-        {
-            return options.DefaultDepth + 1;
-        }
-
-        return options.DefaultDepth;
     }
 
     /// <summary>
@@ -612,6 +587,7 @@ public sealed class UsiEngine
         {
             thinkingCts = new CancellationTokenSource();
             limits.ShouldStop = () => thinkingCts.IsCancellationRequested;
+            limits.StopPolicy?.SetExternalStop(limits.ShouldStop);
             thinkingTask = Task.Run(() => searcher.Search(position, limits, OnSearchProgress));
             AddInfo($"start thinking depth {limits.Depth} time {limits.MaxTimeMs} threads {limits.Threads}");
         }

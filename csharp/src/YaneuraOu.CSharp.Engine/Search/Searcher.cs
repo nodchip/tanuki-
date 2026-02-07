@@ -4,6 +4,7 @@ using YaneuraOu.CSharp.Engine.Core;
 using YaneuraOu.CSharp.Engine.Core.MoveGen;
 using YaneuraOu.CSharp.Engine.Core.Types;
 using YaneuraOu.CSharp.Engine.Eval;
+using YaneuraOu.CSharp.Engine.Search.Time;
 
 namespace YaneuraOu.CSharp.Engine.Search;
 
@@ -20,7 +21,10 @@ public sealed class Searcher
 
     private Stopwatch? timer;
     private int maxTimeMs;
+    private long maxNodes;
+    private long totalNodes;
     private Func<bool>? shouldStopCallback;
+    private SearchStopPolicy? stopPolicy;
 
     /// <summary>
     /// Searcherのインスタンスを初期化する。
@@ -44,7 +48,10 @@ public sealed class Searcher
 
         LastTranspositionHitCount = 0;
         maxTimeMs = limits.MaxTimeMs;
+        maxNodes = limits.NodesLimit;
         shouldStopCallback = limits.ShouldStop;
+        stopPolicy = limits.StopPolicy;
+        totalNodes = 0;
         timer = Stopwatch.StartNew();
 
         Move bestMove = Move.none();
@@ -54,7 +61,7 @@ public sealed class Searcher
 
         for (int d = 1; d <= depth; d++)
         {
-            if (IsTimeUp())
+            if (ShouldStopNow())
             {
                 break;
             }
@@ -73,10 +80,15 @@ public sealed class Searcher
                 d,
                 bestScore,
                 nodes,
-                (int)timer.ElapsedMilliseconds,
+                stopPolicy?.ElapsedMilliseconds ?? (int)timer.ElapsedMilliseconds,
                 0,
                 bestMove,
                 bestMove.to_u32() == Move.none().to_u32() ? [] : [bestMove]));
+
+            if (ShouldStopAfterCompletedDepth())
+            {
+                break;
+            }
         }
 
         timer.Stop();
@@ -116,7 +128,7 @@ public sealed class Searcher
 
         foreach (Move move in MoveOrdering.Order(position, legal, orderingContext, 0, ttMove))
         {
-            if (IsTimeUp())
+            if (ShouldStopNow())
             {
                 break;
             }
@@ -142,12 +154,13 @@ public sealed class Searcher
     /// </summary>
     private int AlphaBeta(Position position, int depth, int alpha, int beta, int ply, ref int nodes)
     {
-        if (IsTimeUp())
+        if (ShouldStopNow())
         {
             return alpha;
         }
 
         nodes++;
+        totalNodes++;
 
         int terminal = EvaluateTerminal(position, depth);
         if (terminal != int.MinValue)
@@ -182,7 +195,7 @@ public sealed class Searcher
 
         foreach (Move move in MoveOrdering.Order(position, legal, orderingContext, ply, ttMove))
         {
-            if (IsTimeUp())
+            if (ShouldStopNow())
             {
                 break;
             }
@@ -246,12 +259,13 @@ public sealed class Searcher
     /// </summary>
     private int Quiescence(Position position, int alpha, int beta, ref int nodes)
     {
-        if (IsTimeUp())
+        if (ShouldStopNow())
         {
             return alpha;
         }
 
         nodes++;
+        totalNodes++;
         int standPat = evaluator.Evaluate(position);
         if (standPat >= beta)
         {
@@ -266,7 +280,7 @@ public sealed class Searcher
         MoveList captures = MoveGenerator.GenerateCaptures(position);
         foreach (Move move in MoveOrdering.Order(position, captures, orderingContext))
         {
-            if (IsTimeUp())
+            if (ShouldStopNow())
             {
                 break;
             }
@@ -291,11 +305,34 @@ public sealed class Searcher
     }
 
     /// <summary>
-    /// 時間上限に達したかを判定する。
+    /// depth完了時点で停止すべきかどうかを判定する。
     /// </summary>
-    private bool IsTimeUp()
+    private bool ShouldStopAfterCompletedDepth()
     {
+        if (stopPolicy is not null)
+        {
+            return stopPolicy.ShouldStopAfterCompletedDepth(totalNodes);
+        }
+
+        return ShouldStopNow();
+    }
+
+    /// <summary>
+    /// 探索を即停止すべきかどうかを判定する。
+    /// </summary>
+    private bool ShouldStopNow()
+    {
+        if (stopPolicy is not null)
+        {
+            return stopPolicy.ShouldStopNow(totalNodes);
+        }
+
         if (shouldStopCallback is not null && shouldStopCallback())
+        {
+            return true;
+        }
+
+        if (maxNodes > 0 && totalNodes >= maxNodes)
         {
             return true;
         }

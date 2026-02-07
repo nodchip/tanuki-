@@ -1,4 +1,6 @@
-﻿namespace YaneuraOu.CSharp.Engine.Search;
+using YaneuraOu.CSharp.Engine.Search.Time;
+
+namespace YaneuraOu.CSharp.Engine.Search;
 
 /// <summary>
 /// 探索制約を表す設定クラス。
@@ -16,6 +18,11 @@ public sealed class SearchLimits
     public int MaxTimeMs { get; set; }
 
     /// <summary>
+    /// ノード数上限。0以下の場合は無制限。
+    /// </summary>
+    public long NodesLimit { get; set; }
+
+    /// <summary>
     /// 探索スレッド数。現実装では1を推奨。
     /// </summary>
     public int Threads { get; set; } = 1;
@@ -24,4 +31,9 @@ public sealed class SearchLimits
     /// 外部停止要求を返すコールバック。
     /// </summary>
     public Func<bool>? ShouldStop { get; set; }
+
+    /// <summary>
+    /// 停止判定ポリシー。
+    /// </summary>
+    public SearchStopPolicy? StopPolicy { get; set; }
 }
