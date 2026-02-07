@@ -50,15 +50,16 @@ try {
             throw "parity-sfen coverage 行が出力されませんでした。"
         }
 
-        if ($coverageLine -notmatch "kingmove\s+(\d+)\s+promotion\s+(\d+)\s+drop\s+(\d+)") {
+        if ($coverageLine -notmatch "kingmove\s+(\d+)\s+promotion\s+(\d+)\s+drop\s+(\d+)\s+capture\s+(\d+)") {
             throw "parity-sfen coverage 行の形式が不正です: $coverageLine"
         }
 
         $kingMoveCount = [int]$Matches[1]
         $promotionCount = [int]$Matches[2]
         $dropCount = [int]$Matches[3]
-        if ($kingMoveCount -lt $minimumCoverageEach -or $promotionCount -lt $minimumCoverageEach -or $dropCount -lt $minimumCoverageEach) {
-            throw "parity-sfen coverage不足: kingmove=$kingMoveCount promotion=$promotionCount drop=$dropCount"
+        $captureCount = [int]$Matches[4]
+        if ($kingMoveCount -lt $minimumCoverageEach -or $promotionCount -lt $minimumCoverageEach -or $dropCount -lt $minimumCoverageEach -or $captureCount -lt $minimumCoverageEach) {
+            throw "parity-sfen coverage不足: kingmove=$kingMoveCount promotion=$promotionCount drop=$dropCount capture=$captureCount"
         }
 
         $SfenListFile = $sfenOut

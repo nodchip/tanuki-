@@ -30,6 +30,11 @@ public enum SfenSampleFeatures
     /// 打ち手を含む。
     /// </summary>
     Drop = 1 << 2,
+
+    /// <summary>
+    /// 駒取りを含む。
+    /// </summary>
+    Capture = 1 << 3,
 }
 
 /// <summary>
@@ -83,6 +88,7 @@ public sealed class SfenSampler
         EnsureCoverage(SfenSampleFeatures.KingMove, results, unique, safeCount, ref covered);
         EnsureCoverage(SfenSampleFeatures.Promotion, results, unique, safeCount, ref covered);
         EnsureCoverage(SfenSampleFeatures.Drop, results, unique, safeCount, ref covered);
+        EnsureCoverage(SfenSampleFeatures.Capture, results, unique, safeCount, ref covered);
 
         return results;
     }
@@ -166,6 +172,11 @@ public sealed class SfenSampler
 
         if (!move.is_drop())
         {
+            if (position.piece_on(move.to_sq()) != Piece.NO_PIECE)
+            {
+                result |= SfenSampleFeatures.Capture;
+            }
+
             Piece piece = position.piece_on(move.from_sq());
             if (ShogiTypes.raw_type_of(piece) == PieceType.KING)
             {
@@ -196,11 +207,17 @@ public sealed class SfenSampler
             return SfenSampleFeatures.Drop;
         }
 
-        return (index % 3) switch
+        if ((covered & SfenSampleFeatures.Capture) == 0)
+        {
+            return SfenSampleFeatures.Capture;
+        }
+
+        return (index % 4) switch
         {
             0 => SfenSampleFeatures.KingMove,
             1 => SfenSampleFeatures.Promotion,
-            _ => SfenSampleFeatures.Drop,
+            2 => SfenSampleFeatures.Drop,
+            _ => SfenSampleFeatures.Capture,
         };
     }
 
@@ -249,6 +266,9 @@ public sealed class SfenSampler
                 break;
             case SfenSampleFeatures.Promotion:
                 position.set("4k4/6P2/9/9/9/9/9/9/4K4 b - 1", new StateInfo());
+                break;
+            case SfenSampleFeatures.Capture:
+                position.set("4k4/9/9/9/9/9/9/4p4/4K4 b - 1", new StateInfo());
                 break;
             default:
                 position.set("4k4/9/9/9/9/9/9/9/4K4 b P 1", new StateInfo());

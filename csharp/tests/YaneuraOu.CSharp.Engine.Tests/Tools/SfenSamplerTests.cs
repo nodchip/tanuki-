@@ -58,7 +58,7 @@ public class SfenSamplerTests
     /// 注釈付き生成で玉移動・成り・打ちの各ケースが含まれることを検証する。
     /// </summary>
     [TestMethod]
-    public void GenerateAnnotated_ContainsKingMovePromotionDropCoverage()
+    public void GenerateAnnotated_ContainsKingMovePromotionDropCaptureCoverage()
     {
         var sampler = new SfenSampler();
 
@@ -67,6 +67,7 @@ public class SfenSamplerTests
         Assert.IsTrue(samples.Any(s => (s.Features & SfenSampleFeatures.KingMove) != 0), "king move coverage missing");
         Assert.IsTrue(samples.Any(s => (s.Features & SfenSampleFeatures.Promotion) != 0), "promotion coverage missing");
         Assert.IsTrue(samples.Any(s => (s.Features & SfenSampleFeatures.Drop) != 0), "drop coverage missing");
+        Assert.IsTrue(samples.Any(s => (s.Features & SfenSampleFeatures.Capture) != 0), "capture coverage missing");
     }
 
     /// <summary>
