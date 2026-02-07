@@ -26,6 +26,8 @@ public sealed class Position
 
     private readonly Stack<PositionSnapshot> moveHistory = new();
     private readonly Stack<PositionSnapshot> nullMoveHistory = new();
+    private EnteringKingRule ekr = EnteringKingRule.EKR_NONE;
+    private readonly int[] enteringKingPoint = new int[(int)Color.COLOR_NB];
 
     public Position()
     {
@@ -545,6 +547,41 @@ public sealed class Position
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// 入玉宣言勝ちルールを設定する。
+    /// </summary>
+    public void set_ekr(EnteringKingRule rule)
+    {
+        ekr = rule;
+        update_entering_point();
+    }
+
+    /// <summary>
+    /// 宣言勝ち条件を満たすときに勝ち宣言手を返す。
+    /// </summary>
+    public Move DeclarationWin()
+    {
+        if (ekr == EnteringKingRule.EKR_NONE || ekr == EnteringKingRule.EKR_NULL)
+        {
+            return Move.none();
+        }
+
+        Color us = sideToMove;
+        Square kingSq = kingSquare[(int)us];
+        if (kingSq == Square.SQ_NB || in_check())
+        {
+            return Move.none();
+        }
+
+        if (!IsPromotionZone(us, kingSq))
+        {
+            return Move.none();
+        }
+
+        int points = CountEnteringKingPoints(us);
+        return points >= enteringKingPoint[(int)us] ? Move.win() : Move.none();
     }
 
     public bool is_mated()
@@ -1536,6 +1573,70 @@ public sealed class Position
             cursor = cursor.previous?.previous;
             distance += 2;
         }
+    }
+
+    /// <summary>
+    /// 現在の入玉ルールに基づいて必要点を更新する。
+    /// </summary>
+    private void update_entering_point()
+    {
+        switch (ekr)
+        {
+            case EnteringKingRule.EKR_24_POINT:
+            case EnteringKingRule.EKR_24_POINT_H:
+                enteringKingPoint[(int)Color.BLACK] = 31;
+                enteringKingPoint[(int)Color.WHITE] = 31;
+                break;
+            case EnteringKingRule.EKR_27_POINT:
+            case EnteringKingRule.EKR_27_POINT_H:
+                enteringKingPoint[(int)Color.BLACK] = 28;
+                enteringKingPoint[(int)Color.WHITE] = 27;
+                break;
+            default:
+                enteringKingPoint[(int)Color.BLACK] = int.MaxValue;
+                enteringKingPoint[(int)Color.WHITE] = int.MaxValue;
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 指定側の宣言勝ち点を計算する。
+    /// </summary>
+    private int CountEnteringKingPoints(Color us)
+    {
+        int points = 0;
+        for (int sq = 0; sq < (int)Square.SQ_NB; sq++)
+        {
+            Piece pc = board[sq];
+            if (pc == Piece.NO_PIECE || ShogiTypes.color_of(pc) != us)
+            {
+                continue;
+            }
+
+            PieceType raw = ShogiTypes.raw_type_of(pc);
+            if (raw == PieceType.KING)
+            {
+                continue;
+            }
+
+            if (!IsPromotionZone(us, (Square)sq))
+            {
+                continue;
+            }
+
+            points += raw == PieceType.BISHOP || raw == PieceType.ROOK ? 5 : 1;
+        }
+
+        uint handValue = hand[(int)us];
+        points += ShogiTypes.hand_count(handValue, PieceType.PAWN);
+        points += ShogiTypes.hand_count(handValue, PieceType.LANCE);
+        points += ShogiTypes.hand_count(handValue, PieceType.KNIGHT);
+        points += ShogiTypes.hand_count(handValue, PieceType.SILVER);
+        points += ShogiTypes.hand_count(handValue, PieceType.GOLD);
+        points += ShogiTypes.hand_count(handValue, PieceType.BISHOP) * 5;
+        points += ShogiTypes.hand_count(handValue, PieceType.ROOK) * 5;
+
+        return points;
     }
 
     private static Square ToSquare(int file, int rank) => (Square)(file * 9 + rank);
