@@ -157,6 +157,25 @@ public class SearcherBasicTests
     }
 
     /// <summary>
+    /// Null Move無効時は枝刈り回数が増えないことを検証する。
+    /// </summary>
+    [TestMethod]
+    public void AlphaBeta_WithNullMoveDisabled_DoesNotTriggerNullMovePruning()
+    {
+        var pos = new Position();
+        pos.set(Position.StartSfen, new StateInfo());
+        var searcher = new Searcher(
+            new ConstantEvaluator(300),
+            new SearchFeatures { EnableNullMovePruning = false });
+        int nodes = 0;
+
+        _ = InvokeAlphaBeta(searcher, pos, 4, -11000, -10000, 0, ref nodes);
+
+        Assert.IsTrue(nodes > 0);
+        Assert.AreEqual(0, searcher.LastNullMovePruningCount);
+    }
+
+    /// <summary>
     /// 十分な深さの探索でLMRが適用されることを検証する。
     /// </summary>
     [TestMethod]
@@ -175,6 +194,25 @@ public class SearcherBasicTests
     }
 
     /// <summary>
+    /// LMR無効時は削減回数が増えないことを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Search_Depth4_WithLmrDisabled_DoesNotTriggerLmrReduction()
+    {
+        var pos = new Position();
+        pos.set(Position.StartSfen, new StateInfo());
+        var searcher = new Searcher(
+            new ConstantEvaluator(0),
+            new SearchFeatures { EnableLmr = false });
+        int nodes = 0;
+
+        _ = InvokeAlphaBeta(searcher, pos, 4, -30000, 30000, 0, ref nodes);
+
+        Assert.IsTrue(nodes > 0);
+        Assert.AreEqual(0, searcher.LastLmrReductionCount);
+    }
+
+    /// <summary>
     /// 反復深化でAspiration Windowの再探索が発生することを検証する。
     /// </summary>
     [TestMethod]
@@ -188,6 +226,24 @@ public class SearcherBasicTests
 
         Assert.AreNotEqual(Move.none().to_u32(), result.BestMove.to_u32());
         Assert.IsTrue(searcher.LastAspirationReSearchCount > 0);
+    }
+
+    /// <summary>
+    /// Aspiration無効時は再探索回数が増えないことを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Search_IterativeDeepening_WithAspirationDisabled_DoesNotTriggerResearch()
+    {
+        var pos = new Position();
+        pos.set(Position.StartSfen, new StateInfo());
+        var searcher = new Searcher(
+            new PlyScaledEvaluator(200),
+            new SearchFeatures { EnableAspirationWindow = false });
+
+        SearchResult result = searcher.Search(pos, new SearchLimits { Depth = 4 });
+
+        Assert.AreNotEqual(Move.none().to_u32(), result.BestMove.to_u32());
+        Assert.AreEqual(0, searcher.LastAspirationReSearchCount);
     }
 
     /// <summary>

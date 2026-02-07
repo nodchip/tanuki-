@@ -84,4 +84,19 @@ public sealed class UsiOptions
     /// NNUE増分評価の厳密照合を有効化するかどうか。
     /// </summary>
     public bool NnueIncrementalStrict { get; set; }
+
+    /// <summary>
+    /// Null Move Pruningを有効化するかどうか。
+    /// </summary>
+    public bool UseNullMovePruning { get; set; } = true;
+
+    /// <summary>
+    /// LMRを有効化するかどうか。
+    /// </summary>
+    public bool UseLmr { get; set; } = true;
+
+    /// <summary>
+    /// Aspiration Windowを有効化するかどうか。
+    /// </summary>
+    public bool UseAspirationWindow { get; set; } = true;
 }

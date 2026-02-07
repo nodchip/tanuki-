@@ -23,6 +23,7 @@ public sealed class Searcher
 
     private readonly IEvaluator evaluator;
     private readonly IIncrementalEvaluator? incrementalEvaluator;
+    private readonly SearchFeatures features;
     private readonly MoveOrderingContext orderingContext = new();
     private readonly Dictionary<ulong, TranspositionEntry> transpositionTable = new();
     private readonly Stack<StateInfo> statePool = new();
@@ -37,9 +38,10 @@ public sealed class Searcher
     /// <summary>
     /// Searcherのインスタンスを初期化する。
     /// </summary>
-    public Searcher(IEvaluator? evaluator = null)
+    public Searcher(IEvaluator? evaluator = null, SearchFeatures? features = null)
     {
         this.evaluator = evaluator ?? new MaterialEvaluator();
+        this.features = features ?? new SearchFeatures();
         incrementalEvaluator = this.evaluator as IIncrementalEvaluator;
     }
 
@@ -104,7 +106,7 @@ public sealed class Searcher
             Move currentBest;
             int currentScore;
             int currentNodes;
-            if (d == 1 || bestScore == int.MinValue)
+            if (!features.EnableAspirationWindow || d == 1 || bestScore == int.MinValue)
             {
                 (currentBest, currentScore, currentNodes) = SearchRoot(position, d, int.MinValue + 1, int.MaxValue - 1);
             }
@@ -406,7 +408,7 @@ public sealed class Searcher
             return q;
         }
 
-        if (CanTryNullMove(position, depth, beta))
+        if (features.EnableNullMovePruning && CanTryNullMove(position, depth, beta))
         {
             StateInfo nullState = RentStateInfo();
             int nullScore;
@@ -455,7 +457,7 @@ public sealed class Searcher
             {
                 position.do_move(move, st, position.gives_check(move));
                 incrementalEvaluator?.OnMoveApplied(position, move, st.capturedPiece, us);
-                bool applyLmr = CanApplyLmr(depth, moveIndex, inCheck, move, st.capturedPiece);
+                bool applyLmr = features.EnableLmr && CanApplyLmr(depth, moveIndex, inCheck, move, st.capturedPiece);
                 if (applyLmr)
                 {
                     LastLmrReductionCount++;

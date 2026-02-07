@@ -225,6 +225,9 @@ public class UsiProtocolTests
         StringAssert.Contains(response, "option name RoundUpToFullSecond type check");
         StringAssert.Contains(response, "option name NetworkDelay type spin");
         StringAssert.Contains(response, "option name NetworkDelay2 type spin");
+        StringAssert.Contains(response, "option name UseNullMovePruning type check");
+        StringAssert.Contains(response, "option name UseLmr type check");
+        StringAssert.Contains(response, "option name UseAspirationWindow type check");
         StringAssert.Contains(response, "option name Threads type spin");
         StringAssert.Contains(response, "option name Hash type spin");
         StringAssert.Contains(response, "option name Ponder type check");
@@ -559,6 +562,24 @@ public class UsiProtocolTests
         string response = engine.HandleCommand("setoption name NnueIncrementalStrict value true");
 
         StringAssert.Contains(response, "info string NnueIncrementalStrict=true");
+    }
+
+    /// <summary>
+    /// 探索機能フラグをsetoptionで切替できることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionSearchFeatureFlags_EmitsInfoString()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+
+        string response1 = engine.HandleCommand("setoption name UseNullMovePruning value false");
+        string response2 = engine.HandleCommand("setoption name UseLmr value false");
+        string response3 = engine.HandleCommand("setoption name UseAspirationWindow value false");
+
+        StringAssert.Contains(response1, "info string UseNullMovePruning=false");
+        StringAssert.Contains(response2, "info string UseLmr=false");
+        StringAssert.Contains(response3, "info string UseAspirationWindow=false");
     }
 
     /// <summary>

@@ -99,6 +99,9 @@ public sealed class UsiEngine
                 "option name RoundUpToFullSecond type check default false\n" +
                 "option name NetworkDelay type spin default 0 min 0 max 10000\n" +
                 "option name NetworkDelay2 type spin default 0 min 0 max 10000\n" +
+                "option name UseNullMovePruning type check default true\n" +
+                "option name UseLmr type check default true\n" +
+                "option name UseAspirationWindow type check default true\n" +
                 "option name Threads type spin default 1 min 1 max 256\n" +
                 "option name Hash type spin default 64 min 1 max 8192\n" +
                 "option name Ponder type check default false\n" +
@@ -288,6 +291,27 @@ public sealed class UsiEngine
         {
             options.NetworkDelay2Ms = networkDelay2;
             AddInfo($"NetworkDelay2={networkDelay2}");
+        }
+
+        if (optionName.Equals("UseNullMovePruning", StringComparison.OrdinalIgnoreCase))
+        {
+            options.UseNullMovePruning = ParseBooleanOption(optionValue);
+            searcher = CreateSearcher();
+            AddInfo($"UseNullMovePruning={options.UseNullMovePruning.ToString().ToLowerInvariant()}");
+        }
+
+        if (optionName.Equals("UseLmr", StringComparison.OrdinalIgnoreCase))
+        {
+            options.UseLmr = ParseBooleanOption(optionValue);
+            searcher = CreateSearcher();
+            AddInfo($"UseLmr={options.UseLmr.ToString().ToLowerInvariant()}");
+        }
+
+        if (optionName.Equals("UseAspirationWindow", StringComparison.OrdinalIgnoreCase))
+        {
+            options.UseAspirationWindow = ParseBooleanOption(optionValue);
+            searcher = CreateSearcher();
+            AddInfo($"UseAspirationWindow={options.UseAspirationWindow.ToString().ToLowerInvariant()}");
         }
 
         if (optionName.Equals("Threads", StringComparison.OrdinalIgnoreCase)
@@ -656,7 +680,13 @@ public sealed class UsiEngine
     private Searcher CreateSearcher()
     {
         IEvaluator evaluator = new NnueEvaluator(nnueBackend, new MaterialEvaluator());
-        return new Searcher(evaluator);
+        var features = new SearchFeatures
+        {
+            EnableNullMovePruning = options.UseNullMovePruning,
+            EnableLmr = options.UseLmr,
+            EnableAspirationWindow = options.UseAspirationWindow,
+        };
+        return new Searcher(evaluator, features);
     }
 
     /// <summary>
