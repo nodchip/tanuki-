@@ -10,6 +10,8 @@ namespace YaneuraOu.CSharp.Engine.Tests.Eval;
 [TestClass]
 public class NnueModelLoaderTests
 {
+    private static readonly string RepoNnBinPath = ResolveRepoNnBinPath();
+
     /// <summary>
     /// モデルファイルが存在しない場合に無効バックエンドを返すことを検証する。
     /// </summary>
@@ -49,5 +51,70 @@ public class NnueModelLoaderTests
                 File.Delete(modelPath);
             }
         }
+    }
+
+    /// <summary>
+    /// バイナリ形式のモデルファイルを読み込んだ場合に有効バックエンドを返すことを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Load_BinaryFile_ReturnsEnabledBackend()
+    {
+        string modelPath = Path.GetTempFileName();
+        try
+        {
+            byte[] bytes = { 0x34, 0x12, 0x00, 0x00, 0xFE, 0xED };
+            File.WriteAllBytes(modelPath, bytes);
+            var loader = new NnueModelLoader();
+
+            INnueBackend backend = loader.Load(modelPath);
+
+            Assert.IsTrue(backend.IsEnabled);
+        }
+        finally
+        {
+            if (File.Exists(modelPath))
+            {
+                File.Delete(modelPath);
+            }
+        }
+    }
+
+    /// <summary>
+    /// eval/nn.bin を読み込んだ場合に有効バックエンドを返すことを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Load_RepoNnBin_ReturnsEnabledBackend()
+    {
+        if (string.IsNullOrEmpty(RepoNnBinPath))
+        {
+            Assert.Inconclusive("eval/nn.bin が見つからないためスキップ");
+            return;
+        }
+
+        var loader = new NnueModelLoader();
+
+        INnueBackend backend = loader.Load(RepoNnBinPath);
+
+        Assert.IsTrue(backend.IsEnabled);
+    }
+
+    /// <summary>
+    /// 実行ディレクトリから遡って eval/nn.bin の絶対パスを解決する。
+    /// </summary>
+    private static string ResolveRepoNnBinPath()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            string candidate = Path.Combine(dir.FullName, "eval", "nn.bin");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            dir = dir.Parent;
+        }
+
+        return string.Empty;
     }
 }

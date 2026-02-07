@@ -1,4 +1,7 @@
-﻿namespace YaneuraOu.CSharp.Engine.Eval;
+using System.Buffers.Binary;
+using System.Text;
+
+namespace YaneuraOu.CSharp.Engine.Eval;
 
 /// <summary>
 /// NNUEモデルを読み込んでバックエンドを生成するクラス。
@@ -17,10 +20,15 @@ public sealed class NnueModelLoader
 
         try
         {
-            string text = File.ReadAllText(modelPath).Trim();
-            if (int.TryParse(text, out int score))
+            byte[] data = File.ReadAllBytes(modelPath);
+            if (TryReadScoreFromText(data, out int textScore))
             {
-                return new FileNnueBackend(score);
+                return new FileNnueBackend(textScore);
+            }
+
+            if (TryReadScoreFromBinary(data, out int binaryScore))
+            {
+                return new FileNnueBackend(binaryScore);
             }
         }
         catch (IOException)
@@ -33,5 +41,35 @@ public sealed class NnueModelLoader
         }
 
         return new NullNnueBackend();
+    }
+
+    /// <summary>
+    /// テキスト形式の評価値を読み取る。
+    /// </summary>
+    private static bool TryReadScoreFromText(byte[] data, out int score)
+    {
+        score = 0;
+        if (data.Length == 0)
+        {
+            return false;
+        }
+
+        string text = Encoding.UTF8.GetString(data).Trim();
+        return int.TryParse(text, out score);
+    }
+
+    /// <summary>
+    /// バイナリ形式の評価値を読み取る。
+    /// </summary>
+    private static bool TryReadScoreFromBinary(byte[] data, out int score)
+    {
+        score = 0;
+        if (data.Length < sizeof(int))
+        {
+            return false;
+        }
+
+        score = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0, sizeof(int)));
+        return true;
     }
 }
