@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using YaneuraOu.CSharp.Engine.Core;
 using YaneuraOu.CSharp.Engine.Core.Types;
 
@@ -6,14 +6,12 @@ namespace YaneuraOu.CSharp.Engine.Tests.Core.Positioning;
 
 [TestClass]
 /// <summary>
-/// Position の C++ 互換性（厳密条件）を検証するテストクラス。
-/// </summary>
+/// Position 縺ｮ C++ 莠呈鋤諤ｧ・亥宍蟇・擅莉ｶ・峨ｒ讀懆ｨｼ縺吶ｋ繝・せ繝医け繝ｩ繧ｹ縲・/// </summary>
 public class PositionStrictCompatibilityTests
 {
     [TestMethod]
     /// <summary>
-    /// drop 指し手の moved_after_piece が不一致なら擬似合法でないことを検証する。
-    /// </summary>
+    /// drop 謖・＠謇九・ moved_after_piece 縺御ｸ堺ｸ閾ｴ縺ｪ繧画闘莨ｼ蜷域ｳ輔〒縺ｪ縺・％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
     public void PseudoLegal_DropMovedAfterMismatch_ReturnsFalse()
     {
         var pos = new Position();
@@ -29,8 +27,7 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// 不成指し手の moved_after_piece が不一致なら擬似合法でないことを検証する。
-    /// </summary>
+    /// 荳肴・謖・＠謇九・ moved_after_piece 縺御ｸ堺ｸ閾ｴ縺ｪ繧画闘莨ｼ蜷域ｳ輔〒縺ｪ縺・％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
     public void PseudoLegal_NonPromoteMovedAfterMismatch_ReturnsFalse()
     {
         var pos = new Position();
@@ -47,8 +44,7 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// 成り指し手の moved_after_piece が不一致なら擬似合法でないことを検証する。
-    /// </summary>
+    /// 謌舌ｊ謖・＠謇九・ moved_after_piece 縺御ｸ堺ｸ閾ｴ縺ｪ繧画闘莨ｼ蜷域ｳ輔〒縺ｪ縺・％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
     public void PseudoLegal_PromoteMovedAfterMismatch_ReturnsFalse()
     {
         var pos = new Position();
@@ -65,8 +61,7 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// 両王手時に非玉移動は擬似合法でないことを検証する。
-    /// </summary>
+    /// 荳｡邇区焔譎ゅ↓髱樒脂遘ｻ蜍輔・謫ｬ莨ｼ蜷域ｳ輔〒縺ｪ縺・％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
     public void PseudoLegal_DoubleCheck_NonKingMove_ReturnsFalse()
     {
         var pos = new Position();
@@ -85,8 +80,7 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// 王手中でない通常局面でも、玉が利きへ飛び込む手は legal でないことを検証する。
-    /// </summary>
+    /// 邇区焔荳ｭ縺ｧ縺ｪ縺・壼ｸｸ螻髱｢縺ｧ繧ゅ∫脂縺悟茜縺阪∈鬟帙・霎ｼ繧謇九・ legal 縺ｧ縺ｪ縺・％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
     public void Legal_KingMoveIntoAttack_ReturnsFalse()
     {
         var pos = new Position();
@@ -103,8 +97,7 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// pin されている駒でも玉と一直線の方向なら legal で許可されることを検証する。
-    /// </summary>
+    /// pin 縺輔ｌ縺ｦ縺・ｋ鬧偵〒繧ら脂縺ｨ荳逶ｴ邱壹・譁ｹ蜷代↑繧・legal 縺ｧ險ｱ蜿ｯ縺輔ｌ繧九％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
     public void Legal_PinnedPieceAlignedMove_ReturnsTrue()
     {
         var pos = new Position();
@@ -122,8 +115,7 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// 擬似合法でない歩打ちでも legal(drop) は true を返すことを検証する。
-    /// </summary>
+    /// 謫ｬ莨ｼ蜷域ｳ輔〒縺ｪ縺・ｭｩ謇薙■縺ｧ繧・legal(drop) 縺ｯ true 繧定ｿ斐☆縺薙→繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
     public void Legal_DropMove_ReturnsTrueEvenWhenPseudoLegalIsFalse()
     {
         var pos = new Position();
@@ -141,8 +133,7 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// C++互換として、打てない段の歩打ちでも pseudo_legal が true になることを検証する。
-    /// </summary>
+    /// C++莠呈鋤縺ｨ縺励※縲∵遠縺ｦ縺ｪ縺・ｮｵ縺ｮ豁ｩ謇薙■縺ｧ繧・pseudo_legal 縺・true 縺ｫ縺ｪ繧九％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
     public void PseudoLegal_DropPawnToLastRank_ReturnsTrueForCompatibility()
     {
         var pos = new Position();
@@ -157,8 +148,7 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// C++互換として、桂の不成で行き場がない手でも pseudo_legal が true になることを検証する。
-    /// </summary>
+    /// C++莠呈鋤縺ｨ縺励※縲∵｡ゅ・荳肴・縺ｧ陦後″蝣ｴ縺後↑縺・焔縺ｧ繧・pseudo_legal 縺・true 縺ｫ縺ｪ繧九％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
     public void PseudoLegal_KnightNoPromoteToLastRank_ReturnsTrueForCompatibility()
     {
         var pos = new Position();
@@ -175,8 +165,7 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// 成れない駒（玉/金/成駒）の成り指し手は擬似合法でないことを検証する。
-    /// </summary>
+    /// 謌舌ｌ縺ｪ縺・ｧ抵ｼ育脂/驥・謌宣ｧ抵ｼ峨・謌舌ｊ謖・＠謇九・謫ｬ莨ｼ蜷域ｳ輔〒縺ｪ縺・％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
     public void PseudoLegal_PromoteNonPromotablePiece_ReturnsFalse()
     {
         var pos = new Position();
@@ -193,8 +182,7 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// all=false では大駒の敵陣不成を禁止し、all=true では許可することを検証する。
-    /// </summary>
+    /// all=false 縺ｧ縺ｯ螟ｧ鬧偵・謨ｵ髯｣荳肴・繧堤ｦ∵ｭ｢縺励∥ll=true 縺ｧ縺ｯ險ｱ蜿ｯ縺吶ｋ縺薙→繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
     public void PseudoLegal_RookNonPromoteInPromotionZone_DiffersByAllFlag()
     {
         var pos = new Position();
@@ -211,8 +199,7 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// 駒打ちでKING種別は擬似合法でないことを検証する。
-    /// </summary>
+    /// 鬧呈遠縺｡縺ｧKING遞ｮ蛻･縺ｯ謫ｬ莨ｼ蜷域ｳ輔〒縺ｪ縺・％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
     public void PseudoLegal_DropKingPieceType_ReturnsFalse()
     {
         var pos = new Position();
@@ -224,5 +211,43 @@ public class PositionStrictCompatibilityTests
 
         Assert.IsFalse(pos.pseudo_legal(invalidKingDrop, true));
         Assert.IsFalse(pos.pseudo_legal(invalidKingDrop, false));
+    }
+
+    [TestMethod]
+    /// <summary>
+    /// 単王手時に王手駒の捕獲は擬似合法になることを検証する。
+    /// </summary>
+    public void PseudoLegal_SingleCheck_CaptureChecker_ReturnsTrue()
+    {
+        var pos = new Position();
+        pos.set("9/9/9/9/9/9/9/9/9 b - 1", new StateInfo());
+        pos.put_piece(Piece.B_KING, Square.SQ_59);
+        pos.put_piece(Piece.W_KING, Square.SQ_11);
+        pos.put_piece(Piece.W_ROOK, Square.SQ_51);
+        pos.put_piece(Piece.B_BISHOP, Square.SQ_62);
+
+        Move captureChecker = ShogiTypes.make_move(Square.SQ_62, Square.SQ_51, Piece.B_BISHOP);
+
+        Assert.IsTrue(pos.in_check());
+        Assert.IsTrue(pos.pseudo_legal(captureChecker, true));
+    }
+
+    [TestMethod]
+    /// <summary>
+    /// 単王手時に王手回避に関係ない移動は擬似合法でないことを検証する。
+    /// </summary>
+    public void PseudoLegal_SingleCheck_UnrelatedMove_ReturnsFalse()
+    {
+        var pos = new Position();
+        pos.set("9/9/9/9/9/9/9/9/9 b - 1", new StateInfo());
+        pos.put_piece(Piece.B_KING, Square.SQ_59);
+        pos.put_piece(Piece.W_KING, Square.SQ_11);
+        pos.put_piece(Piece.W_ROOK, Square.SQ_51);
+        pos.put_piece(Piece.B_GOLD, Square.SQ_79);
+
+        Move unrelatedMove = ShogiTypes.make_move(Square.SQ_79, Square.SQ_78, Piece.B_GOLD);
+
+        Assert.IsTrue(pos.in_check());
+        Assert.IsFalse(pos.pseudo_legal(unrelatedMove, true));
     }
 }
