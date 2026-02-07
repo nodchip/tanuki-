@@ -96,6 +96,16 @@
 - NNUE有効benchでNPS改善を確認
 - 実運用局面で `byoyomi 3000` の深さ到達が改善
 
+## 実測結果（2026-02-07）
+- 実行コマンド:
+  - `dotnet run --project csharp/src/YaneuraOu.CSharp.Engine -- bench nnue eval/nn.bin 1 1`
+- 出力:
+  - `info string bench material depth 1 iterations 1 nodes 60 time 19 nps 3157`
+  - `info string bench nnue depth 1 iterations 1 nodes 60 time 11 nps 5454`
+  - `info string bench nnue/material nps_ratio 1.728`
+- 判定:
+  - 目標値 `1.5x` を上回る改善を確認。
+
 ## リスクと対策
 - リスク: 差分イベントの符号ミスで評価破損
   - 対策: 手種別ごとの最小テスト + 毎ply一致比較
