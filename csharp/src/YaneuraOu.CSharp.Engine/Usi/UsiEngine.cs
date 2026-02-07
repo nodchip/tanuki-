@@ -94,6 +94,8 @@ public sealed class UsiEngine
                 "option name Depth type spin default 64 min 1 max 128\n" +
                 "option name MoveTime type spin default 1000 min 1 max 600000\n" +
                 "option name MoveOverhead type spin default 0 min 0 max 10000\n" +
+                "option name MinimumThinkingTime type spin default 2000 min 1 max 100000\n" +
+                "option name SlowMover type spin default 100 min 1 max 1000\n" +
                 "option name Threads type spin default 1 min 1 max 256\n" +
                 "option name Hash type spin default 64 min 1 max 8192\n" +
                 "option name Ponder type check default false\n" +
@@ -247,6 +249,22 @@ public sealed class UsiEngine
             AddInfo($"MoveOverhead={moveOverhead}");
         }
 
+        if (optionName.Equals("MinimumThinkingTime", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(optionValue, out int minimumThinkingTime)
+            && minimumThinkingTime > 0)
+        {
+            options.MinimumThinkingTimeMs = minimumThinkingTime;
+            AddInfo($"MinimumThinkingTime={minimumThinkingTime}");
+        }
+
+        if (optionName.Equals("SlowMover", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(optionValue, out int slowMover)
+            && slowMover > 0)
+        {
+            options.SlowMover = slowMover;
+            AddInfo($"SlowMover={slowMover}");
+        }
+
         if (optionName.Equals("Threads", StringComparison.OrdinalIgnoreCase)
             && int.TryParse(optionValue, out int threads)
             && threads > 0)
@@ -380,6 +398,8 @@ public sealed class UsiEngine
             StartTime = DateTimeOffset.UtcNow,
             Depth = options.DefaultDepth,
             MoveOverheadMs = options.MoveOverheadMs,
+            MinimumThinkingTimeMs = options.MinimumThinkingTimeMs,
+            SlowMover = options.SlowMover,
         };
 
         for (int i = 1; i < parts.Length; i++)

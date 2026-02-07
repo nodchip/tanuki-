@@ -220,6 +220,8 @@ public class UsiProtocolTests
         StringAssert.Contains(response, "option name Depth type spin");
         StringAssert.Contains(response, "option name MoveTime type spin");
         StringAssert.Contains(response, "option name MoveOverhead type spin");
+        StringAssert.Contains(response, "option name MinimumThinkingTime type spin");
+        StringAssert.Contains(response, "option name SlowMover type spin");
         StringAssert.Contains(response, "option name Threads type spin");
         StringAssert.Contains(response, "option name Hash type spin");
         StringAssert.Contains(response, "option name Ponder type check");

@@ -77,8 +77,17 @@ public sealed class TimeManagement
             optimum = Math.Max(1, byoyomi > 0 ? byoyomi : available / 2);
         }
 
-        MinimumTimeMs = Math.Max(1, optimum / 2);
-        OptimumTimeMs = Math.Max(MinimumTimeMs, Math.Min(optimum, available));
+        int scaledOptimum = Math.Max(1, optimum * Math.Max(1, limits.SlowMover) / 100);
+        int minimumThinkingTime = Math.Max(1, limits.MinimumThinkingTimeMs);
+        int baseMinimum = Math.Max(1, scaledOptimum / 2);
+        bool byoyomiDominant = remain <= 0 && inc <= 0 && byoyomi > 0;
+        if (byoyomiDominant)
+        {
+            baseMinimum = Math.Max(baseMinimum, minimumThinkingTime);
+        }
+
+        MinimumTimeMs = Math.Min(available, baseMinimum);
+        OptimumTimeMs = Math.Max(MinimumTimeMs, Math.Min(scaledOptimum, available));
         MaximumTimeMs = Math.Max(OptimumTimeMs, Math.Min(Math.Max(OptimumTimeMs, reserve), available));
     }
 

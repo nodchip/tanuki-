@@ -21,6 +21,16 @@ public sealed class UsiOptions
     public int MoveOverheadMs { get; set; }
 
     /// <summary>
+    /// 最小思考時間(ミリ秒)。
+    /// </summary>
+    public int MinimumThinkingTimeMs { get; set; } = 2000;
+
+    /// <summary>
+    /// 序盤重視率(百分率)。
+    /// </summary>
+    public int SlowMover { get; set; } = 100;
+
+    /// <summary>
     /// 既定の探索スレッド数。
     /// </summary>
     public int Threads { get; set; } = 1;

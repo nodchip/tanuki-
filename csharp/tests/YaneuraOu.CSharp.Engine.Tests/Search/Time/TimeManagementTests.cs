@@ -68,6 +68,45 @@ public class TimeManagementTests
     }
 
     /// <summary>
+    /// SlowMover指定時に最適時間が倍率で変化することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Init_WithSlowMover_AppliesOptimumScale()
+    {
+        var limits = new LimitsType
+        {
+            SlowMover = 50,
+            MinimumThinkingTimeMs = 1,
+        };
+        limits.SetTime(Color.BLACK, 6000);
+        limits.SetIncrement(Color.BLACK, 0);
+        var sut = new TimeManagement();
+
+        sut.Init(limits, Color.BLACK);
+
+        Assert.AreEqual(100, sut.OptimumTimeMs);
+    }
+
+    /// <summary>
+    /// MinimumThinkingTime指定時に最小時間へ下限が適用されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Init_WithMinimumThinkingTime_AppliesMinimumFloor()
+    {
+        var limits = new LimitsType
+        {
+            MinimumThinkingTimeMs = 1200,
+            SlowMover = 100,
+            ByoyomiMs = 1500,
+        };
+        var sut = new TimeManagement();
+
+        sut.Init(limits, Color.BLACK);
+
+        Assert.AreEqual(1200, sut.MinimumTimeMs);
+    }
+
+    /// <summary>
     /// 残り時間と加算指定時に手番側の時間で配分されることを検証する。
     /// </summary>
     [TestMethod]

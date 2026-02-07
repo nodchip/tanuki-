@@ -24,6 +24,16 @@ public sealed class LimitsType
     public int MoveOverheadMs { get; set; }
 
     /// <summary>
+    /// 最小思考時間(ミリ秒)を保持する。
+    /// </summary>
+    public int MinimumThinkingTimeMs { get; set; } = 2000;
+
+    /// <summary>
+    /// 序盤重視率(百分率)を保持する。
+    /// </summary>
+    public int SlowMover { get; set; } = 100;
+
+    /// <summary>
     /// 蝗ｺ螳壽晁・凾髢・繝溘Μ遘・繧剃ｿ晄戟縺吶ｋ縲・    /// </summary>
     public int MoveTimeMs { get; set; }
 
