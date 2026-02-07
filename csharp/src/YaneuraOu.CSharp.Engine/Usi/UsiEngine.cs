@@ -1,4 +1,5 @@
 ﻿using YaneuraOu.CSharp.Engine.Core;
+using YaneuraOu.CSharp.Engine.Core.MoveGen;
 using YaneuraOu.CSharp.Engine.Core.Types;
 using YaneuraOu.CSharp.Engine.Eval;
 using YaneuraOu.CSharp.Engine.Search;
@@ -174,10 +175,10 @@ public sealed class UsiEngine
             }
 
             SearchResult result = searcher.Search(position, limits, OnSearchProgress);
-            lastBestMove = result.BestMove;
+            lastBestMove = EnsureLegalBestMove(result.BestMove);
             AddInfo($"search depth {limits.Depth} time {limits.MaxTimeMs} nodes {result.Nodes} score cp {result.Score}");
             AddNnueStatsInfo();
-            response = $"bestmove {FormatBestMove(result.BestMove)}";
+            response = $"bestmove {FormatBestMove(lastBestMove)}";
             return FlushInfo(response);
         }
 
@@ -326,6 +327,12 @@ public sealed class UsiEngine
             Move move = ParseUsiMove(parts[i]);
             if (!move.is_ok())
             {
+                continue;
+            }
+
+            if (!position.pseudo_legal(move) || !position.legal(move))
+            {
+                AddInfo($"ignore illegal move: {parts[i]}");
                 continue;
             }
 
@@ -618,7 +625,7 @@ public sealed class UsiEngine
             task.Wait();
             if (task.Status == TaskStatus.RanToCompletion)
             {
-                lastBestMove = task.Result.BestMove;
+                lastBestMove = EnsureLegalBestMove(task.Result.BestMove);
             }
         }
         catch (AggregateException)
@@ -644,6 +651,62 @@ public sealed class UsiEngine
         return value.Equals("true", StringComparison.OrdinalIgnoreCase)
             || value.Equals("1", StringComparison.OrdinalIgnoreCase)
             || value.Equals("on", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// bestmove候補が合法か検証し、非合法なら合法手へフォールバックする。
+    /// </summary>
+    private Move EnsureLegalBestMove(Move move)
+    {
+        if (move.to_u32() == Move.none().to_u32())
+        {
+            return Move.none();
+        }
+
+        if (IsLegalMove(move))
+        {
+            return move;
+        }
+
+        AddInfo($"illegal bestmove filtered: {ToUsi(move)}");
+        return SelectFallbackMove();
+    }
+
+    /// <summary>
+    /// 指し手が現局面で合法かどうかを判定する。
+    /// </summary>
+    private bool IsLegalMove(Move move)
+    {
+        if (!move.is_ok())
+        {
+            return false;
+        }
+
+        MoveList legalMoves = MoveGenerator.GenerateLegal(position);
+        uint target = move.to_u32();
+        for (int i = 0; i < legalMoves.Count; i++)
+        {
+            if (legalMoves[i].to_u32() == target)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 合法手一覧からフォールバック用の手を選択する。
+    /// </summary>
+    private Move SelectFallbackMove()
+    {
+        MoveList legalMoves = MoveGenerator.GenerateLegal(position);
+        if (legalMoves.Count == 0)
+        {
+            return Move.none();
+        }
+
+        return legalMoves[0];
     }
 
     /// <summary>
@@ -738,3 +801,5 @@ public sealed class UsiEngine
         return string.IsNullOrEmpty(response) ? joined : $"{joined}\n{response}";
     }
 }
+
+

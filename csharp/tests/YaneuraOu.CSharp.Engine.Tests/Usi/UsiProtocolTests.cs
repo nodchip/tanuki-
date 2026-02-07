@@ -53,6 +53,20 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// positionコマンド中の違法手を無視することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_PositionContainsIllegalMove_IgnoresIllegalMove()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+
+        string response = engine.HandleCommand("position startpos moves 3c3d");
+
+        StringAssert.Contains(response, "info string ignore illegal move: 3c3d");
+    }
+
+    /// <summary>
     /// stopコマンドがbestmove応答を返すことを検証する。
     /// </summary>
     [TestMethod]
