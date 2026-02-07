@@ -1,6 +1,7 @@
-using YaneuraOu.CSharp.Engine.Core;
+﻿using YaneuraOu.CSharp.Engine.Core;
 using YaneuraOu.CSharp.Engine.Core.MoveGen;
 using YaneuraOu.CSharp.Engine.Core.Types;
+using YaneuraOu.CSharp.Engine.Eval;
 
 namespace YaneuraOu.CSharp.Engine.Search;
 
@@ -10,6 +11,15 @@ namespace YaneuraOu.CSharp.Engine.Search;
 public sealed class Searcher
 {
     private const int MateScore = 100_000;
+    private readonly IEvaluator evaluator;
+
+    /// <summary>
+    /// Searcherのインスタンスを初期化する。
+    /// </summary>
+    public Searcher(IEvaluator? evaluator = null)
+    {
+        this.evaluator = evaluator ?? new MaterialEvaluator();
+    }
 
     /// <summary>
     /// 探索を実行して最善手を返す。
@@ -37,9 +47,9 @@ public sealed class Searcher
     }
 
     /// <summary>
-    /// ルート探索を行う。
+    /// ルート探索を実行する。
     /// </summary>
-    private static (Move BestMove, int Score, int Nodes) SearchRoot(Position position, int depth)
+    private (Move BestMove, int Score, int Nodes) SearchRoot(Position position, int depth)
     {
         MoveList legal = MoveGenerator.GenerateLegal(position);
         if (legal.Count == 0)
@@ -69,9 +79,9 @@ public sealed class Searcher
     }
 
     /// <summary>
-    /// alpha-beta 探索を行う。
+    /// alpha-beta探索を実行する。
     /// </summary>
-    private static int AlphaBeta(Position position, int depth, int alpha, int beta, ref int nodes)
+    private int AlphaBeta(Position position, int depth, int alpha, int beta, ref int nodes)
     {
         nodes++;
 
@@ -108,12 +118,12 @@ public sealed class Searcher
     }
 
     /// <summary>
-    /// 簡易 quiescence 探索を行う。
+    /// 静止探索を実行する。
     /// </summary>
-    private static int Quiescence(Position position, int alpha, int beta, ref int nodes)
+    private int Quiescence(Position position, int alpha, int beta, ref int nodes)
     {
         nodes++;
-        int standPat = Evaluate(position);
+        int standPat = evaluator.Evaluate(position);
         if (standPat >= beta)
         {
             return beta;
@@ -144,70 +154,6 @@ public sealed class Searcher
         }
 
         return alpha;
-    }
-
-    /// <summary>
-    /// 材料差ベースの簡易評価値を返す。
-    /// </summary>
-    private static int Evaluate(Position position)
-    {
-        int score = 0;
-        for (int sq = 0; sq < (int)Square.SQ_NB; sq++)
-        {
-            Piece pc = position.piece_on((Square)sq);
-            if (pc == Piece.NO_PIECE)
-            {
-                continue;
-            }
-
-            int value = PieceValue(ShogiTypes.raw_type_of(pc));
-            score += ShogiTypes.color_of(pc) == Color.BLACK ? value : -value;
-        }
-
-        score += EvaluateHand(position, Color.BLACK);
-        score -= EvaluateHand(position, Color.WHITE);
-
-        return position.side_to_move() == Color.BLACK ? score : -score;
-    }
-
-    /// <summary>
-    /// 手駒の評価値を返す。
-    /// </summary>
-    private static int EvaluateHand(Position position, Color side)
-    {
-        uint hand = position.hand_of(side);
-        int score = 0;
-        for (int pt = (int)PieceType.PAWN; pt < (int)PieceType.PIECE_HAND_NB; pt++)
-        {
-            int count = ShogiTypes.hand_count(hand, (PieceType)pt);
-            score += PieceValue((PieceType)pt) * count;
-        }
-
-        return score;
-    }
-
-    /// <summary>
-    /// 駒価値を返す。
-    /// </summary>
-    private static int PieceValue(PieceType pt)
-    {
-        return pt switch
-        {
-            PieceType.PAWN => 100,
-            PieceType.LANCE => 300,
-            PieceType.KNIGHT => 300,
-            PieceType.SILVER => 400,
-            PieceType.GOLD => 500,
-            PieceType.BISHOP => 800,
-            PieceType.ROOK => 1000,
-            PieceType.PRO_PAWN => 500,
-            PieceType.PRO_LANCE => 500,
-            PieceType.PRO_KNIGHT => 500,
-            PieceType.PRO_SILVER => 500,
-            PieceType.HORSE => 900,
-            PieceType.DRAGON => 1100,
-            _ => 0,
-        };
     }
 }
 
