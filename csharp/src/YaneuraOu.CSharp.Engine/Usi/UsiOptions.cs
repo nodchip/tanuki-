@@ -24,4 +24,29 @@ public sealed class UsiOptions
     /// NNUEモデルファイルのパス。
     /// </summary>
     public string EvalFilePath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 既定のハッシュサイズ(MB)。
+    /// </summary>
+    public int HashSizeMb { get; set; } = 64;
+
+    /// <summary>
+    /// ponderを有効化するかどうか。
+    /// </summary>
+    public bool PonderEnabled { get; set; }
+
+    /// <summary>
+    /// MultiPV数。
+    /// </summary>
+    public int MultiPv { get; set; } = 1;
+
+    /// <summary>
+    /// 解析モードかどうか。
+    /// </summary>
+    public bool AnalyseMode { get; set; }
+
+    /// <summary>
+    /// デバッグログ出力を有効化するかどうか。
+    /// </summary>
+    public bool DebugLog { get; set; }
 }

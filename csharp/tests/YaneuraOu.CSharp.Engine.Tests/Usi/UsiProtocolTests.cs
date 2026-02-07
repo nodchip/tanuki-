@@ -206,6 +206,11 @@ public class UsiProtocolTests
         StringAssert.Contains(response, "option name Depth type spin");
         StringAssert.Contains(response, "option name MoveTime type spin");
         StringAssert.Contains(response, "option name Threads type spin");
+        StringAssert.Contains(response, "option name Hash type spin");
+        StringAssert.Contains(response, "option name Ponder type check");
+        StringAssert.Contains(response, "option name MultiPV type spin");
+        StringAssert.Contains(response, "option name USI_AnalyseMode type check");
+        StringAssert.Contains(response, "option name DebugLog type check");
     }
 
     /// <summary>
@@ -312,6 +317,35 @@ public class UsiProtocolTests
 
         Assert.AreEqual(string.Empty, response);
         Assert.IsFalse(engine.ShouldQuit);
+    }
+
+    /// <summary>
+    /// go ponderで非同期思考を開始しstopでbestmoveを返すことを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GoPonder_ThenStop_ReturnsBestmove()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+
+        string ponderResponse = engine.HandleCommand("go ponder btime 10000 wtime 10000");
+        string stopResponse = engine.HandleCommand("stop");
+
+        Assert.AreEqual(string.Empty, ponderResponse);
+        StringAssert.StartsWith(stopResponse, "bestmove ");
+    }
+
+    /// <summary>
+    /// DebugLog有効時にsetoption適用ログがinfo stringで出力されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_DebugLogEnabled_ReturnsInfoString()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+
+        string response = engine.HandleCommand("setoption name Hash value 128");
+
+        StringAssert.Contains(response, "info string Hash=128");
     }
 
     /// <summary>

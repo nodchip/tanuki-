@@ -22,6 +22,8 @@ public sealed class UsiEngine
     private Task<SearchResult>? thinkingTask;
     private CancellationTokenSource? thinkingCts;
     private readonly object thinkingLock = new();
+    private readonly List<string> infoMessages = new();
+    private bool isPondering;
 
     /// <summary>
     /// UsiEngineのインスタンスを初期化する。
@@ -70,53 +72,77 @@ public sealed class UsiEngine
             return string.Empty;
         }
 
+        string response;
         if (string.Equals(trimmed, "usi", StringComparison.OrdinalIgnoreCase))
         {
-            return
+            response =
                 $"id name {name}\n" +
                 $"id author {author}\n" +
                 "option name Depth type spin default 1 min 1 max 64\n" +
                 "option name MoveTime type spin default 1000 min 1 max 600000\n" +
                 "option name Threads type spin default 1 min 1 max 256\n" +
+                "option name Hash type spin default 64 min 1 max 8192\n" +
+                "option name Ponder type check default false\n" +
+                "option name MultiPV type spin default 1 min 1 max 16\n" +
+                "option name USI_AnalyseMode type check default false\n" +
+                "option name DebugLog type check default false\n" +
                 "option name EvalFile type string default \n" +
                 "usiok";
+            return FlushInfo(response);
         }
 
         if (string.Equals(trimmed, "isready", StringComparison.OrdinalIgnoreCase))
         {
-            return "readyok";
+            response = "readyok";
+            return FlushInfo(response);
         }
 
         if (string.Equals(trimmed, "ucinewgame", StringComparison.OrdinalIgnoreCase)
             || string.Equals(trimmed, "usinewgame", StringComparison.OrdinalIgnoreCase))
         {
             ResetToStartPosition();
-            return string.Empty;
+            return FlushInfo(string.Empty);
         }
 
         if (string.Equals(trimmed, "stop", StringComparison.OrdinalIgnoreCase))
         {
             CompleteThinkingIfNeeded();
-            return $"bestmove {FormatBestMove(lastBestMove)}";
+            response = $"bestmove {FormatBestMove(lastBestMove)}";
+            return FlushInfo(response);
+        }
+
+        if (string.Equals(trimmed, "ponderhit", StringComparison.OrdinalIgnoreCase))
+        {
+            isPondering = false;
+            AddInfo("ponderhit accepted");
+            return FlushInfo(string.Empty);
+        }
+
+        if (trimmed.StartsWith("gameover", StringComparison.OrdinalIgnoreCase))
+        {
+            CompleteThinkingIfNeeded();
+            isPondering = false;
+            AddInfo($"gameover {trimmed[8..].Trim()}");
+            return FlushInfo(string.Empty);
         }
 
         if (string.Equals(trimmed, "quit", StringComparison.OrdinalIgnoreCase))
         {
             CompleteThinkingIfNeeded();
             ShouldQuit = true;
-            return string.Empty;
+            return FlushInfo(string.Empty);
         }
 
         if (trimmed.StartsWith("setoption", StringComparison.OrdinalIgnoreCase))
         {
             ApplySetOption(trimmed);
-            return string.Empty;
+            return FlushInfo(string.Empty);
         }
 
         if (trimmed.StartsWith("position", StringComparison.OrdinalIgnoreCase))
         {
             ApplyPosition(trimmed);
-            return string.Empty;
+            return FlushInfo(string.Empty);
         }
 
         if (trimmed.StartsWith("go", StringComparison.OrdinalIgnoreCase))
@@ -127,19 +153,25 @@ public sealed class UsiEngine
             LastSearchThreads = limits.Threads;
             bool infinite = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries)
                 .Any(p => p.Equals("infinite", StringComparison.OrdinalIgnoreCase));
+            bool ponder = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .Any(p => p.Equals("ponder", StringComparison.OrdinalIgnoreCase));
 
-            if (infinite)
+            if (infinite || ponder)
             {
+                isPondering = ponder;
                 StartThinking(limits);
-                return string.Empty;
+                return FlushInfo(string.Empty);
             }
 
             SearchResult result = searcher.Search(position, limits);
             lastBestMove = result.BestMove;
-            return $"bestmove {FormatBestMove(result.BestMove)}";
+            AddInfo($"search depth {limits.Depth} time {limits.MaxTimeMs} nodes {result.Nodes} score cp {result.Score}");
+            response = $"bestmove {FormatBestMove(result.BestMove)}";
+            return FlushInfo(response);
         }
 
-        return string.Empty;
+        AddInfo($"ignore command: {trimmed}");
+        return FlushInfo(string.Empty);
     }
 
     /// <summary>
@@ -150,6 +182,7 @@ public sealed class UsiEngine
         CompleteThinkingIfNeeded();
         position.set(Position.StartSfen, new StateInfo());
         lastBestMove = Move.none();
+        isPondering = false;
     }
 
     /// <summary>
@@ -179,6 +212,7 @@ public sealed class UsiEngine
             && depth > 0)
         {
             options.DefaultDepth = depth;
+            AddInfo($"Depth={depth}");
         }
 
         if (optionName.Equals("MoveTime", StringComparison.OrdinalIgnoreCase)
@@ -186,6 +220,7 @@ public sealed class UsiEngine
             && moveTime > 0)
         {
             options.DefaultMoveTimeMs = moveTime;
+            AddInfo($"MoveTime={moveTime}");
         }
 
         if (optionName.Equals("Threads", StringComparison.OrdinalIgnoreCase)
@@ -193,6 +228,41 @@ public sealed class UsiEngine
             && threads > 0)
         {
             options.Threads = threads;
+            AddInfo($"Threads={threads}");
+        }
+
+        if (optionName.Equals("Hash", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(optionValue, out int hashMb)
+            && hashMb > 0)
+        {
+            options.HashSizeMb = hashMb;
+            AddInfo($"Hash={hashMb}");
+        }
+
+        if (optionName.Equals("MultiPV", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(optionValue, out int multiPv)
+            && multiPv > 0)
+        {
+            options.MultiPv = multiPv;
+            AddInfo($"MultiPV={multiPv}");
+        }
+
+        if (optionName.Equals("Ponder", StringComparison.OrdinalIgnoreCase))
+        {
+            options.PonderEnabled = ParseBooleanOption(optionValue);
+            AddInfo($"Ponder={options.PonderEnabled.ToString().ToLowerInvariant()}");
+        }
+
+        if (optionName.Equals("USI_AnalyseMode", StringComparison.OrdinalIgnoreCase))
+        {
+            options.AnalyseMode = ParseBooleanOption(optionValue);
+            AddInfo($"USI_AnalyseMode={options.AnalyseMode.ToString().ToLowerInvariant()}");
+        }
+
+        if (optionName.Equals("DebugLog", StringComparison.OrdinalIgnoreCase))
+        {
+            options.DebugLog = ParseBooleanOption(optionValue);
+            AddInfo($"DebugLog={options.DebugLog.ToString().ToLowerInvariant()}");
         }
 
         if (optionName.Equals("EvalFile", StringComparison.OrdinalIgnoreCase))
@@ -200,6 +270,9 @@ public sealed class UsiEngine
             options.EvalFilePath = optionValue;
             nnueBackend = nnueLoader.Load(optionValue);
             searcher = CreateSearcher();
+            AddInfo(nnueBackend.IsEnabled
+                ? $"NNUE enabled: {optionValue}"
+                : $"NNUE disabled: failed to load {optionValue}");
         }
     }
 
@@ -532,6 +605,7 @@ public sealed class UsiEngine
             thinkingCts = new CancellationTokenSource();
             limits.ShouldStop = () => thinkingCts.IsCancellationRequested;
             thinkingTask = Task.Run(() => searcher.Search(position, limits));
+            AddInfo($"start thinking depth {limits.Depth} time {limits.MaxTimeMs} threads {limits.Threads}");
         }
     }
 
@@ -575,5 +649,43 @@ public sealed class UsiEngine
                 thinkingCts = null;
             }
         }
+    }
+
+    /// <summary>
+    /// bool形式オプション文字列を解釈する。
+    /// </summary>
+    private static bool ParseBooleanOption(string value)
+    {
+        return value.Equals("true", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("1", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("on", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// info stringメッセージを追加する。
+    /// </summary>
+    private void AddInfo(string message)
+    {
+        if (!options.DebugLog && !message.StartsWith("NNUE ", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        infoMessages.Add($"info string {message}");
+    }
+
+    /// <summary>
+    /// info stringとコマンド応答を連結する。
+    /// </summary>
+    private string FlushInfo(string response)
+    {
+        if (infoMessages.Count == 0)
+        {
+            return response;
+        }
+
+        string joined = string.Join('\n', infoMessages);
+        infoMessages.Clear();
+        return string.IsNullOrEmpty(response) ? joined : $"{joined}\n{response}";
     }
 }
