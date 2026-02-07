@@ -6,12 +6,14 @@ namespace YaneuraOu.CSharp.Engine.Tests.Core.Positioning;
 
 [TestClass]
 /// <summary>
-/// Position 縺ｮ C++ 莠呈鋤諤ｧ・亥宍蟇・擅莉ｶ・峨ｒ讀懆ｨｼ縺吶ｋ繝・せ繝医け繝ｩ繧ｹ縲・/// </summary>
+/// Position の C++ 互換性（厳密条件）を検証するテストクラス。
+/// </summary>
 public class PositionStrictCompatibilityTests
 {
     [TestMethod]
     /// <summary>
-    /// drop 謖・＠謇九・ moved_after_piece 縺御ｸ堺ｸ閾ｴ縺ｪ繧画闘莨ｼ蜷域ｳ輔〒縺ｪ縺・％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
+    /// drop 指し手の moved_after_piece が不一致なら擬似合法でないことを検証する。
+    /// </summary>
     public void PseudoLegal_DropMovedAfterMismatch_ReturnsFalse()
     {
         var pos = new Position();
@@ -27,7 +29,8 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// 荳肴・謖・＠謇九・ moved_after_piece 縺御ｸ堺ｸ閾ｴ縺ｪ繧画闘莨ｼ蜷域ｳ輔〒縺ｪ縺・％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
+    /// 不成指し手の moved_after_piece が不一致なら擬似合法でないことを検証する。
+    /// </summary>
     public void PseudoLegal_NonPromoteMovedAfterMismatch_ReturnsFalse()
     {
         var pos = new Position();
@@ -44,7 +47,8 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// 謌舌ｊ謖・＠謇九・ moved_after_piece 縺御ｸ堺ｸ閾ｴ縺ｪ繧画闘莨ｼ蜷域ｳ輔〒縺ｪ縺・％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
+    /// 成り指し手の moved_after_piece が不一致なら擬似合法でないことを検証する。
+    /// </summary>
     public void PseudoLegal_PromoteMovedAfterMismatch_ReturnsFalse()
     {
         var pos = new Position();
@@ -61,7 +65,8 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// 荳｡邇区焔譎ゅ↓髱樒脂遘ｻ蜍輔・謫ｬ莨ｼ蜷域ｳ輔〒縺ｪ縺・％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
+    /// 両王手時に非玉移動は擬似合法でないことを検証する。
+    /// </summary>
     public void PseudoLegal_DoubleCheck_NonKingMove_ReturnsFalse()
     {
         var pos = new Position();
@@ -80,7 +85,8 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// 邇区焔荳ｭ縺ｧ縺ｪ縺・壼ｸｸ螻髱｢縺ｧ繧ゅ∫脂縺悟茜縺阪∈鬟帙・霎ｼ繧謇九・ legal 縺ｧ縺ｪ縺・％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
+    /// 王手中でない通常局面でも、玉が利きへ飛び込む手は legal でないことを検証する。
+    /// </summary>
     public void Legal_KingMoveIntoAttack_ReturnsFalse()
     {
         var pos = new Position();
@@ -97,7 +103,8 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// pin 縺輔ｌ縺ｦ縺・ｋ鬧偵〒繧ら脂縺ｨ荳逶ｴ邱壹・譁ｹ蜷代↑繧・legal 縺ｧ險ｱ蜿ｯ縺輔ｌ繧九％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
+    /// pin されている駒でも玉と一直線の方向なら legal で許可されることを検証する。
+    /// </summary>
     public void Legal_PinnedPieceAlignedMove_ReturnsTrue()
     {
         var pos = new Position();
@@ -115,7 +122,8 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// 謫ｬ莨ｼ蜷域ｳ輔〒縺ｪ縺・ｭｩ謇薙■縺ｧ繧・legal(drop) 縺ｯ true 繧定ｿ斐☆縺薙→繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
+    /// 擬似合法でない歩打ちでも legal(drop) は true を返すことを検証する。
+    /// </summary>
     public void Legal_DropMove_ReturnsTrueEvenWhenPseudoLegalIsFalse()
     {
         var pos = new Position();
@@ -133,7 +141,8 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// C++莠呈鋤縺ｨ縺励※縲∵遠縺ｦ縺ｪ縺・ｮｵ縺ｮ豁ｩ謇薙■縺ｧ繧・pseudo_legal 縺・true 縺ｫ縺ｪ繧九％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
+    /// C++互換として、打てない段の歩打ちでも pseudo_legal が true になることを検証する。
+    /// </summary>
     public void PseudoLegal_DropPawnToLastRank_ReturnsTrueForCompatibility()
     {
         var pos = new Position();
@@ -148,7 +157,8 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// C++莠呈鋤縺ｨ縺励※縲∵｡ゅ・荳肴・縺ｧ陦後″蝣ｴ縺後↑縺・焔縺ｧ繧・pseudo_legal 縺・true 縺ｫ縺ｪ繧九％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
+    /// C++互換として、桂の不成で行き場がない手でも pseudo_legal が true になることを検証する。
+    /// </summary>
     public void PseudoLegal_KnightNoPromoteToLastRank_ReturnsTrueForCompatibility()
     {
         var pos = new Position();
@@ -165,7 +175,8 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// 謌舌ｌ縺ｪ縺・ｧ抵ｼ育脂/驥・謌宣ｧ抵ｼ峨・謌舌ｊ謖・＠謇九・謫ｬ莨ｼ蜷域ｳ輔〒縺ｪ縺・％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
+    /// 成れない駒（玉/金/成駒）の成り指し手は擬似合法でないことを検証する。
+    /// </summary>
     public void PseudoLegal_PromoteNonPromotablePiece_ReturnsFalse()
     {
         var pos = new Position();
@@ -182,7 +193,8 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// all=false 縺ｧ縺ｯ螟ｧ鬧偵・謨ｵ髯｣荳肴・繧堤ｦ∵ｭ｢縺励∥ll=true 縺ｧ縺ｯ險ｱ蜿ｯ縺吶ｋ縺薙→繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
+    /// all=false では大駒の敵陣不成を禁止し、all=true では許可することを検証する。
+    /// </summary>
     public void PseudoLegal_RookNonPromoteInPromotionZone_DiffersByAllFlag()
     {
         var pos = new Position();
@@ -199,7 +211,8 @@ public class PositionStrictCompatibilityTests
 
     [TestMethod]
     /// <summary>
-    /// 鬧呈遠縺｡縺ｧKING遞ｮ蛻･縺ｯ謫ｬ莨ｼ蜷域ｳ輔〒縺ｪ縺・％縺ｨ繧呈､懆ｨｼ縺吶ｋ縲・    /// </summary>
+    /// 駒打ちでKING種別は擬似合法でないことを検証する。
+    /// </summary>
     public void PseudoLegal_DropKingPieceType_ReturnsFalse()
     {
         var pos = new Position();
