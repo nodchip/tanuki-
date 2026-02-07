@@ -4,6 +4,7 @@ using YaneuraOu.CSharp.Engine.Core.Types;
 using YaneuraOu.CSharp.Engine.Eval;
 using YaneuraOu.CSharp.Engine.Search;
 using YaneuraOu.CSharp.Engine.Search.Time;
+using System.Diagnostics;
 
 namespace YaneuraOu.CSharp.Engine.Usi;
 
@@ -702,16 +703,27 @@ public sealed class UsiEngine
 
         AddInfo($"lazysmp workers={workers}");
         string rootSfen = position.sfen();
+        var sharedTimer = Stopwatch.StartNew();
+        Func<bool> sharedStop = () =>
+        {
+            if (limits.ShouldStop is not null && limits.ShouldStop())
+            {
+                return true;
+            }
+
+            return limits.MaxTimeMs > 0 && sharedTimer.ElapsedMilliseconds >= limits.MaxTimeMs;
+        };
+
         var tasks = new Task<(int WorkerId, SearchResult Result, int PvLength, int CompletedDepth)>[workers];
         for (int workerId = 0; workerId < workers; workerId++)
         {
             int capturedWorkerId = workerId;
-            tasks[workerId] = Task.Run(() =>
+            tasks[workerId] = Task.Factory.StartNew(() =>
             {
                 var workerPosition = new Position();
                 workerPosition.set(rootSfen, new StateInfo());
                 Searcher workerSearcher = CreateParallelWorkerSearcher();
-                SearchLimits workerLimits = CloneWorkerLimits(limits);
+                SearchLimits workerLimits = CloneWorkerLimits(limits, sharedStop);
                 int latestPvLength = 0;
                 int latestCompletedDepth = 0;
                 SearchResult workerResult = workerSearcher.Search(
@@ -738,7 +750,10 @@ public sealed class UsiEngine
                 }
 
                 return (capturedWorkerId, workerResult, latestPvLength, latestCompletedDepth);
-            });
+            },
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
         }
 
         Task.WaitAll(tasks);
@@ -780,7 +795,7 @@ public sealed class UsiEngine
     /// <summary>
     /// 並列探索ワーカー向けに探索条件を複製する。
     /// </summary>
-    private static SearchLimits CloneWorkerLimits(SearchLimits source)
+    private static SearchLimits CloneWorkerLimits(SearchLimits source, Func<bool> sharedStop)
     {
         return new SearchLimits
         {
@@ -788,7 +803,7 @@ public sealed class UsiEngine
             MaxTimeMs = source.MaxTimeMs,
             NodesLimit = source.NodesLimit,
             Threads = 1,
-            ShouldStop = source.ShouldStop,
+            ShouldStop = sharedStop,
             MateMoves = source.MateMoves,
         };
     }

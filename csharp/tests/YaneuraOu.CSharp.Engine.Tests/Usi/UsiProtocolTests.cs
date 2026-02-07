@@ -1,4 +1,5 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Diagnostics;
 using System.Reflection;
 using YaneuraOu.CSharp.Engine.Core.Types;
 using YaneuraOu.CSharp.Engine.Search;
@@ -544,6 +545,23 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// LazySMP有効時でも秒読み超過が過大にならないことを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GoByoyomiWithThreads_DoesNotOverrunSeverely()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name Threads value 4");
+
+        var stopwatch = Stopwatch.StartNew();
+        string response = engine.HandleCommand("go btime 0 wtime 0 byoyomi 3000");
+        stopwatch.Stop();
+
+        StringAssert.Contains(response, "bestmove ");
+        Assert.IsTrue(stopwatch.ElapsedMilliseconds <= 4500, $"elapsed={stopwatch.ElapsedMilliseconds}");
+    }
+
+    /// <summary>
     /// ponderhitコマンドを受理できることを検証する。
     /// </summary>
     [TestMethod]
@@ -760,4 +778,6 @@ public class UsiProtocolTests
         return int.TryParse(parts[2], out int depth) ? depth : 0;
     }
 }
+
+
 
