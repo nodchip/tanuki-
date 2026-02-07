@@ -425,6 +425,39 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// go infinite実行中にquitしても終了フラグが立つことを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GoInfinite_ThenQuit_SetsShouldQuit()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+
+        string goResponse = engine.HandleCommand("go infinite");
+        string quitResponse = engine.HandleCommand("quit");
+
+        Assert.AreEqual(string.Empty, goResponse);
+        Assert.AreEqual(string.Empty, quitResponse);
+        Assert.IsTrue(engine.ShouldQuit);
+    }
+
+    /// <summary>
+    /// go ponderでponderhit受理後にstopでbestmoveを返せることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GoPonder_PonderHit_Stop_ReturnsBestmove()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+
+        string ponderResponse = engine.HandleCommand("go ponder btime 1000 wtime 1000 byoyomi 300");
+        string ponderHitResponse = engine.HandleCommand("ponderhit");
+        string stopResponse = engine.HandleCommand("stop");
+
+        Assert.AreEqual(string.Empty, ponderResponse);
+        Assert.AreEqual(string.Empty, ponderHitResponse);
+        StringAssert.StartsWith(stopResponse, "bestmove ");
+    }
+
+    /// <summary>
     /// DebugLog有効時にsetoption適用ログがinfo stringで出力されることを検証する。
     /// </summary>
     [TestMethod]
