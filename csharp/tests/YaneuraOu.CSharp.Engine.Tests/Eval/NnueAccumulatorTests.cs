@@ -91,6 +91,36 @@ public class NnueAccumulatorTests
     }
 
     /// <summary>
+    /// 後手の成り手でも増分評価と再計算評価が一致することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void PushMove_WhitePromotionMove_MatchesRecompute()
+    {
+        var position = new Position();
+        position.set("4k4/9/9/9/9/9/9/6p2/4K4 w - 1", new StateInfo());
+        var accumulator = CreateInitializedAccumulator(position);
+
+        Move move = ShogiTypes.make_move_promote(Square.SQ_38, Square.SQ_39, Piece.W_PAWN);
+        ApplyMoveAndAssert(position, accumulator, move);
+        UndoMoveAndAssert(position, accumulator, move);
+    }
+
+    /// <summary>
+    /// 後手の打ち手でも増分評価と再計算評価が一致することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void PushMove_WhiteDropMove_MatchesRecompute()
+    {
+        var position = new Position();
+        position.set("4k4/9/9/9/9/9/9/9/4K4 w p 1", new StateInfo());
+        var accumulator = CreateInitializedAccumulator(position);
+
+        Move move = ShogiTypes.make_move_drop(PieceType.PAWN, Square.SQ_55, Color.WHITE);
+        ApplyMoveAndAssert(position, accumulator, move);
+        UndoMoveAndAssert(position, accumulator, move);
+    }
+
+    /// <summary>
     /// 王手移動時はフォールバックしても再計算評価と一致することを検証する。
     /// </summary>
     [TestMethod]
@@ -101,6 +131,23 @@ public class NnueAccumulatorTests
         var accumulator = CreateInitializedAccumulator(position);
 
         Move move = ShogiTypes.make_move(Square.SQ_58, Square.SQ_59, Piece.B_KING);
+        ApplyMoveAndAssert(position, accumulator, move);
+        UndoMoveAndAssert(position, accumulator, move);
+
+        Assert.IsTrue(accumulator.RebuildCount >= 2);
+    }
+
+    /// <summary>
+    /// 玉で駒を取る手でもフォールバック再構築して一致することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void PushMove_KingCapture_FallbackMatchesRecompute()
+    {
+        var position = new Position();
+        position.set("4k4/9/9/9/9/9/4p4/4K4/9 b - 1", new StateInfo());
+        var accumulator = CreateInitializedAccumulator(position);
+
+        Move move = ShogiTypes.make_move(Square.SQ_58, Square.SQ_57, Piece.B_KING);
         ApplyMoveAndAssert(position, accumulator, move);
         UndoMoveAndAssert(position, accumulator, move);
 
