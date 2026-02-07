@@ -138,4 +138,38 @@ public class PositionStrictCompatibilityTests
         Assert.IsFalse(pos.pseudo_legal(pawnDropMate));
         Assert.IsTrue(pos.legal(pawnDropMate));
     }
+
+    [TestMethod]
+    /// <summary>
+    /// C++互換として、打てない段の歩打ちでも pseudo_legal が true になることを検証する。
+    /// </summary>
+    public void PseudoLegal_DropPawnToLastRank_ReturnsTrueForCompatibility()
+    {
+        var pos = new Position();
+        pos.set("9/9/9/9/9/9/9/9/9 b P 1", new StateInfo());
+        pos.put_piece(Piece.B_KING, Square.SQ_99);
+        pos.put_piece(Piece.W_KING, Square.SQ_55);
+
+        Move pawnDropLastRank = ShogiTypes.make_move_drop(PieceType.PAWN, Square.SQ_11, Color.BLACK);
+
+        Assert.IsTrue(pos.pseudo_legal(pawnDropLastRank, true));
+    }
+
+    [TestMethod]
+    /// <summary>
+    /// C++互換として、桂の不成で行き場がない手でも pseudo_legal が true になることを検証する。
+    /// </summary>
+    public void PseudoLegal_KnightNoPromoteToLastRank_ReturnsTrueForCompatibility()
+    {
+        var pos = new Position();
+        pos.set("9/9/9/9/9/9/9/9/9 b - 1", new StateInfo());
+        pos.put_piece(Piece.B_KING, Square.SQ_99);
+        pos.put_piece(Piece.W_KING, Square.SQ_55);
+        pos.put_piece(Piece.B_KNIGHT, Square.SQ_23);
+
+        Move knightNoPromote = ShogiTypes.make_move(Square.SQ_23, Square.SQ_11, Piece.B_KNIGHT);
+
+        Assert.IsTrue(pos.pseudo_legal(knightNoPromote, true));
+        Assert.IsTrue(pos.pseudo_legal(knightNoPromote, false));
+    }
 }

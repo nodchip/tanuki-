@@ -319,11 +319,6 @@ public sealed class Position
                 return false;
             }
 
-            if (!IsLegalDropSquare(us, pt, to))
-            {
-                return false;
-            }
-
             if (pt == PieceType.PAWN && !legal_pawn_drop(us, to))
             {
                 return false;
@@ -1062,12 +1057,10 @@ public sealed class Position
         int rank = RankOf(to);
         if (us == Color.BLACK)
         {
-            return (rawType == PieceType.PAWN || rawType == PieceType.LANCE) && rank == 0
-                   || rawType == PieceType.KNIGHT && rank <= 1;
+            return (rawType == PieceType.PAWN || rawType == PieceType.LANCE) && rank == 0;
         }
 
-        return (rawType == PieceType.PAWN || rawType == PieceType.LANCE) && rank == 8
-               || rawType == PieceType.KNIGHT && rank >= 7;
+        return (rawType == PieceType.PAWN || rawType == PieceType.LANCE) && rank == 8;
     }
 
     private bool IsCaptureOrInterpose(Color us, Square checkerSq, Square to)
