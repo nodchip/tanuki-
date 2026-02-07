@@ -545,6 +545,31 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// LazySMP winner選出で未探索の最小値スコアを必敗扱いしないことを検証する。
+    /// </summary>
+    [TestMethod]
+    public void LazySmpWinnerSelection_IgnoresSentinelLossScore()
+    {
+        MethodInfo? method = typeof(UsiEngine).GetMethod(
+            "SelectLazySmpWinnerIndex",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.IsNotNull(method);
+
+        SearchResult[] workers =
+        [
+            new SearchResult(new Move(0x1234), 120, 1000, 3),
+            new SearchResult(Move.none(), int.MinValue, 0, 1),
+            new SearchResult(Move.none(), int.MinValue, 0, 1),
+        ];
+        int[] pvLengths = [3, 0, 0];
+        int[] completedDepths = [3, 1, 1];
+
+        object? result = method.Invoke(null, [workers, pvLengths, completedDepths]);
+        Assert.IsNotNull(result);
+        Assert.AreEqual(0, (int)result);
+    }
+
+    /// <summary>
     /// LazySMP有効時でも秒読み超過が過大にならないことを検証する。
     /// </summary>
     [TestMethod]

@@ -895,6 +895,11 @@ public sealed class UsiEngine
     /// </summary>
     private static bool IsProvenLoss(int score)
     {
+        if (score == int.MinValue)
+        {
+            return false;
+        }
+
         return score <= -MateScoreThreshold;
     }
 
