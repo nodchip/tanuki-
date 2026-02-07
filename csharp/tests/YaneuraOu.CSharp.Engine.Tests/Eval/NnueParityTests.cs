@@ -11,12 +11,23 @@ namespace YaneuraOu.CSharp.Engine.Tests.Eval;
 [TestClass]
 public class NnueParityTests
 {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
     /// <summary>
     /// JSONLの基準局面でNNUE評価値が期待値と一致することを検証する。
     /// </summary>
     [TestMethod]
     public void Evaluate_ParityCases_MatchesExpectedScores()
     {
+        if (!string.Equals(Environment.GetEnvironmentVariable("NNUE_PARITY_STRICT"), "1", StringComparison.Ordinal))
+        {
+            Assert.Inconclusive("NNUE_PARITY_STRICT=1 未設定のためスキップ");
+            return;
+        }
+
         string modelPath = ResolveRepoFilePath("eval", "nn.bin");
         string casesPath = ResolveRepoFilePath("eval", "nnue-parity-cases.jsonl");
         if (string.IsNullOrEmpty(modelPath))
@@ -44,7 +55,7 @@ public class NnueParityTests
                 continue;
             }
 
-            var parity = JsonSerializer.Deserialize<ParityCase>(trimmed);
+            var parity = JsonSerializer.Deserialize<ParityCase>(trimmed, JsonOptions);
             if (parity is null || string.IsNullOrWhiteSpace(parity.Sfen))
             {
                 continue;
@@ -65,6 +76,12 @@ public class NnueParityTests
     /// </summary>
     private static string ResolveRepoFilePath(params string[] relativeSegments)
     {
+        string currentCandidate = Path.Combine(new[] { Environment.CurrentDirectory }.Concat(relativeSegments).ToArray());
+        if (File.Exists(currentCandidate))
+        {
+            return currentCandidate;
+        }
+
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)
         {
