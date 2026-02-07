@@ -11,6 +11,7 @@ namespace YaneuraOu.CSharp.Engine.Tests.Eval;
 [TestClass]
 public class NnueParityTests
 {
+    private const int MinimumStrictCases = 12;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -68,7 +69,7 @@ public class NnueParityTests
             checkedCases++;
         }
 
-        Assert.IsTrue(checkedCases > 0, "検証対象の局面が0件です。");
+        Assert.IsTrue(checkedCases >= MinimumStrictCases, $"検証対象の局面数が不足しています。expected>={MinimumStrictCases} actual={checkedCases}");
     }
 
     /// <summary>
