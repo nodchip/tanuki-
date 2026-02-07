@@ -148,3 +148,13 @@ YaneuraOu is the World's Strongest Shogi engine(AI player) , WCSC29 1st winner ,
 やねうら王関連の質問は、以下のブログ記事のコメント欄にお願いします。
 https://yaneuraou.yaneu.com/2022/05/19/yaneuraou-question-box/
 
+
+# C#移植版 (開発中)
+
+C#移植版のソリューションは `csharp/YaneuraOu.CSharp.sln` です。
+
+- ビルド: `dotnet build csharp/YaneuraOu.CSharp.sln -v minimal`
+- テスト: `dotnet test csharp/YaneuraOu.CSharp.sln -v minimal`
+- ベンチ: `dotnet run --project csharp/src/YaneuraOu.CSharp.Engine/YaneuraOu.CSharp.Engine.csproj -- bench 1 2`
+
+運用手順は `docs/ops/usi-runbook.md`、調整方針は `docs/ops/tuning-guide.md` を参照してください。

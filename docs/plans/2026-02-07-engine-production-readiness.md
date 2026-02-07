@@ -180,3 +180,4 @@
 - Phase D: 進行中（`usi/isready/setoption/position/go/stop/quit/ucinewgame`実装、USIプロトコルテスト追加）。
 - Phase E: 進行中（`IEvaluator/MaterialEvaluator/NnueEvaluator/INnueBackend`導入）。
 - Phase F: 着手（`BenchRunner`、回帰テスト、`csharp-ci.yml`追加）。
+- Phase G: 着手（`docs/ops/usi-runbook.md`、`docs/ops/tuning-guide.md`、`README.md`導線追加）。
