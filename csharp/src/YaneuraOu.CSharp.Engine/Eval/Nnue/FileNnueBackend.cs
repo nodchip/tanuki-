@@ -86,4 +86,20 @@ public sealed class FileNnueBackend : INnueBackend, IIncrementalNnueBackend
 
         accumulator!.Pop();
     }
+
+    /// <summary>
+    /// 直近探索における差分更新統計を返す。
+    /// </summary>
+    public NnueIncrementalStats GetStats()
+    {
+        if (useFixedScore)
+        {
+            return new NnueIncrementalStats(0, 0, 0);
+        }
+
+        return new NnueIncrementalStats(
+            accumulator!.RebuildCount,
+            accumulator.DeltaApplyCount,
+            accumulator.EvaluateCount);
+    }
 }

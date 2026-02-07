@@ -41,4 +41,12 @@ public sealed class NullNnueBackend : INnueBackend, IIncrementalNnueBackend
     public void OnMoveUndone(Position positionAfterUndo, Move move)
     {
     }
+
+    /// <summary>
+    /// 直近探索における差分更新統計を返す。
+    /// </summary>
+    public NnueIncrementalStats GetStats()
+    {
+        return new NnueIncrementalStats(0, 0, 0);
+    }
 }

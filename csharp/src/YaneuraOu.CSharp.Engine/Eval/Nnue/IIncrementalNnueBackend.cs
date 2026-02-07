@@ -22,4 +22,9 @@ public interface IIncrementalNnueBackend
     /// undo_move適用後に差分状態を戻す。
     /// </summary>
     void OnMoveUndone(Position positionAfterUndo, Move move);
+
+    /// <summary>
+    /// 直近探索における差分更新統計を返す。
+    /// </summary>
+    NnueIncrementalStats GetStats();
 }

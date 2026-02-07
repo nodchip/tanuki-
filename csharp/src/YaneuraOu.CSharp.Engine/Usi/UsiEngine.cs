@@ -176,6 +176,7 @@ public sealed class UsiEngine
             SearchResult result = searcher.Search(position, limits, OnSearchProgress);
             lastBestMove = result.BestMove;
             AddInfo($"search depth {limits.Depth} time {limits.MaxTimeMs} nodes {result.Nodes} score cp {result.Score}");
+            AddNnueStatsInfo();
             response = $"bestmove {FormatBestMove(result.BestMove)}";
             return FlushInfo(response);
         }
@@ -703,6 +704,23 @@ public sealed class UsiEngine
     private void EmitInfoLine(string line)
     {
         OutputSink?.Invoke(line);
+    }
+
+    /// <summary>
+    /// NNUE差分更新統計をinfo stringへ出力する。
+    /// </summary>
+    private void AddNnueStatsInfo()
+    {
+        if (!options.DebugLog)
+        {
+            return;
+        }
+
+        if (nnueBackend is IIncrementalNnueBackend incremental)
+        {
+            NnueIncrementalStats stats = incremental.GetStats();
+            EmitInfoLine($"info string nnue stats rebuild={stats.RebuildCount} delta={stats.DeltaApplyCount} eval={stats.EvaluateCount}");
+        }
     }
 
     /// <summary>
