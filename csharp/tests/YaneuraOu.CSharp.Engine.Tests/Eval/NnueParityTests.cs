@@ -11,7 +11,7 @@ namespace YaneuraOu.CSharp.Engine.Tests.Eval;
 [TestClass]
 public class NnueParityTests
 {
-    private const int MinimumStrictCases = 200;
+    private const int MinimumStrictCases = 500;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
