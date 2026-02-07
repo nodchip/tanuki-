@@ -42,6 +42,11 @@ public sealed class UsiEngine
     public int LastSearchDepth { get; private set; }
 
     /// <summary>
+    /// 直近の探索で使用した時間上限(ミリ秒)を返す。
+    /// </summary>
+    public int LastSearchTimeLimitMs { get; private set; }
+
+    /// <summary>
     /// NNUE評価が有効かどうかを返す。
     /// </summary>
     public bool IsNnueEnabled => nnueBackend.IsEnabled;
@@ -107,6 +112,7 @@ public sealed class UsiEngine
         {
             SearchLimits limits = ParseGoLimits(trimmed);
             LastSearchDepth = limits.Depth;
+            LastSearchTimeLimitMs = limits.MaxTimeMs;
             SearchResult result = searcher.Search(position, limits);
             lastBestMove = result.BestMove;
             return $"bestmove {FormatBestMove(result.BestMove)}";
@@ -282,48 +288,61 @@ public sealed class UsiEngine
             }
         }
 
+        int timeLimitMs = SelectTimeLimitFromTimeControl(movetimeMs, byoyomiMs, btimeMs, wtimeMs, bincMs, wincMs, infinite);
+
         if (depth <= 0)
         {
-            depth = SelectDepthFromTimeControl(movetimeMs, byoyomiMs, btimeMs, wtimeMs, bincMs, wincMs, infinite);
+            depth = SelectDepthFromTimeLimit(timeLimitMs, infinite);
         }
 
-        return new SearchLimits { Depth = Math.Max(1, depth) };
+        return new SearchLimits { Depth = Math.Max(1, depth), MaxTimeMs = Math.Max(0, timeLimitMs) };
     }
 
     /// <summary>
-    /// 時間情報から暫定的な探索深さを決定する。
+    /// 時間情報から探索時間上限を決定する。
     /// </summary>
-    private int SelectDepthFromTimeControl(int movetimeMs, int byoyomiMs, int btimeMs, int wtimeMs, int bincMs, int wincMs, bool infinite)
+    private int SelectTimeLimitFromTimeControl(int movetimeMs, int byoyomiMs, int btimeMs, int wtimeMs, int bincMs, int wincMs, bool infinite)
+    {
+        if (infinite)
+        {
+            return 0;
+        }
+
+        if (movetimeMs > 0)
+        {
+            return movetimeMs;
+        }
+
+        if (byoyomiMs > 0)
+        {
+            return byoyomiMs;
+        }
+
+        int sideTime = position.side_to_move() == Color.BLACK ? btimeMs + bincMs : wtimeMs + wincMs;
+        if (sideTime > 0)
+        {
+            return Math.Max(1, sideTime / 30);
+        }
+
+        return options.DefaultMoveTimeMs;
+    }
+
+    /// <summary>
+    /// 時間上限から暫定的な探索深さを決定する。
+    /// </summary>
+    private int SelectDepthFromTimeLimit(int timeLimitMs, bool infinite)
     {
         if (infinite)
         {
             return options.DefaultDepth + 2;
         }
 
-        int sideTime = position.side_to_move() == Color.BLACK ? btimeMs + bincMs : wtimeMs + wincMs;
-        int candidate = movetimeMs;
-        if (candidate <= 0)
-        {
-            if (byoyomiMs > 0)
-            {
-                candidate = byoyomiMs;
-            }
-            else if (sideTime > 0)
-            {
-                candidate = Math.Max(100, sideTime / 30);
-            }
-            else
-            {
-                candidate = options.DefaultMoveTimeMs;
-            }
-        }
-
-        if (candidate >= 5000)
+        if (timeLimitMs >= 5000)
         {
             return options.DefaultDepth + 2;
         }
 
-        if (candidate >= 2000)
+        if (timeLimitMs >= 2000)
         {
             return options.DefaultDepth + 1;
         }

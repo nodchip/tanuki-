@@ -241,4 +241,44 @@ public class UsiProtocolTests
 
         Assert.IsFalse(engine.IsNnueEnabled);
     }
+
+    /// <summary>
+    /// go movetime指定時に時間上限へ反映されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GoMoveTime_SetsSearchTimeLimit()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+
+        engine.HandleCommand("go movetime 1500");
+
+        Assert.AreEqual(1500, engine.LastSearchTimeLimitMs);
+    }
+
+    /// <summary>
+    /// go byoyomi指定時に時間上限へ反映されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GoByoyomi_SetsSearchTimeLimit()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+
+        engine.HandleCommand("go byoyomi 2000");
+
+        Assert.AreEqual(2000, engine.LastSearchTimeLimitMs);
+    }
+
+    /// <summary>
+    /// go持ち時間指定時に手番側の時間から上限を算出することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GoTimeControl_UsesSideToMoveBudget()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("position sfen lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL w - 1");
+
+        engine.HandleCommand("go btime 1000 wtime 3000 winc 300");
+
+        Assert.AreEqual(110, engine.LastSearchTimeLimitMs);
+    }
 }

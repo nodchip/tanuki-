@@ -191,3 +191,4 @@
 - Phase D: 進行中（`usinewgame`受理、`usi`応答でDepth/MoveTime option広告を追加）。
 - Phase E: 進行中（`setoption name EvalFile`でNNUE有効化を反映、USIテスト追加）。
 - Phase F: 進行中（反復・宣言勝ちを回帰テストへ追加）。
+- Phase D: 進行中（`go`の時間上限算出を実装し、探索側で時間制約を参照）。

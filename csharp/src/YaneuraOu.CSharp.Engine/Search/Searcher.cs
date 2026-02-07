@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Diagnostics;
 using YaneuraOu.CSharp.Engine.Core;
 using YaneuraOu.CSharp.Engine.Core.MoveGen;
 using YaneuraOu.CSharp.Engine.Core.Types;
@@ -16,6 +17,9 @@ public sealed class Searcher
     private readonly IEvaluator evaluator;
     private readonly MoveOrderingContext orderingContext = new();
     private readonly Dictionary<ulong, TranspositionEntry> transpositionTable = new();
+
+    private Stopwatch? timer;
+    private int maxTimeMs;
 
     /// <summary>
     /// Searcherのインスタンスを初期化する。
@@ -38,13 +42,21 @@ public sealed class Searcher
         int depth = limits.Depth <= 0 ? 1 : limits.Depth;
 
         LastTranspositionHitCount = 0;
+        maxTimeMs = limits.MaxTimeMs;
+        timer = Stopwatch.StartNew();
 
         Move bestMove = Move.none();
         int bestScore = int.MinValue;
         int nodes = 0;
+        int completedDepth = 0;
 
         for (int d = 1; d <= depth; d++)
         {
+            if (IsTimeUp())
+            {
+                break;
+            }
+
             (Move currentBest, int currentScore, int currentNodes) = SearchRoot(position, d);
             nodes += currentNodes;
             if (currentBest.to_u32() != Move.none().to_u32())
@@ -52,9 +64,13 @@ public sealed class Searcher
                 bestMove = currentBest;
                 bestScore = currentScore;
             }
+
+            completedDepth = d;
         }
 
-        return new SearchResult(bestMove, bestScore, nodes, depth);
+        timer.Stop();
+        int resultDepth = completedDepth > 0 ? completedDepth : 1;
+        return new SearchResult(bestMove, bestScore, nodes, resultDepth);
     }
 
     /// <summary>
@@ -77,6 +93,11 @@ public sealed class Searcher
 
         foreach (Move move in MoveOrdering.Order(position, legal, orderingContext, 0, ttMove))
         {
+            if (IsTimeUp())
+            {
+                break;
+            }
+
             var st = new StateInfo();
             position.do_move(move, st, position.gives_check(move));
             int score = -AlphaBeta(position, depth - 1, int.MinValue + 1, int.MaxValue - 1, 1, ref nodes);
@@ -98,6 +119,11 @@ public sealed class Searcher
     /// </summary>
     private int AlphaBeta(Position position, int depth, int alpha, int beta, int ply, ref int nodes)
     {
+        if (IsTimeUp())
+        {
+            return alpha;
+        }
+
         nodes++;
 
         int terminal = EvaluateTerminal(position, depth);
@@ -133,6 +159,11 @@ public sealed class Searcher
 
         foreach (Move move in MoveOrdering.Order(position, legal, orderingContext, ply, ttMove))
         {
+            if (IsTimeUp())
+            {
+                break;
+            }
+
             var st = new StateInfo();
             position.do_move(move, st, position.gives_check(move));
             int score = -AlphaBeta(position, depth - 1, -beta, -best, ply + 1, ref nodes);
@@ -192,6 +223,11 @@ public sealed class Searcher
     /// </summary>
     private int Quiescence(Position position, int alpha, int beta, ref int nodes)
     {
+        if (IsTimeUp())
+        {
+            return alpha;
+        }
+
         nodes++;
         int standPat = evaluator.Evaluate(position);
         if (standPat >= beta)
@@ -207,6 +243,11 @@ public sealed class Searcher
         MoveList captures = MoveGenerator.GenerateCaptures(position);
         foreach (Move move in MoveOrdering.Order(position, captures, orderingContext))
         {
+            if (IsTimeUp())
+            {
+                break;
+            }
+
             var st = new StateInfo();
             position.do_move(move, st, position.gives_check(move));
             int score = -Quiescence(position, -beta, -alpha, ref nodes);
@@ -224,6 +265,14 @@ public sealed class Searcher
         }
 
         return alpha;
+    }
+
+    /// <summary>
+    /// 時間上限に達したかを判定する。
+    /// </summary>
+    private bool IsTimeUp()
+    {
+        return maxTimeMs > 0 && timer is not null && timer.ElapsedMilliseconds >= maxTimeMs;
     }
 
     /// <summary>
