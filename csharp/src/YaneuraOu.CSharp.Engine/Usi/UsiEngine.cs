@@ -435,11 +435,6 @@ public sealed class UsiEngine
         timeManagement.Init(limits, position.side_to_move());
         SearchStopPolicy stopPolicy = new(timeManagement, limits.Infinite, limits.Nodes, null);
         lastLimits = limits;
-        if (limits.Mate > 0)
-        {
-            AddInfo($"go mate {limits.Mate} is not fully implemented; fallback to normal search");
-        }
-
         return new SearchLimits
         {
             Depth = Math.Max(1, limits.Depth),
@@ -447,6 +442,7 @@ public sealed class UsiEngine
             NodesLimit = limits.Nodes,
             Threads = Math.Max(1, options.Threads),
             StopPolicy = stopPolicy,
+            MateMoves = Math.Max(0, limits.Mate),
         };
     }
 

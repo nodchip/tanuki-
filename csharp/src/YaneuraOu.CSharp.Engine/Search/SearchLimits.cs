@@ -36,4 +36,9 @@ public sealed class SearchLimits
     /// 停止判定ポリシー。
     /// </summary>
     public SearchStopPolicy? StopPolicy { get; set; }
+
+    /// <summary>
+    /// go mateで指定された詰み手数を保持する。0以下は未指定。
+    /// </summary>
+    public int MateMoves { get; set; }
 }

@@ -305,6 +305,39 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// go mate指定時に通常探索フォールバックの警告を出さないことを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GoMate_DoesNotEmitFallbackInfo()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+
+        string response = engine.HandleCommand("go mate 3");
+
+        Assert.IsFalse(response.Contains("fallback to normal search", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(response.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Any(line => line.StartsWith("bestmove ", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
+    /// go mate指定が探索条件へ反映されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GoMate_UsesMateSearchPath()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        var outputs = new List<string>();
+        engine.OutputSink = outputs.Add;
+
+        string response = engine.HandleCommand("go mate 1");
+
+        Assert.IsTrue(response.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Any(line => line.StartsWith("bestmove ", StringComparison.Ordinal)));
+        Assert.IsTrue(outputs.Any(line => line.StartsWith("info depth ", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
     /// 再現ログ局面でgo byoyomi 3000を実行した際に深さ情報が進行することを検証する。
     /// </summary>
     [TestMethod]

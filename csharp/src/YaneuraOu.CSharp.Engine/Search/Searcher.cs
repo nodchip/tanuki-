@@ -59,6 +59,13 @@ public sealed class Searcher
         timer = Stopwatch.StartNew();
         incrementalEvaluator?.ResetIncrementalState(position);
 
+        if (limits.MateMoves > 0)
+        {
+            SearchResult mateResult = SearchMate(position, limits.MateMoves, progress);
+            timer.Stop();
+            return mateResult;
+        }
+
         Move bestMove = Move.none();
         int bestScore = int.MinValue;
         int nodes = 0;
@@ -99,6 +106,115 @@ public sealed class Searcher
         timer.Stop();
         int resultDepth = completedDepth > 0 ? completedDepth : 1;
         return new SearchResult(bestMove, bestScore, nodes, resultDepth);
+    }
+
+    /// <summary>
+    /// go mate向けの詰み探索を実行する。
+    /// </summary>
+    private SearchResult SearchMate(Position position, int mateMoves, Action<SearchProgress>? progress)
+    {
+        int maxPly = Math.Max(1, mateMoves * 2 - 1);
+        MoveList legal = MoveGenerator.GenerateLegal(position);
+        if (legal.Count == 0)
+        {
+            int terminalScore = position.in_check() ? -MateScore : 0;
+            progress?.Invoke(new SearchProgress(1, 1, terminalScore, 1, (int)timer!.ElapsedMilliseconds, 0, Move.none(), []));
+            return new SearchResult(Move.none(), terminalScore, 1, 1);
+        }
+
+        int nodes = 0;
+        int bestScore = int.MinValue;
+        Move bestMove = legal[0];
+        Color us = position.side_to_move();
+        foreach (Move move in legal)
+        {
+            if (ShouldStopNow())
+            {
+                break;
+            }
+
+            StateInfo st = RentStateInfo();
+            int score;
+            try
+            {
+                position.do_move(move, st, position.gives_check(move));
+                incrementalEvaluator?.OnMoveApplied(position, move, st.capturedPiece, us);
+                score = -MateSearch(position, maxPly - 1, 1, ref nodes);
+                position.undo_move(move);
+                incrementalEvaluator?.OnMoveUndone(position, move);
+            }
+            finally
+            {
+                ReturnStateInfo(st);
+            }
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestMove = move;
+            }
+        }
+
+        int elapsedMs = stopPolicy?.ElapsedMilliseconds ?? (int)timer!.ElapsedMilliseconds;
+        progress?.Invoke(new SearchProgress(1, 1, bestScore, nodes, elapsedMs, 0, bestMove, [bestMove]));
+        return new SearchResult(bestMove, bestScore, nodes, 1);
+    }
+
+    /// <summary>
+    /// 手数制限付きの詰み探索を実行する。
+    /// </summary>
+    private int MateSearch(Position position, int remainingPly, int plyFromRoot, ref int nodes)
+    {
+        if (ShouldStopNow())
+        {
+            return 0;
+        }
+
+        nodes++;
+        totalNodes++;
+
+        MoveList legal = MoveGenerator.GenerateLegal(position);
+        if (legal.Count == 0)
+        {
+            return position.in_check() ? -MateScore + plyFromRoot : 0;
+        }
+
+        if (remainingPly <= 0)
+        {
+            return 0;
+        }
+
+        int best = int.MinValue;
+        Color us = position.side_to_move();
+        foreach (Move move in legal)
+        {
+            if (ShouldStopNow())
+            {
+                break;
+            }
+
+            StateInfo st = RentStateInfo();
+            int score;
+            try
+            {
+                position.do_move(move, st, position.gives_check(move));
+                incrementalEvaluator?.OnMoveApplied(position, move, st.capturedPiece, us);
+                score = -MateSearch(position, remainingPly - 1, plyFromRoot + 1, ref nodes);
+                position.undo_move(move);
+                incrementalEvaluator?.OnMoveUndone(position, move);
+            }
+            finally
+            {
+                ReturnStateInfo(st);
+            }
+
+            if (score > best)
+            {
+                best = score;
+            }
+        }
+
+        return best == int.MinValue ? 0 : best;
     }
 
     /// <summary>
