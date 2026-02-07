@@ -2,7 +2,11 @@ param(
     [string]$EnginePath = "source/YaneuraOu-by-gcc.exe",
     [string]$EvalDir = "../eval",
     [string]$CasesOutFile = "eval/nnue-parity-cases.jsonl",
-    [string]$SfenListFile = ""
+    [string]$SfenListFile = "",
+    [int]$GenerateSfenCount = 0,
+    [int]$GenerateSfenSeed = 20260207,
+    [int]$GenerateSfenMinPlies = 8,
+    [int]$GenerateSfenMaxPlies = 40
 )
 
 Set-StrictMode -Version Latest
@@ -18,6 +22,13 @@ if (-not (Test-Path $generator)) {
 
 Push-Location $repoRoot
 try {
+    if ($GenerateSfenCount -gt 0) {
+        $sfenOut = if ([string]::IsNullOrWhiteSpace($SfenListFile)) { "eval/nnue-parity-sfens.txt" } else { $SfenListFile }
+        Write-Host "[0/4] parity用SFEN生成を開始します..."
+        dotnet run --project csharp/src/YaneuraOu.CSharp.Engine -- parity-sfen $GenerateSfenCount $GenerateSfenSeed $GenerateSfenMinPlies $GenerateSfenMaxPlies $sfenOut
+        $SfenListFile = $sfenOut
+    }
+
     Write-Host "[1/3] parityケース生成を開始します..."
     $genArgs = @{
         EnginePath = $EnginePath

@@ -74,7 +74,9 @@ if (-not (Test-Path $EnginePath)) {
 }
 
 $sfens = if ($SfenListFile -and (Test-Path $SfenListFile)) {
-    Get-Content $SfenListFile | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    [System.IO.File]::ReadAllLines((Resolve-Path $SfenListFile), [System.Text.Encoding]::UTF8) |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 }
 else {
     Get-DefaultSfens

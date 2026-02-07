@@ -1,4 +1,5 @@
-﻿using YaneuraOu.CSharp.Engine.Bench;
+using YaneuraOu.CSharp.Engine.Bench;
+using YaneuraOu.CSharp.Engine.Tools;
 using YaneuraOu.CSharp.Engine.Usi;
 
 namespace YaneuraOu.CSharp.Engine;
@@ -13,6 +14,12 @@ public static class Program
     /// </summary>
     public static void Main(string[] args)
     {
+        if (args.Length > 0 && string.Equals(args[0], "parity-sfen", StringComparison.OrdinalIgnoreCase))
+        {
+            RunParitySfen(args);
+            return;
+        }
+
         if (args.Length > 0 && string.Equals(args[0], "bench", StringComparison.OrdinalIgnoreCase))
         {
             RunBench(args);
@@ -95,5 +102,29 @@ public static class Program
 
         double ratio = material.NodesPerSecond > 0 ? (double)nnue.NodesPerSecond / material.NodesPerSecond : 0.0;
         Console.WriteLine($"info string bench nnue/material nps_ratio {ratio:F3}");
+    }
+
+    /// <summary>
+    /// NNUE parity用のSFEN一覧を生成する。
+    /// </summary>
+    private static void RunParitySfen(string[] args)
+    {
+        int count = args.Length >= 2 && int.TryParse(args[1], out int parsedCount) ? parsedCount : 40;
+        int seed = args.Length >= 3 && int.TryParse(args[2], out int parsedSeed) ? parsedSeed : 20260207;
+        int minPlies = args.Length >= 4 && int.TryParse(args[3], out int parsedMinPlies) ? parsedMinPlies : 8;
+        int maxPlies = args.Length >= 5 && int.TryParse(args[4], out int parsedMaxPlies) ? parsedMaxPlies : 40;
+        string outFile = args.Length >= 6 ? args[5] : "eval/nnue-parity-sfens.txt";
+
+        var sampler = new SfenSampler();
+        IReadOnlyList<string> sfens = sampler.Generate(count, seed, minPlies, maxPlies);
+
+        string? outDir = Path.GetDirectoryName(outFile);
+        if (!string.IsNullOrEmpty(outDir))
+        {
+            Directory.CreateDirectory(outDir);
+        }
+
+        File.WriteAllLines(outFile, sfens);
+        Console.WriteLine($"info string parity-sfen generated count {sfens.Count} seed {seed} minPlies {minPlies} maxPlies {maxPlies} out {outFile}");
     }
 }
