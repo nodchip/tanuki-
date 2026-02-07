@@ -76,3 +76,12 @@
    - `powershell -ExecutionPolicy Bypass -File csharp/tools/nnue/GenerateNnueParityCases.ps1 -EnginePath source/YaneuraOu-by-gcc.exe -EvalDir ../eval -OutFile eval/nnue-parity-cases.jsonl`
 3. C#側の一致テストを実行する。
    - `dotnet test csharp/YaneuraOu.CSharp.sln --filter "FullyQualifiedName~NnueParityTests" -v minimal`
+
+## 12. 照合ログ（2026-02-07）
+- C++ `YANEURAOU_ENGINE_NNUE` を `source/YaneuraOu-by-gcc.exe` としてビルド確認。
+- `GenerateNnueParityCases.ps1` で 12局面のJSONL生成を確認。
+- 厳密照合（`NNUE_PARITY_STRICT=1`）の初回差分:
+  - SFEN: `lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1`
+  - C++: `58`
+  - C#: `-5314`
+- 現状の C# NNUE は擬似重み計算であり、C++ 1:1の重み展開・推論ではないため一致しない。
