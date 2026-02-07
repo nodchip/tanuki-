@@ -157,6 +157,24 @@ public class SearcherBasicTests
     }
 
     /// <summary>
+    /// 十分な深さの探索でLMRが適用されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Search_Depth4_TriggersLmrReduction()
+    {
+        var pos = new Position();
+        pos.set(Position.StartSfen, new StateInfo());
+        var searcher = new Searcher(new ConstantEvaluator(0));
+        int nodes = 0;
+
+        int score = InvokeAlphaBeta(searcher, pos, 4, -30000, 30000, 0, ref nodes);
+
+        Assert.IsTrue(nodes > 0);
+        Assert.IsTrue(score >= -30000);
+        Assert.IsTrue(searcher.LastLmrReductionCount > 0);
+    }
+
+    /// <summary>
     /// 呼び出し回数検証用の差分更新評価器。
     /// </summary>
     private sealed class CountingIncrementalEvaluator : IEvaluator, IIncrementalEvaluator

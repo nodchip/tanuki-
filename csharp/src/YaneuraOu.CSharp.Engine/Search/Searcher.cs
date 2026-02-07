@@ -17,6 +17,8 @@ public sealed class Searcher
     private const int MateScore = 100_000;
     private const int NullMoveDepthThreshold = 3;
     private const int NullMoveReductionBase = 2;
+    private const int LmrDepthThreshold = 3;
+    private const int LmrLateMoveIndex = 4;
 
     private readonly IEvaluator evaluator;
     private readonly IIncrementalEvaluator? incrementalEvaluator;
@@ -51,6 +53,11 @@ public sealed class Searcher
     public int LastNullMovePruningCount { get; private set; }
 
     /// <summary>
+    /// 直近探索でのLMR適用件数を返す。
+    /// </summary>
+    public int LastLmrReductionCount { get; private set; }
+
+    /// <summary>
     /// 探索を実行して最善手を返す。
     /// </summary>
     public SearchResult Search(Position position, SearchLimits limits, Action<SearchProgress>? progress = null)
@@ -59,6 +66,7 @@ public sealed class Searcher
 
         LastTranspositionHitCount = 0;
         LastNullMovePruningCount = 0;
+        LastLmrReductionCount = 0;
         maxTimeMs = limits.MaxTimeMs;
         maxNodes = limits.NodesLimit;
         shouldStopCallback = limits.ShouldStop;
@@ -362,9 +370,12 @@ public sealed class Searcher
         int best = alpha;
         Move bestMove = Move.none();
         Color us = position.side_to_move();
+        bool inCheck = position.in_check();
+        int moveIndex = 0;
 
         foreach (Move move in MoveOrdering.Order(position, legal, orderingContext, ply, ttMove))
         {
+            moveIndex++;
             if (ShouldStopNow())
             {
                 break;
@@ -376,7 +387,21 @@ public sealed class Searcher
             {
                 position.do_move(move, st, position.gives_check(move));
                 incrementalEvaluator?.OnMoveApplied(position, move, st.capturedPiece, us);
-                score = -AlphaBeta(position, depth - 1, -beta, -best, ply + 1, ref nodes);
+                bool applyLmr = CanApplyLmr(depth, moveIndex, inCheck, move, st.capturedPiece);
+                if (applyLmr)
+                {
+                    LastLmrReductionCount++;
+                    int reducedDepth = Math.Max(1, depth - 1 - CalculateLmrReduction(depth));
+                    score = -AlphaBeta(position, reducedDepth, -best - 1, -best, ply + 1, ref nodes);
+                    if (score > best)
+                    {
+                        score = -AlphaBeta(position, depth - 1, -beta, -best, ply + 1, ref nodes);
+                    }
+                }
+                else
+                {
+                    score = -AlphaBeta(position, depth - 1, -beta, -best, ply + 1, ref nodes);
+                }
                 position.undo_move(move);
                 incrementalEvaluator?.OnMoveUndone(position, move);
             }
@@ -523,6 +548,37 @@ public sealed class Searcher
         }
 
         return Math.Abs(beta) < MateScore - 1024;
+    }
+
+    /// <summary>
+    /// LMRを適用可能かを判定する。
+    /// </summary>
+    private static bool CanApplyLmr(int depth, int moveIndex, bool inCheck, Move move, Piece capturedPiece)
+    {
+        if (depth < LmrDepthThreshold || inCheck || moveIndex < LmrLateMoveIndex)
+        {
+            return false;
+        }
+
+        if (capturedPiece != Piece.NO_PIECE)
+        {
+            return false;
+        }
+
+        if (move.is_drop() || move.is_promote())
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// 深さに応じたLMR削減量を返す。
+    /// </summary>
+    private static int CalculateLmrReduction(int depth)
+    {
+        return Math.Max(1, depth / 3);
     }
 
     /// <summary>
