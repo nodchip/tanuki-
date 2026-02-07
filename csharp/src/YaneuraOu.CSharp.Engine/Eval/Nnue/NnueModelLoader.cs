@@ -29,9 +29,9 @@ public sealed class NnueModelLoader
                 return new FileNnueBackend(textScore);
             }
 
-            if (TryReadNnueHeader(data, out uint version, out string architecture)
-                && version == ExpectedNnueVersion
-                && architecture.Contains("Features=HalfKP", StringComparison.Ordinal))
+            if (TryReadNnueHeader(data, out NnueModelMetadata metadata)
+                && metadata.Version == ExpectedNnueVersion
+                && metadata.Architecture.Contains("Features=HalfKP", StringComparison.Ordinal))
             {
                 return new FileNnueBackend(data);
             }
@@ -46,6 +46,32 @@ public sealed class NnueModelLoader
         }
 
         return new NullNnueBackend();
+    }
+
+    /// <summary>
+    /// モデルファイルからNNUEヘッダメタ情報を取得する。
+    /// </summary>
+    public bool TryLoadMetadata(string modelPath, out NnueModelMetadata metadata)
+    {
+        metadata = new NnueModelMetadata();
+        if (string.IsNullOrWhiteSpace(modelPath) || !File.Exists(modelPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            byte[] data = File.ReadAllBytes(modelPath);
+            return TryReadNnueHeader(data, out metadata);
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -66,17 +92,17 @@ public sealed class NnueModelLoader
     /// <summary>
     /// NNUEヘッダを読み取り、バージョンとアーキテクチャ文字列を返す。
     /// </summary>
-    private static bool TryReadNnueHeader(byte[] data, out uint version, out string architecture)
+    private static bool TryReadNnueHeader(byte[] data, out NnueModelMetadata metadata)
     {
-        version = 0;
-        architecture = string.Empty;
+        metadata = new NnueModelMetadata();
         if (data.Length < HeaderPrefixSize)
         {
             return false;
         }
 
         ReadOnlySpan<byte> span = data;
-        version = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(0, 4));
+        uint version = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(0, 4));
+        uint hashValue = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(4, 4));
         uint archSize = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(8, 4));
         if (archSize == 0 || archSize > 1024)
         {
@@ -89,7 +115,14 @@ public sealed class NnueModelLoader
             return false;
         }
 
-        architecture = Encoding.ASCII.GetString(data, HeaderPrefixSize, (int)archSize);
+        string architecture = Encoding.ASCII.GetString(data, HeaderPrefixSize, (int)archSize);
+        metadata = new NnueModelMetadata
+        {
+            Version = version,
+            HashValue = hashValue,
+            Architecture = architecture,
+        };
+
         return true;
     }
 }

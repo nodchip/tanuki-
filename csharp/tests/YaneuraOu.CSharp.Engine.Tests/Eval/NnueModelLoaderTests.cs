@@ -179,6 +179,56 @@ public class NnueModelLoaderTests
     }
 
     /// <summary>
+    /// 署名付きバイナリからNNUEメタ情報を取得できることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void TryLoadMetadata_SignedBinary_ReturnsParsedMetadata()
+    {
+        string modelPath = Path.GetTempFileName();
+        try
+        {
+            byte[] bytes = CreateSignedBinaryModelBytes(NnueHeaderVersion, 0x11223344u);
+            File.WriteAllBytes(modelPath, bytes);
+            var loader = new NnueModelLoader();
+
+            bool ok = loader.TryLoadMetadata(modelPath, out NnueModelMetadata metadata);
+
+            Assert.IsTrue(ok);
+            Assert.AreEqual(NnueHeaderVersion, metadata.Version);
+            Assert.AreEqual(0x11223344u, metadata.HashValue);
+            Assert.AreEqual("Features=HalfKP", metadata.Architecture);
+        }
+        finally
+        {
+            if (File.Exists(modelPath))
+            {
+                File.Delete(modelPath);
+            }
+        }
+    }
+
+    /// <summary>
+    /// eval/nn.bin からNNUEメタ情報を取得できることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void TryLoadMetadata_RepoNnBin_ReturnsParsedMetadata()
+    {
+        if (string.IsNullOrEmpty(RepoNnBinPath))
+        {
+            Assert.Inconclusive("eval/nn.bin が見つからないためスキップ");
+            return;
+        }
+
+        var loader = new NnueModelLoader();
+
+        bool ok = loader.TryLoadMetadata(RepoNnBinPath, out NnueModelMetadata metadata);
+
+        Assert.IsTrue(ok);
+        Assert.AreEqual(NnueHeaderVersion, metadata.Version);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(metadata.Architecture));
+    }
+
+    /// <summary>
     /// 実行ディレクトリから遡って eval/nn.bin の絶対パスを解決する。
     /// </summary>
     private static string ResolveRepoNnBinPath()

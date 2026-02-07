@@ -1,4 +1,4 @@
-namespace YaneuraOu.CSharp.Engine.Eval;
+﻿namespace YaneuraOu.CSharp.Engine.Eval;
 
 /// <summary>
 /// NNUE特徴量の差分更新を管理するアキュムレータクラス。
