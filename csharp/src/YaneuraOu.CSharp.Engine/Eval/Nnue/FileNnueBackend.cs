@@ -11,6 +11,9 @@ public sealed class FileNnueBackend : INnueBackend, IIncrementalNnueBackend
     private readonly bool useFixedScore;
     private readonly int fixedScore;
     private readonly NnueAccumulator? accumulator;
+    private readonly bool verifyIncremental;
+    private int verificationCount;
+    private int mismatchCount;
 
     /// <summary>
     /// 固定評価値モードのインスタンスを初期化する。
@@ -19,15 +22,25 @@ public sealed class FileNnueBackend : INnueBackend, IIncrementalNnueBackend
     {
         useFixedScore = true;
         fixedScore = score;
+        verifyIncremental = false;
     }
 
     /// <summary>
     /// バイナリモデルモードのインスタンスを初期化する。
     /// </summary>
     public FileNnueBackend(NnueModel model)
+        : this(model, Environment.GetEnvironmentVariable("NNUE_INCREMENTAL_STRICT") == "1")
+    {
+    }
+
+    /// <summary>
+    /// 厳密検証モード指定付きでバイナリモデルを初期化する。
+    /// </summary>
+    public FileNnueBackend(NnueModel model, bool verifyIncremental)
     {
         useFixedScore = false;
         accumulator = new NnueAccumulator(new NnueFeatureTransformer(), model);
+        this.verifyIncremental = verifyIncremental;
     }
 
     /// <summary>
@@ -45,7 +58,18 @@ public sealed class FileNnueBackend : INnueBackend, IIncrementalNnueBackend
             return fixedScore;
         }
 
-        return accumulator!.EvaluateIncremental(position);
+        int incremental = accumulator!.EvaluateIncremental(position);
+        if (verifyIncremental)
+        {
+            verificationCount++;
+            int recompute = accumulator.EvaluateByRecompute(position);
+            if (incremental != recompute)
+            {
+                mismatchCount++;
+            }
+        }
+
+        return incremental;
     }
 
     /// <summary>
@@ -94,12 +118,14 @@ public sealed class FileNnueBackend : INnueBackend, IIncrementalNnueBackend
     {
         if (useFixedScore)
         {
-            return new NnueIncrementalStats(0, 0, 0);
+            return new NnueIncrementalStats(0, 0, 0, 0, 0);
         }
 
         return new NnueIncrementalStats(
             accumulator!.RebuildCount,
             accumulator.DeltaApplyCount,
-            accumulator.EvaluateCount);
+            accumulator.EvaluateCount,
+            verificationCount,
+            mismatchCount);
     }
 }

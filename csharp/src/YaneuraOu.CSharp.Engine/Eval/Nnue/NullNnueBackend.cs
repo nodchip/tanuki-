@@ -47,6 +47,6 @@ public sealed class NullNnueBackend : INnueBackend, IIncrementalNnueBackend
     /// </summary>
     public NnueIncrementalStats GetStats()
     {
-        return new NnueIncrementalStats(0, 0, 0);
+        return new NnueIncrementalStats(0, 0, 0, 0, 0);
     }
 }

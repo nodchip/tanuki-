@@ -19,7 +19,7 @@ public class NnueBackendStatsTests
     {
         var position = new Position();
         position.set(Position.StartSfen, new StateInfo());
-        var backend = new FileNnueBackend(CreateModel());
+        var backend = new FileNnueBackend(CreateModel(), false);
 
         backend.ResetIncrementalState(position);
         _ = backend.Evaluate(position);
@@ -34,6 +34,32 @@ public class NnueBackendStatsTests
         Assert.IsTrue(stats.RebuildCount >= 1);
         Assert.IsTrue(stats.DeltaApplyCount >= 1);
         Assert.IsTrue(stats.EvaluateCount >= 2);
+        Assert.AreEqual(0, stats.VerificationCount);
+        Assert.AreEqual(0, stats.MismatchCount);
+    }
+
+    /// <summary>
+    /// 厳密検証モード有効時に増分/再計算の照合統計が増えることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void FileNnueBackend_StrictMode_CollectsVerificationStats()
+    {
+        var position = new Position();
+        position.set(Position.StartSfen, new StateInfo());
+        var backend = new FileNnueBackend(CreateModel(), true);
+
+        backend.ResetIncrementalState(position);
+        _ = backend.Evaluate(position);
+        Move move = ShogiTypes.make_move(Square.SQ_77, Square.SQ_76, Piece.B_PAWN);
+        var st = new StateInfo();
+        Color movingSide = position.side_to_move();
+        position.do_move(move, st, position.gives_check(move));
+        backend.OnMoveApplied(position, move, st.capturedPiece, movingSide);
+        _ = backend.Evaluate(position);
+
+        NnueIncrementalStats stats = backend.GetStats();
+        Assert.IsTrue(stats.VerificationCount > 0, $"verify={stats.VerificationCount} mismatch={stats.MismatchCount}");
+        Assert.IsTrue(stats.MismatchCount >= 0);
     }
 
     /// <summary>

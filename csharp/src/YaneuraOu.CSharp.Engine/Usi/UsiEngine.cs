@@ -787,7 +787,8 @@ public sealed class UsiEngine
         if (nnueBackend is IIncrementalNnueBackend incremental)
         {
             NnueIncrementalStats stats = incremental.GetStats();
-            EmitInfoLine($"info string nnue stats rebuild={stats.RebuildCount} delta={stats.DeltaApplyCount} eval={stats.EvaluateCount}");
+            EmitInfoLine(
+                $"info string nnue stats rebuild={stats.RebuildCount} delta={stats.DeltaApplyCount} eval={stats.EvaluateCount} verify={stats.VerificationCount} mismatch={stats.MismatchCount}");
         }
     }
 
