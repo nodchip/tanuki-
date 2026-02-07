@@ -99,3 +99,24 @@
 - Test: `dotnet test csharp/YaneuraOu.CSharp.sln -v minimal`
 - 長時間USIスモーク: `csharp/tools/selfplay/SelfPlaySmoke.ps1` を秒読み条件で実行
 
+
+## 6. 進捗更新 (2026-02-07)
+### 完了
+- P0-1: 違法手無視・bestmove合法化・USIスモーク整備を実装済み。
+- P0-2: `go mate` 探索経路を実装済み。
+- P0-3: USI運用安定化（`go/stop/ponderhit/quit` 回帰、停止理由ログ）を実装済み。
+- P1-1: NullMove / LMR / Aspiration を導入済み。さらに `UseNullMovePruning` / `UseLmr` / `UseAspirationWindow` で feature flag 切替可能。
+- P1-2: `MoveOverhead` / `MinimumThinkingTime` / `SlowMover` / `RoundUpToFullSecond` / `NetworkDelay` / `NetworkDelay2` を実装済み。`ponderhit` 基準の停止判定も対応済み。
+- P1-3: `Incremental == Recompute` の検証を拡張（白側成り・白側打ち・玉取りfallback）。NNUE parity strict 実行フロー、ケース網羅チェック、失敗時診断ログを整備済み。
+
+### 進行中
+- P1-3: parityケース品質の継続改善（対局ログ由来ケースの追加、分布最適化）。
+
+### 未完了
+- P2-1: `Threads > 1` の並列探索は未実装。
+- P2-2: C++同等のチューニング/運用オプション体系への収束は未完了。
+
+### 次アクション
+1. `Threads > 1` に向けて split point 設計と最小実装計画を作成する。
+2. 並列化前に単一スレッドのベンチ基準値（NPS/Elo proxy）を固定する。
+3. strict parity を定期実行ジョブ化し、回帰を自動検出する。
