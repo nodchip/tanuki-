@@ -197,6 +197,7 @@ public class NnueModelLoaderTests
             Assert.AreEqual(NnueHeaderVersion, metadata.Version);
             Assert.AreEqual(0x11223344u, metadata.HashValue);
             Assert.AreEqual("Features=HalfKP", metadata.Architecture);
+            Assert.AreEqual(12 + "Features=HalfKP".Length, metadata.HeaderByteLength);
         }
         finally
         {
@@ -226,6 +227,7 @@ public class NnueModelLoaderTests
         Assert.IsTrue(ok);
         Assert.AreEqual(NnueHeaderVersion, metadata.Version);
         Assert.IsFalse(string.IsNullOrWhiteSpace(metadata.Architecture));
+        Assert.IsTrue(metadata.HeaderByteLength > 12);
     }
 
     /// <summary>

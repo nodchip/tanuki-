@@ -19,4 +19,9 @@ public sealed class NnueModelMetadata
     /// ヘッダに記録されたアーキテクチャ文字列。
     /// </summary>
     public string Architecture { get; init; } = string.Empty;
+
+    /// <summary>
+    /// ヘッダ領域のバイト長。
+    /// </summary>
+    public int HeaderByteLength { get; init; }
 }

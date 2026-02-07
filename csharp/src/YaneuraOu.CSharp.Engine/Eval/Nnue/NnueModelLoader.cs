@@ -33,7 +33,13 @@ public sealed class NnueModelLoader
                 && metadata.Version == ExpectedNnueVersion
                 && metadata.Architecture.Contains("Features=HalfKP", StringComparison.Ordinal))
             {
-                return new FileNnueBackend(data);
+                byte[] payload = data.AsSpan(metadata.HeaderByteLength).ToArray();
+                if (payload.Length == 0)
+                {
+                    return new NullNnueBackend();
+                }
+
+                return new FileNnueBackend(payload);
             }
         }
         catch (IOException)
@@ -121,6 +127,7 @@ public sealed class NnueModelLoader
             Version = version,
             HashValue = hashValue,
             Architecture = architecture,
+            HeaderByteLength = end,
         };
 
         return true;
