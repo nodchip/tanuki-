@@ -116,7 +116,11 @@ public static class Program
         string outFile = args.Length >= 6 ? args[5] : "eval/nnue-parity-sfens.txt";
 
         var sampler = new SfenSampler();
-        IReadOnlyList<string> sfens = sampler.Generate(count, seed, minPlies, maxPlies);
+        IReadOnlyList<SfenSample> samples = sampler.GenerateAnnotated(count, seed, minPlies, maxPlies);
+        IReadOnlyList<string> sfens = samples.Select(s => s.Sfen).ToList();
+        int kingMoveCount = samples.Count(s => (s.Features & SfenSampleFeatures.KingMove) != 0);
+        int promotionCount = samples.Count(s => (s.Features & SfenSampleFeatures.Promotion) != 0);
+        int dropCount = samples.Count(s => (s.Features & SfenSampleFeatures.Drop) != 0);
 
         string? outDir = Path.GetDirectoryName(outFile);
         if (!string.IsNullOrEmpty(outDir))
@@ -126,5 +130,6 @@ public static class Program
 
         File.WriteAllLines(outFile, sfens);
         Console.WriteLine($"info string parity-sfen generated count {sfens.Count} seed {seed} minPlies {minPlies} maxPlies {maxPlies} out {outFile}");
+        Console.WriteLine($"info string parity-sfen coverage kingmove {kingMoveCount} promotion {promotionCount} drop {dropCount}");
     }
 }

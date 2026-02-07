@@ -40,4 +40,5 @@
 - `eval/nn.bin` を配置する。
 - PowerShell で `csharp/tools/nnue/RunNnueParityStrict.ps1` を実行する。
 - 既定で `600` 局面を生成し、`eval/nnue-parity-cases.jsonl` を作成する。
+- 生成時に `info string parity-sfen coverage kingmove ... promotion ... drop ...` が出力され、各件数が1以上であることをスクリプトが検証する。
 - strictテストは `NNUE_PARITY_STRICT=1` を一時設定して `NnueParityTests` のみ実行する。

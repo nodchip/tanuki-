@@ -13,6 +13,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $minimumStrictCases = 500
+$minimumCoverageEach = 1
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Resolve-Path (Join-Path $scriptDir "..\..\..")
 $generator = Join-Path $scriptDir "GenerateNnueParityCases.ps1"
@@ -39,7 +40,25 @@ try {
     if ($GenerateSfenCount -gt 0) {
         $sfenOut = if ([string]::IsNullOrWhiteSpace($SfenListFile)) { "eval/nnue-parity-sfens.txt" } else { $SfenListFile }
         Write-Host "[0/4] parity用SFENを生成します.."
-        dotnet run --project csharp/src/YaneuraOu.CSharp.Engine -- parity-sfen $GenerateSfenCount $GenerateSfenSeed $GenerateSfenMinPlies $GenerateSfenMaxPlies $sfenOut
+        $parityOutput = dotnet run --project csharp/src/YaneuraOu.CSharp.Engine -- parity-sfen $GenerateSfenCount $GenerateSfenSeed $GenerateSfenMinPlies $GenerateSfenMaxPlies $sfenOut
+        $parityOutput | ForEach-Object { Write-Host $_ }
+
+        $coverageLine = $parityOutput | Where-Object { $_ -match "^info string parity-sfen coverage " } | Select-Object -Last 1
+        if (-not $coverageLine) {
+            throw "parity-sfen coverage 行が出力されませんでした。"
+        }
+
+        if ($coverageLine -notmatch "kingmove\s+(\d+)\s+promotion\s+(\d+)\s+drop\s+(\d+)") {
+            throw "parity-sfen coverage 行の形式が不正です: $coverageLine"
+        }
+
+        $kingMoveCount = [int]$Matches[1]
+        $promotionCount = [int]$Matches[2]
+        $dropCount = [int]$Matches[3]
+        if ($kingMoveCount -lt $minimumCoverageEach -or $promotionCount -lt $minimumCoverageEach -or $dropCount -lt $minimumCoverageEach) {
+            throw "parity-sfen coverage不足: kingmove=$kingMoveCount promotion=$promotionCount drop=$dropCount"
+        }
+
         $SfenListFile = $sfenOut
     }
 
