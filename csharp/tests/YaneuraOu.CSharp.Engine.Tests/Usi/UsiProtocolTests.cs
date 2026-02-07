@@ -595,6 +595,26 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// bestmove候補がnoneでも合法手がある局面ではフォールバックできることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void EnsureSafeBestMove_NoneCandidate_FallsBackToLegalMove()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("position startpos");
+
+        MethodInfo? method = typeof(UsiEngine).GetMethod(
+            "EnsureSafeBestMove",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.IsNotNull(method);
+
+        object? result = method.Invoke(engine, [Move.none()]);
+        Assert.IsNotNull(result);
+        Move move = (Move)result;
+        Assert.AreNotEqual(Move.none().to_u32(), move.to_u32());
+    }
+
+    /// <summary>
     /// LazySMP有効時でも秒読み超過が過大にならないことを検証する。
     /// </summary>
     [TestMethod]

@@ -188,7 +188,7 @@ public sealed class UsiEngine
             }
 
             SearchResult result = SearchWithLazySmpIfNeeded(limits);
-            lastBestMove = EnsureLegalBestMove(result.BestMove);
+            lastBestMove = EnsureSafeBestMove(result.BestMove);
             AddInfo($"search depth {limits.Depth} time {limits.MaxTimeMs} nodes {result.Nodes} score cp {result.Score}");
             AddStopInfo(limits.StopPolicy, result.Nodes);
             AddNnueStatsInfo();
@@ -997,7 +997,7 @@ public sealed class UsiEngine
             task.Wait();
             if (task.Status == TaskStatus.RanToCompletion)
             {
-                lastBestMove = EnsureLegalBestMove(task.Result.BestMove);
+                lastBestMove = EnsureSafeBestMove(task.Result.BestMove);
                 AddStopInfo(activeStopPolicy, task.Result.Nodes);
             }
         }
@@ -1030,11 +1030,32 @@ public sealed class UsiEngine
     /// <summary>
     /// bestmove候補が合法か検証し、非合法なら合法手へフォールバックする。
     /// </summary>
+    private Move EnsureSafeBestMove(Move move)
+    {
+        Move legal = EnsureLegalBestMove(move);
+        if (legal.to_u32() == Move.none().to_u32())
+        {
+            return Move.none();
+        }
+
+        if (IsUsiRoundTripLegal(legal))
+        {
+            return legal;
+        }
+
+        AddInfo($"illegal usi bestmove filtered: {ToUsi(legal)}");
+        return SelectFallbackMove();
+    }
+
+    /// <summary>
+    /// 探索結果の指し手を合法手へ補正する。
+    /// </summary>
     private Move EnsureLegalBestMove(Move move)
     {
         if (move.to_u32() == Move.none().to_u32())
         {
-            return Move.none();
+            Move fallback = SelectFallbackMove();
+            return fallback.to_u32() == Move.none().to_u32() ? Move.none() : fallback;
         }
 
         if (IsLegalMove(move))
@@ -1067,6 +1088,16 @@ public sealed class UsiEngine
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// USI文字列への往復変換後も合法手であることを確認する。
+    /// </summary>
+    private bool IsUsiRoundTripLegal(Move move)
+    {
+        string usi = ToUsi(move);
+        Move reparsed = ParseUsiMove(usi);
+        return IsLegalMove(reparsed);
     }
 
     /// <summary>
