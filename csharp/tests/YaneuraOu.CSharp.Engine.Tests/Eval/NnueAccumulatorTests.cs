@@ -40,6 +40,9 @@ public class NnueAccumulatorTests
         Move move = ShogiTypes.make_move(Square.SQ_77, Square.SQ_76, Piece.B_PAWN);
         ApplyMoveAndAssert(position, accumulator, move);
         UndoMoveAndAssert(position, accumulator, move);
+
+        Assert.AreEqual(1, accumulator.RebuildCount);
+        Assert.IsTrue(accumulator.DeltaApplyCount >= 1);
     }
 
     /// <summary>
@@ -100,6 +103,8 @@ public class NnueAccumulatorTests
         Move move = ShogiTypes.make_move(Square.SQ_58, Square.SQ_59, Piece.B_KING);
         ApplyMoveAndAssert(position, accumulator, move);
         UndoMoveAndAssert(position, accumulator, move);
+
+        Assert.IsTrue(accumulator.RebuildCount >= 2);
     }
 
     /// <summary>

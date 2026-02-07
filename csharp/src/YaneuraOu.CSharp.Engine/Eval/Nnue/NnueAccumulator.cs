@@ -14,6 +14,21 @@ public sealed class NnueAccumulator
     private readonly Stack<AccumulatorState> statePool = new();
 
     /// <summary>
+    /// フル再構築が実行された回数を返す。
+    /// </summary>
+    public int RebuildCount { get; private set; }
+
+    /// <summary>
+    /// 差分適用が実行された回数を返す。
+    /// </summary>
+    public int DeltaApplyCount { get; private set; }
+
+    /// <summary>
+    /// 評価関数推論が実行された回数を返す。
+    /// </summary>
+    public int EvaluateCount { get; private set; }
+
+    /// <summary>
     /// NnueAccumulatorのインスタンスを初期化する。
     /// </summary>
     public NnueAccumulator(NnueFeatureTransformer transformer, NnueModel model)
@@ -71,6 +86,7 @@ public sealed class NnueAccumulator
         }
         else
         {
+            DeltaApplyCount++;
             MarkStateDirty(positionAfterMove, next);
         }
 
@@ -100,6 +116,9 @@ public sealed class NnueAccumulator
         }
 
         states.Clear();
+        RebuildCount = 0;
+        DeltaApplyCount = 0;
+        EvaluateCount = 0;
     }
 
     /// <summary>
@@ -142,6 +161,7 @@ public sealed class NnueAccumulator
     /// </summary>
     private void RebuildState(Position position, AccumulatorState state)
     {
+        RebuildCount++;
         transformer.BuildAccumulation(position, model, Color.BLACK, state.BlackAccumulation);
         transformer.BuildAccumulation(position, model, Color.WHITE, state.WhiteAccumulation);
         MarkStateDirty(position, state);
@@ -164,6 +184,7 @@ public sealed class NnueAccumulator
     {
         transformer.ConvertAccumulatorsToFeatures(position.side_to_move(), state.BlackAccumulation, state.WhiteAccumulation, state.Features);
         state.Score = model.Evaluate(state.Features);
+        EvaluateCount++;
         state.ScoreDirty = false;
     }
 
