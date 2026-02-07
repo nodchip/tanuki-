@@ -17,6 +17,7 @@ public sealed class StateInfo
     public Piece capturedPiece = Piece.NO_PIECE;
     public int repetition;
     public int repetition_times;
+    public int repetition_type;
     public int pliesFromNull;
     public int[] continuousCheck = new int[(int)Color.COLOR_NB];
     public uint hand;

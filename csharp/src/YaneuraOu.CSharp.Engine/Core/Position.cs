@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Text;
 using YaneuraOu.CSharp.Engine.Core.Board;
+using YaneuraOu.CSharp.Engine.Core.Hash;
 using YaneuraOu.CSharp.Engine.Core.MoveGen;
 using YaneuraOu.CSharp.Engine.Core.Types;
 
@@ -9,6 +10,8 @@ namespace YaneuraOu.CSharp.Engine.Core;
 public sealed class Position
 {
     public const string StartSfen = "lnsgkgsnl/1r5b1/p1pppp1pp/6p2/9/2P6/PP1PPPPPP/1B5R1/LNSGKGSNL b - 1";
+    private const int MaxRepetitionPly = 16;
+    private static bool zobristInitialized;
 
     private readonly Piece[] board = new Piece[(int)Square.SQ_NB_PLUS1];
     private readonly Bitboard[] byTypeBB = new Bitboard[(int)PieceType.PIECE_BB_NB];
@@ -19,6 +22,7 @@ public sealed class Position
     private StateInfo st;
     private int gamePly = 1;
     private Color sideToMove = Color.BLACK;
+    private bool suppressStateKeyRefresh;
 
     private readonly Stack<PositionSnapshot> moveHistory = new();
     private readonly Stack<PositionSnapshot> nullMoveHistory = new();
@@ -50,9 +54,13 @@ public sealed class Position
         ParseHands(parts[2]);
         gamePly = int.TryParse(parts[3], out int gp) ? gp : 1;
 
+        EnsureZobristInitialized();
+        st.board_key = ComputeBoardKey();
+        st.hand_key = ComputeHandKey();
         st.hand = hand[(int)sideToMove];
         st.repetition = 0;
         st.repetition_times = 0;
+        st.repetition_type = (int)RepetitionState.REPETITION_NONE;
         st.pliesFromNull = 0;
         st.checkersBB = new Bitboard(0);
         st.continuousCheck[(int)Color.BLACK] = 0;
@@ -126,6 +134,8 @@ public sealed class Position
         {
             kingSquare[(int)c] = sq;
         }
+
+        RefreshStateKeys();
     }
 
     public void remove_piece(Square sq)
@@ -144,6 +154,7 @@ public sealed class Position
         byColorBB[(int)c] = byColorBB[(int)c] ^ sq;
 
         board[(int)sq] = Piece.NO_PIECE;
+        RefreshStateKeys();
     }
 
     public Bitboard attackers_to(Color c, Square sq)
@@ -480,6 +491,62 @@ public sealed class Position
         return true;
     }
 
+    /// <summary>
+    /// 引き分け局面かを判定する。
+    /// </summary>
+    public bool is_draw(int ply)
+    {
+        return st.repetition != 0 && st.repetition < ply;
+    }
+
+    /// <summary>
+    /// 千日手状態を返す。
+    /// </summary>
+    public RepetitionState is_repetition(int ply = 16)
+    {
+        if (st.repetition != 0 && st.repetition < ply)
+        {
+            return (RepetitionState)st.repetition_type;
+        }
+
+        return RepetitionState.REPETITION_NONE;
+    }
+
+    /// <summary>
+    /// 千日手状態と発見手数を返す。
+    /// </summary>
+    public RepetitionState is_repetition(int ply, out int foundPly)
+    {
+        if (st.repetition != 0 && st.repetition < ply)
+        {
+            foundPly = Math.Abs(st.repetition);
+            return (RepetitionState)st.repetition_type;
+        }
+
+        foundPly = 0;
+        return RepetitionState.REPETITION_NONE;
+    }
+
+    /// <summary>
+    /// 反復局面が一度でも発生したかを判定する。
+    /// </summary>
+    public bool has_repeated()
+    {
+        StateInfo? cursor = st;
+        int end = Math.Min(MaxRepetitionPly, st.pliesFromNull);
+        while (end-- >= 4 && cursor is not null)
+        {
+            if (cursor.repetition != 0)
+            {
+                return true;
+            }
+
+            cursor = cursor.previous;
+        }
+
+        return false;
+    }
+
     public bool is_mated()
     {
         if (!in_check())
@@ -540,38 +607,46 @@ public sealed class Position
         Color them = Opposite(us);
         Piece captured = Piece.NO_PIECE;
 
-        if (m.is_drop())
+        suppressStateKeyRefresh = true;
+        try
         {
-            PieceType pt = m.move_dropped_piece();
-            if (ShogiTypes.hand_count(hand[(int)us], pt) > 0)
+            if (m.is_drop())
             {
-                ShogiTypes.sub_hand(ref hand[(int)us], pt);
-            }
+                PieceType pt = m.move_dropped_piece();
+                if (ShogiTypes.hand_count(hand[(int)us], pt) > 0)
+                {
+                    ShogiTypes.sub_hand(ref hand[(int)us], pt);
+                }
 
-            put_piece(m.moved_after_piece(), m.to_sq());
+                put_piece(m.moved_after_piece(), m.to_sq());
+            }
+            else
+            {
+                Square from = m.from_sq();
+                Square to = m.to_sq();
+
+                Piece movingBefore = piece_on(from);
+                captured = piece_on(to);
+                if (captured != Piece.NO_PIECE)
+                {
+                    remove_piece(to);
+                    PieceType pr = ShogiTypes.raw_type_of(captured);
+                    ShogiTypes.add_hand(ref hand[(int)us], pr);
+                }
+
+                remove_piece(from);
+                Piece movedAfter = m.moved_after_piece();
+                if (movedAfter == Piece.NO_PIECE)
+                {
+                    movedAfter = movingBefore;
+                }
+
+                put_piece(movedAfter, to);
+            }
         }
-        else
+        finally
         {
-            Square from = m.from_sq();
-            Square to = m.to_sq();
-
-            Piece movingBefore = piece_on(from);
-            captured = piece_on(to);
-            if (captured != Piece.NO_PIECE)
-            {
-                remove_piece(to);
-                PieceType pr = ShogiTypes.raw_type_of(captured);
-                ShogiTypes.add_hand(ref hand[(int)us], pr);
-            }
-
-            remove_piece(from);
-            Piece movedAfter = m.moved_after_piece();
-            if (movedAfter == Piece.NO_PIECE)
-            {
-                movedAfter = movingBefore;
-            }
-
-            put_piece(movedAfter, to);
+            suppressStateKeyRefresh = false;
         }
 
         newSt.previous = prevSt;
@@ -595,7 +670,11 @@ public sealed class Position
 
         sideToMove = them;
         gamePly++;
+        EnsureZobristInitialized();
+        st.board_key = ComputeBoardKey();
+        st.hand_key = ComputeHandKey();
         st.hand = hand[(int)sideToMove];
+        UpdateRepetitionInfo();
     }
 
     public void do_move(Move m, StateInfo newSt)
@@ -632,6 +711,9 @@ public sealed class Position
 
         sideToMove = Opposite(sideToMove);
         gamePly++;
+        EnsureZobristInitialized();
+        st.board_key = ComputeBoardKey();
+        st.hand_key = ComputeHandKey();
         st.hand = hand[(int)sideToMove];
     }
 
@@ -1360,7 +1442,119 @@ public sealed class Position
 
         return true;
     }
+
+    /// <summary>
+    /// Zobrist テーブルを初期化する。
+    /// </summary>
+    private static void EnsureZobristInitialized()
+    {
+        if (zobristInitialized)
+        {
+            return;
+        }
+
+        Zobrist.Init(20151225UL);
+        zobristInitialized = true;
+    }
+
+    /// <summary>
+    /// 現局面の盤上駒キーを計算する。
+    /// </summary>
+    private Key ComputeBoardKey()
+    {
+        Key key = sideToMove == Color.WHITE ? Zobrist.Side : Zobrist.Zero;
+        for (int sq = 0; sq < (int)Square.SQ_NB; sq++)
+        {
+            Piece pc = board[sq];
+            if (pc == Piece.NO_PIECE)
+            {
+                continue;
+            }
+
+            key ^= Zobrist.Psq[(int)pc, sq];
+        }
+
+        return key;
+    }
+
+    /// <summary>
+    /// 現局面の手駒キーを計算する。
+    /// </summary>
+    private Key ComputeHandKey()
+    {
+        Key key = Zobrist.Zero;
+        for (int c = 0; c < (int)Color.COLOR_NB; c++)
+        {
+            for (int pt = (int)PieceType.PAWN; pt < (int)PieceType.PIECE_HAND_NB; pt++)
+            {
+                int count = ShogiTypes.hand_count(hand[c], (PieceType)pt);
+                if (count <= 0)
+                {
+                    continue;
+                }
+
+                key += Zobrist.Hand[c, pt] * count;
+            }
+        }
+
+        return key;
+    }
+
+    /// <summary>
+    /// 反復情報を更新する。
+    /// </summary>
+    private void UpdateRepetitionInfo()
+    {
+        st.repetition = 0;
+        st.repetition_times = 0;
+        st.repetition_type = (int)RepetitionState.REPETITION_NONE;
+
+        int end = Math.Min(MaxRepetitionPly, st.pliesFromNull);
+        if (end < 4)
+        {
+            return;
+        }
+
+        int distance = 2;
+        StateInfo? cursor = st.previous?.previous;
+        while (cursor is not null && distance <= end)
+        {
+            if (distance >= 4 && cursor.board_key.ToUInt64() == st.board_key.ToUInt64() && cursor.hand == st.hand)
+            {
+                st.repetition_times = cursor.repetition_times + 1;
+                st.repetition = st.repetition_times >= 3 ? -distance : distance;
+
+                st.repetition_type = distance <= st.continuousCheck[(int)sideToMove]
+                    ? (int)RepetitionState.REPETITION_LOSE
+                    : distance <= st.continuousCheck[(int)Opposite(sideToMove)]
+                        ? (int)RepetitionState.REPETITION_WIN
+                        : (int)RepetitionState.REPETITION_DRAW;
+
+                return;
+            }
+
+            cursor = cursor.previous?.previous;
+            distance += 2;
+        }
+    }
+
     private static Square ToSquare(int file, int rank) => (Square)(file * 9 + rank);
+
+    /// <summary>
+    /// StateInfo に保持するキー情報を現局面に同期する。
+    /// </summary>
+    private void RefreshStateKeys()
+    {
+        if (st is null || suppressStateKeyRefresh)
+        {
+            return;
+        }
+
+        EnsureZobristInitialized();
+        st.board_key = ComputeBoardKey();
+        st.hand_key = ComputeHandKey();
+        st.hand = hand[(int)sideToMove];
+    }
 
     private PositionSnapshot CreateSnapshot()
     {
@@ -1419,6 +1613,8 @@ public sealed class Position
         public Color SideToMove { get; }
     }
 }
+
+
 
 
 
