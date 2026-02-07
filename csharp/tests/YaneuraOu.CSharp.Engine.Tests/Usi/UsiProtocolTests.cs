@@ -475,6 +475,22 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// Threadsが2以上のときにLazySMPが有効化されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GoWithMultipleThreads_EmitsLazySmpInfo()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+        engine.HandleCommand("setoption name Threads value 3");
+
+        string response = engine.HandleCommand("go depth 1");
+
+        StringAssert.StartsWith(response, "info string lazysmp workers=3");
+        StringAssert.Contains(response, "bestmove ");
+    }
+
+    /// <summary>
     /// ponderhitコマンドを受理できることを検証する。
     /// </summary>
     [TestMethod]

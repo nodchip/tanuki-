@@ -185,7 +185,7 @@ public sealed class UsiEngine
                 return FlushInfo(string.Empty);
             }
 
-            SearchResult result = searcher.Search(position, limits, OnSearchProgress);
+            SearchResult result = SearchWithLazySmpIfNeeded(limits);
             lastBestMove = EnsureLegalBestMove(result.BestMove);
             AddInfo($"search depth {limits.Depth} time {limits.MaxTimeMs} nodes {result.Nodes} score cp {result.Score}");
             AddStopInfo(limits.StopPolicy, result.Nodes);
@@ -687,6 +687,112 @@ public sealed class UsiEngine
             EnableAspirationWindow = options.UseAspirationWindow,
         };
         return new Searcher(evaluator, features);
+    }
+
+    /// <summary>
+    /// LazySMPを必要に応じて適用して探索を実行する。
+    /// </summary>
+    private SearchResult SearchWithLazySmpIfNeeded(SearchLimits limits)
+    {
+        int workers = Math.Max(1, limits.Threads);
+        if (workers <= 1 || limits.MateMoves > 0)
+        {
+            return searcher.Search(position, limits, OnSearchProgress);
+        }
+
+        AddInfo($"lazysmp workers={workers}");
+        string rootSfen = position.sfen();
+        var tasks = new Task<(int WorkerId, SearchResult Result)>[workers];
+        for (int workerId = 0; workerId < workers; workerId++)
+        {
+            int capturedWorkerId = workerId;
+            tasks[workerId] = Task.Run(() =>
+            {
+                var workerPosition = new Position();
+                workerPosition.set(rootSfen, new StateInfo());
+                Searcher workerSearcher = CreateParallelWorkerSearcher();
+                SearchLimits workerLimits = CloneWorkerLimits(limits);
+                SearchResult workerResult = workerSearcher.Search(
+                    workerPosition,
+                    workerLimits,
+                    capturedWorkerId == 0 ? OnSearchProgress : null);
+                return (capturedWorkerId, workerResult);
+            });
+        }
+
+        Task.WaitAll(tasks);
+
+        (int WorkerId, SearchResult Result) selected = tasks[0].Result;
+        for (int i = 1; i < tasks.Length; i++)
+        {
+            var candidate = tasks[i].Result;
+            if (IsBetterWorkerResult(candidate.Result, selected.Result))
+            {
+                selected = candidate;
+            }
+        }
+
+        AddInfo($"lazysmp selected_worker={selected.WorkerId} score={selected.Result.Score} depth={selected.Result.Depth}");
+        return selected.Result;
+    }
+
+    /// <summary>
+    /// 並列探索ワーカー向けの探索器を生成する。
+    /// </summary>
+    private Searcher CreateParallelWorkerSearcher()
+    {
+        INnueBackend backend = string.IsNullOrWhiteSpace(options.EvalFilePath)
+            ? new NullNnueBackend()
+            : nnueLoader.Load(options.EvalFilePath, options.NnueIncrementalStrict);
+        IEvaluator evaluator = new NnueEvaluator(backend, new MaterialEvaluator());
+        var features = new SearchFeatures
+        {
+            EnableNullMovePruning = options.UseNullMovePruning,
+            EnableLmr = options.UseLmr,
+            EnableAspirationWindow = options.UseAspirationWindow,
+        };
+
+        return new Searcher(evaluator, features);
+    }
+
+    /// <summary>
+    /// 並列探索ワーカー向けに探索条件を複製する。
+    /// </summary>
+    private static SearchLimits CloneWorkerLimits(SearchLimits source)
+    {
+        return new SearchLimits
+        {
+            Depth = source.Depth,
+            MaxTimeMs = source.MaxTimeMs,
+            NodesLimit = source.NodesLimit,
+            Threads = 1,
+            ShouldStop = source.ShouldStop,
+            MateMoves = source.MateMoves,
+        };
+    }
+
+    /// <summary>
+    /// ワーカー探索結果の優劣を判定する。
+    /// </summary>
+    private static bool IsBetterWorkerResult(SearchResult candidate, SearchResult currentBest)
+    {
+        if (candidate.Score != currentBest.Score)
+        {
+            return candidate.Score > currentBest.Score;
+        }
+
+        if (candidate.Depth != currentBest.Depth)
+        {
+            return candidate.Depth > currentBest.Depth;
+        }
+
+        if (candidate.Nodes != currentBest.Nodes)
+        {
+            return candidate.Nodes > currentBest.Nodes;
+        }
+
+        return candidate.BestMove.to_u32() != Move.none().to_u32()
+            && currentBest.BestMove.to_u32() == Move.none().to_u32();
     }
 
     /// <summary>
