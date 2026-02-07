@@ -19,6 +19,7 @@ public sealed class Searcher
     private const int NullMoveReductionBase = 2;
     private const int LmrDepthThreshold = 3;
     private const int LmrLateMoveIndex = 4;
+    private const int AspirationInitialWindow = 64;
 
     private readonly IEvaluator evaluator;
     private readonly IIncrementalEvaluator? incrementalEvaluator;
@@ -58,6 +59,11 @@ public sealed class Searcher
     public int LastLmrReductionCount { get; private set; }
 
     /// <summary>
+    /// 直近探索でのAspiration再探索回数を返す。
+    /// </summary>
+    public int LastAspirationReSearchCount { get; private set; }
+
+    /// <summary>
     /// 探索を実行して最善手を返す。
     /// </summary>
     public SearchResult Search(Position position, SearchLimits limits, Action<SearchProgress>? progress = null)
@@ -67,6 +73,7 @@ public sealed class Searcher
         LastTranspositionHitCount = 0;
         LastNullMovePruningCount = 0;
         LastLmrReductionCount = 0;
+        LastAspirationReSearchCount = 0;
         maxTimeMs = limits.MaxTimeMs;
         maxNodes = limits.NodesLimit;
         shouldStopCallback = limits.ShouldStop;
@@ -94,7 +101,53 @@ public sealed class Searcher
                 break;
             }
 
-            (Move currentBest, int currentScore, int currentNodes) = SearchRoot(position, d);
+            Move currentBest;
+            int currentScore;
+            int currentNodes;
+            if (d == 1 || bestScore == int.MinValue)
+            {
+                (currentBest, currentScore, currentNodes) = SearchRoot(position, d, int.MinValue + 1, int.MaxValue - 1);
+            }
+            else
+            {
+                int window = AspirationInitialWindow;
+                int alpha = Math.Max(int.MinValue + 1, bestScore - window);
+                int beta = Math.Min(int.MaxValue - 1, bestScore + window);
+                currentBest = Move.none();
+                currentScore = int.MinValue;
+                currentNodes = 0;
+
+                while (true)
+                {
+                    (Move attemptBest, int attemptScore, int attemptNodes) = SearchRoot(position, d, alpha, beta);
+                    currentBest = attemptBest;
+                    currentScore = attemptScore;
+                    currentNodes += attemptNodes;
+
+                    if (ShouldStopNow())
+                    {
+                        break;
+                    }
+
+                    if (currentScore <= alpha)
+                    {
+                        LastAspirationReSearchCount++;
+                        window = Math.Min(window * 2, 32000);
+                        alpha = Math.Max(int.MinValue + 1, bestScore - window);
+                        continue;
+                    }
+
+                    if (currentScore >= beta)
+                    {
+                        LastAspirationReSearchCount++;
+                        window = Math.Min(window * 2, 32000);
+                        beta = Math.Min(int.MaxValue - 1, bestScore + window);
+                        continue;
+                    }
+
+                    break;
+                }
+            }
             nodes += currentNodes;
             bestScore = currentScore;
             if (currentBest.to_u32() != Move.none().to_u32())
@@ -236,7 +289,7 @@ public sealed class Searcher
     /// <summary>
     /// ルート探索を実行する。
     /// </summary>
-    private (Move BestMove, int Score, int Nodes) SearchRoot(Position position, int depth)
+    private (Move BestMove, int Score, int Nodes) SearchRoot(Position position, int depth, int alpha, int beta)
     {
         Color us = position.side_to_move();
         Color them = us == Color.BLACK ? Color.WHITE : Color.BLACK;
@@ -261,6 +314,7 @@ public sealed class Searcher
 
         Move bestMove = legal[0];
         int bestScore = int.MinValue;
+        int originalAlpha = alpha;
         int nodes = 0;
 
         foreach (Move move in MoveOrdering.Order(position, legal, orderingContext, 0, ttMove))
@@ -276,7 +330,7 @@ public sealed class Searcher
             {
                 position.do_move(move, st, position.gives_check(move));
                 incrementalEvaluator?.OnMoveApplied(position, move, st.capturedPiece, us);
-                score = -AlphaBeta(position, depth - 1, int.MinValue + 1, int.MaxValue - 1, 1, ref nodes);
+                score = -AlphaBeta(position, depth - 1, -beta, -alpha, 1, ref nodes);
                 position.undo_move(move);
                 incrementalEvaluator?.OnMoveUndone(position, move);
             }
@@ -290,10 +344,24 @@ public sealed class Searcher
                 bestScore = score;
                 bestMove = move;
             }
+
+            if (score > alpha)
+            {
+                alpha = score;
+            }
+
+            if (alpha >= beta)
+            {
+                break;
+            }
         }
 
-        StoreTransposition(rootKey, depth, bestScore, bestMove, TranspositionBound.Exact);
-        return (bestMove, bestScore, nodes);
+        int finalScore = bestScore == int.MinValue ? originalAlpha : bestScore;
+        TranspositionBound bound = finalScore <= originalAlpha ? TranspositionBound.Upper
+            : finalScore >= beta ? TranspositionBound.Lower
+            : TranspositionBound.Exact;
+        StoreTransposition(rootKey, depth, finalScore, bestMove, bound);
+        return (bestMove, finalScore, nodes);
     }
 
     /// <summary>

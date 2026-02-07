@@ -175,6 +175,22 @@ public class SearcherBasicTests
     }
 
     /// <summary>
+    /// 反復深化でAspiration Windowの再探索が発生することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Search_IterativeDeepening_TriggersAspirationResearch()
+    {
+        var pos = new Position();
+        pos.set(Position.StartSfen, new StateInfo());
+        var searcher = new Searcher(new PlyScaledEvaluator(200));
+
+        SearchResult result = searcher.Search(pos, new SearchLimits { Depth = 4 });
+
+        Assert.AreNotEqual(Move.none().to_u32(), result.BestMove.to_u32());
+        Assert.IsTrue(searcher.LastAspirationReSearchCount > 0);
+    }
+
+    /// <summary>
     /// 呼び出し回数検証用の差分更新評価器。
     /// </summary>
     private sealed class CountingIncrementalEvaluator : IEvaluator, IIncrementalEvaluator
@@ -230,6 +246,24 @@ public class SearcherBasicTests
         public int Evaluate(Position position)
         {
             return score;
+        }
+    }
+
+    /// <summary>
+    /// 現在plyに比例した値を返す評価器。
+    /// </summary>
+    private sealed class PlyScaledEvaluator : IEvaluator
+    {
+        private readonly int scale;
+
+        public PlyScaledEvaluator(int scale)
+        {
+            this.scale = scale;
+        }
+
+        public int Evaluate(Position position)
+        {
+            return position.state().pliesFromNull * scale;
         }
     }
 
