@@ -127,4 +127,50 @@ public class UsiProtocolTests
         StringAssert.StartsWith(response, "bestmove ");
         Assert.AreEqual(3, engine.LastSearchDepth);
     }
+
+    /// <summary>
+    /// setoption MoveTimeがgoの探索深さ選択に反映されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionMoveTime_AffectsGoDepth()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name Depth value 1");
+        engine.HandleCommand("setoption name MoveTime value 5000");
+
+        string response = engine.HandleCommand("go");
+
+        StringAssert.StartsWith(response, "bestmove ");
+        Assert.AreEqual(3, engine.LastSearchDepth);
+    }
+
+    /// <summary>
+    /// 手番側の持ち時間に応じて探索深さが選ばれることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GoTimeControl_UsesSideToMoveTime()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name Depth value 1");
+        engine.HandleCommand("position sfen lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL w - 1");
+
+        string response = engine.HandleCommand("go btime 100 wtime 200000");
+
+        StringAssert.StartsWith(response, "bestmove ");
+        Assert.AreEqual(3, engine.LastSearchDepth);
+    }
+
+    /// <summary>
+    /// 合法手がない局面でgoするとresignを返すことを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GoNoLegalMove_ReturnsResign()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("position sfen 4k4/9/9/9/9/9/9/9/9 b - 1");
+
+        string response = engine.HandleCommand("go depth 1");
+
+        Assert.AreEqual("bestmove resign", response);
+    }
 }
