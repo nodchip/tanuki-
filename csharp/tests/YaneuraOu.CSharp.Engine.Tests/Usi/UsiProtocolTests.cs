@@ -301,7 +301,7 @@ public class UsiProtocolTests
 
         engine.HandleCommand("go byoyomi 2000");
 
-        Assert.AreEqual(2000, engine.LastSearchTimeLimitMs);
+        Assert.AreEqual(1950, engine.LastSearchTimeLimitMs);
     }
 
     /// <summary>

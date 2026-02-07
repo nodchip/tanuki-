@@ -46,6 +46,7 @@ public class TimeManagementTests
         Assert.IsTrue(sut.MinimumTimeMs <= sut.OptimumTimeMs);
         Assert.IsTrue(sut.OptimumTimeMs <= sut.MaximumTimeMs);
         Assert.IsTrue(sut.MaximumTimeMs > 0);
+        Assert.AreEqual(1950, sut.MaximumTimeMs);
     }
 
     /// <summary>
@@ -84,5 +85,20 @@ public class TimeManagementTests
 
         Assert.AreEqual(600, sut.OptimumTimeMs);
         Assert.AreEqual(600, sut.MaximumTimeMs);
+    }
+
+    /// <summary>
+    /// 安全マージンが短時間帯で適用されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Init_WithLowRemainTime_AppliesSafetyMargin()
+    {
+        var limits = new LimitsType();
+        limits.SetTime(Color.BLACK, 100);
+        var sut = new TimeManagement();
+
+        sut.Init(limits, Color.BLACK);
+
+        Assert.IsTrue(sut.MaximumTimeMs <= 90);
     }
 }

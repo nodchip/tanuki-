@@ -7,6 +7,9 @@ namespace YaneuraOu.CSharp.Engine.Search.Time;
 /// </summary>
 public sealed class TimeManagement
 {
+    private const int MinimumSafetyMarginMs = 10;
+    private const int MaximumSafetyMarginMs = 50;
+
     /// <summary>
     /// 最低保証時間(ミリ秒)を返す。
     /// </summary>
@@ -53,7 +56,8 @@ public sealed class TimeManagement
         int remain = limits.TimeMs[sideIndex];
         int inc = limits.IncMs[sideIndex];
         int byoyomi = limits.ByoyomiMs;
-        int available = remain + inc + byoyomi;
+        int safetyMargin = ComputeSafetyMargin(remain, byoyomi);
+        int available = Math.Max(0, remain + inc + byoyomi - safetyMargin);
         if (available <= 0)
         {
             MinimumTimeMs = 0;
@@ -76,6 +80,21 @@ public sealed class TimeManagement
         MinimumTimeMs = Math.Max(1, optimum / 2);
         OptimumTimeMs = Math.Max(MinimumTimeMs, Math.Min(optimum, available));
         MaximumTimeMs = Math.Max(OptimumTimeMs, Math.Min(Math.Max(OptimumTimeMs, reserve), available));
+    }
+
+    /// <summary>
+    /// 時間切れ回避のために控除する安全マージンを算出する。
+    /// </summary>
+    private static int ComputeSafetyMargin(int remain, int byoyomi)
+    {
+        if (remain <= 0 && byoyomi <= 0)
+        {
+            return 0;
+        }
+
+        int source = remain > 0 ? remain : byoyomi;
+        int scaled = Math.Max(MinimumSafetyMarginMs, source / 40);
+        return Math.Min(MaximumSafetyMarginMs, scaled);
     }
 
     /// <summary>
