@@ -119,4 +119,23 @@ public class PositionStrictCompatibilityTests
         Assert.IsTrue(pos.pseudo_legal(alignedMove, true));
         Assert.IsTrue(pos.legal(alignedMove));
     }
+
+    [TestMethod]
+    /// <summary>
+    /// 擬似合法でない歩打ちでも legal(drop) は true を返すことを検証する。
+    /// </summary>
+    public void Legal_DropMove_ReturnsTrueEvenWhenPseudoLegalIsFalse()
+    {
+        var pos = new Position();
+        pos.set("9/9/9/9/9/9/9/9/9 b P 1", new StateInfo());
+        pos.put_piece(Piece.W_KING, Square.SQ_11);
+        pos.put_piece(Piece.B_KING, Square.SQ_99);
+        pos.put_piece(Piece.B_ROOK, Square.SQ_31);
+        pos.put_piece(Piece.B_GOLD, Square.SQ_23);
+
+        Move pawnDropMate = ShogiTypes.make_move_drop(PieceType.PAWN, Square.SQ_12, Color.BLACK);
+
+        Assert.IsFalse(pos.pseudo_legal(pawnDropMate));
+        Assert.IsTrue(pos.legal(pawnDropMate));
+    }
 }
