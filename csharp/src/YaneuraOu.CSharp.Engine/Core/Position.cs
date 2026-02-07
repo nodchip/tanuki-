@@ -413,11 +413,6 @@ public sealed class Position
 
     public bool legal(Move m)
     {
-        if (!pseudo_legal(m, true))
-        {
-            return false;
-        }
-
         if (m.is_drop())
         {
             return true;
