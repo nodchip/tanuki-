@@ -192,3 +192,5 @@
 - Phase E: 進行中（`setoption name EvalFile`でNNUE有効化を反映、USIテスト追加）。
 - Phase F: 進行中（反復・宣言勝ちを回帰テストへ追加）。
 - Phase D: 進行中（`go`の時間上限算出を実装し、探索側で時間制約を参照）。
+- Phase D: 進行中（`Threads`オプション受理、`go`時の探索設定へ反映）。
+- Phase H(並列化準備): 着手（探索制約にThreadsを追加、1スレッド実装のまま将来拡張点を確保）。

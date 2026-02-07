@@ -47,6 +47,11 @@ public sealed class UsiEngine
     public int LastSearchTimeLimitMs { get; private set; }
 
     /// <summary>
+    /// 直近の探索で使用したスレッド数を返す。
+    /// </summary>
+    public int LastSearchThreads { get; private set; }
+
+    /// <summary>
     /// NNUE評価が有効かどうかを返す。
     /// </summary>
     public bool IsNnueEnabled => nnueBackend.IsEnabled;
@@ -69,6 +74,7 @@ public sealed class UsiEngine
                 $"id author {author}\n" +
                 "option name Depth type spin default 1 min 1 max 64\n" +
                 "option name MoveTime type spin default 1000 min 1 max 600000\n" +
+                "option name Threads type spin default 1 min 1 max 256\n" +
                 "option name EvalFile type string default \n" +
                 "usiok";
         }
@@ -113,6 +119,7 @@ public sealed class UsiEngine
             SearchLimits limits = ParseGoLimits(trimmed);
             LastSearchDepth = limits.Depth;
             LastSearchTimeLimitMs = limits.MaxTimeMs;
+            LastSearchThreads = limits.Threads;
             SearchResult result = searcher.Search(position, limits);
             lastBestMove = result.BestMove;
             return $"bestmove {FormatBestMove(result.BestMove)}";
@@ -163,6 +170,13 @@ public sealed class UsiEngine
             && moveTime > 0)
         {
             options.DefaultMoveTimeMs = moveTime;
+        }
+
+        if (optionName.Equals("Threads", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(optionValue, out int threads)
+            && threads > 0)
+        {
+            options.Threads = threads;
         }
 
         if (optionName.Equals("EvalFile", StringComparison.OrdinalIgnoreCase))
@@ -295,7 +309,12 @@ public sealed class UsiEngine
             depth = SelectDepthFromTimeLimit(timeLimitMs, infinite);
         }
 
-        return new SearchLimits { Depth = Math.Max(1, depth), MaxTimeMs = Math.Max(0, timeLimitMs) };
+        return new SearchLimits
+        {
+            Depth = Math.Max(1, depth),
+            MaxTimeMs = Math.Max(0, timeLimitMs),
+            Threads = Math.Max(1, options.Threads),
+        };
     }
 
     /// <summary>

@@ -202,6 +202,7 @@ public class UsiProtocolTests
 
         StringAssert.Contains(response, "option name Depth type spin");
         StringAssert.Contains(response, "option name MoveTime type spin");
+        StringAssert.Contains(response, "option name Threads type spin");
     }
 
     /// <summary>
@@ -280,5 +281,19 @@ public class UsiProtocolTests
         engine.HandleCommand("go btime 1000 wtime 3000 winc 300");
 
         Assert.AreEqual(110, engine.LastSearchTimeLimitMs);
+    }
+
+    /// <summary>
+    /// Threadsオプション設定がgo実行時の探索設定へ反映されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionThreads_AppliesToGo()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name Threads value 4");
+
+        engine.HandleCommand("go depth 1");
+
+        Assert.AreEqual(4, engine.LastSearchThreads);
     }
 }

@@ -16,6 +16,11 @@ public sealed class UsiOptions
     public int DefaultMoveTimeMs { get; set; } = 1000;
 
     /// <summary>
+    /// 既定の探索スレッド数。
+    /// </summary>
+    public int Threads { get; set; } = 1;
+
+    /// <summary>
     /// NNUEモデルファイルのパス。
     /// </summary>
     public string EvalFilePath { get; set; } = string.Empty;
