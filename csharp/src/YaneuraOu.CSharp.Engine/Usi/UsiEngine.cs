@@ -1,5 +1,6 @@
 ﻿using YaneuraOu.CSharp.Engine.Core;
 using YaneuraOu.CSharp.Engine.Core.Types;
+using YaneuraOu.CSharp.Engine.Eval;
 using YaneuraOu.CSharp.Engine.Search;
 
 namespace YaneuraOu.CSharp.Engine.Usi;
@@ -12,9 +13,11 @@ public sealed class UsiEngine
     private readonly string name;
     private readonly string author;
     private readonly UsiOptions options = new();
-    private readonly Searcher searcher = new();
+    private readonly NnueModelLoader nnueLoader = new();
     private readonly Position position = new();
 
+    private Searcher searcher;
+    private INnueBackend nnueBackend = new NullNnueBackend();
     private Move lastBestMove = Move.none();
 
     /// <summary>
@@ -24,6 +27,7 @@ public sealed class UsiEngine
     {
         this.name = name;
         this.author = author;
+        searcher = CreateSearcher();
         position.set(Position.StartSfen, new StateInfo());
     }
 
@@ -36,6 +40,11 @@ public sealed class UsiEngine
     /// 直近の探索で使用した深さを返す。
     /// </summary>
     public int LastSearchDepth { get; private set; }
+
+    /// <summary>
+    /// NNUE評価が有効かどうかを返す。
+    /// </summary>
+    public bool IsNnueEnabled => nnueBackend.IsEnabled;
 
     /// <summary>
     /// USIコマンドを処理して応答文字列を返す。
@@ -55,6 +64,7 @@ public sealed class UsiEngine
                 $"id author {author}\n" +
                 "option name Depth type spin default 1 min 1 max 64\n" +
                 "option name MoveTime type spin default 1000 min 1 max 600000\n" +
+                "option name EvalFile type string default \n" +
                 "usiok";
         }
 
@@ -147,6 +157,13 @@ public sealed class UsiEngine
             && moveTime > 0)
         {
             options.DefaultMoveTimeMs = moveTime;
+        }
+
+        if (optionName.Equals("EvalFile", StringComparison.OrdinalIgnoreCase))
+        {
+            options.EvalFilePath = optionValue;
+            nnueBackend = nnueLoader.Load(optionValue);
+            searcher = CreateSearcher();
         }
     }
 
@@ -437,5 +454,14 @@ public sealed class UsiEngine
             PieceType.ROOK => 'R',
             _ => 'P',
         };
+    }
+
+    /// <summary>
+    /// 現在の設定から探索器を生成する。
+    /// </summary>
+    private Searcher CreateSearcher()
+    {
+        IEvaluator evaluator = new NnueEvaluator(nnueBackend, new MaterialEvaluator());
+        return new Searcher(evaluator);
     }
 }

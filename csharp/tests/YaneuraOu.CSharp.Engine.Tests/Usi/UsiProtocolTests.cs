@@ -203,4 +203,42 @@ public class UsiProtocolTests
         StringAssert.Contains(response, "option name Depth type spin");
         StringAssert.Contains(response, "option name MoveTime type spin");
     }
+
+    /// <summary>
+    /// EvalFileに有効なモデルを設定するとNNUEが有効化されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionEvalFile_EnablesNnue()
+    {
+        string modelPath = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(modelPath, "42");
+            var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+
+            engine.HandleCommand($"setoption name EvalFile value {modelPath}");
+
+            Assert.IsTrue(engine.IsNnueEnabled);
+        }
+        finally
+        {
+            if (File.Exists(modelPath))
+            {
+                File.Delete(modelPath);
+            }
+        }
+    }
+
+    /// <summary>
+    /// EvalFileに存在しないパスを設定するとNNUEが無効のままであることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionEvalFileMissing_KeepsNnueDisabled()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+
+        engine.HandleCommand("setoption name EvalFile value C:/not-found/nn.bin");
+
+        Assert.IsFalse(engine.IsNnueEnabled);
+    }
 }

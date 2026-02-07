@@ -14,4 +14,9 @@ public sealed class UsiOptions
     /// 既定の思考時間(ミリ秒)。
     /// </summary>
     public int DefaultMoveTimeMs { get; set; } = 1000;
+
+    /// <summary>
+    /// NNUEモデルファイルのパス。
+    /// </summary>
+    public string EvalFilePath { get; set; } = string.Empty;
 }
