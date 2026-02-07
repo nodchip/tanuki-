@@ -6,7 +6,9 @@ param(
     [int]$GenerateSfenCount = 600,
     [int]$GenerateSfenSeed = 20260207,
     [int]$GenerateSfenMinPlies = 8,
-    [int]$GenerateSfenMaxPlies = 40
+    [int]$GenerateSfenMaxPlies = 40,
+    [string]$FailureLogDir = "eval/parity-failures",
+    [switch]$KeepTempOnError
 )
 
 Set-StrictMode -Version Latest
@@ -67,10 +69,14 @@ try {
         EnginePath = $EnginePath
         EvalDir = $EvalDir
         OutFile = $CasesOutFile
+        FailureLogDir = $FailureLogDir
     }
 
     if (-not [string]::IsNullOrWhiteSpace($SfenListFile)) {
         $genArgs["SfenListFile"] = $SfenListFile
+    }
+    if ($KeepTempOnError) {
+        $genArgs["KeepTempOnError"] = $true
     }
 
     & $generator @genArgs

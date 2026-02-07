@@ -43,3 +43,5 @@
 - 生成時に `info string parity-sfen coverage kingmove ... promotion ... drop ...` が出力され、各件数が1以上であることをスクリプトが検証する。
 - strictテストは `NNUE_PARITY_STRICT=1` を一時設定して `NnueParityTests` のみ実行する。
 - C++評価取得に失敗した場合は `eval/parity-failures/` 配下に `meta.json` / `usi.txt` / `stdout.txt` / `stderr.txt` が出力される。
+- 失敗ログ出力先を変更したい場合は `-FailureLogDir <dir>` を指定する。
+- 一時ファイルを保持したい場合は `-KeepTempOnError` を指定する。
