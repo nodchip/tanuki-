@@ -1,6 +1,7 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Diagnostics;
 using System.Reflection;
+using YaneuraOu.CSharp.Engine.Core;
 using YaneuraOu.CSharp.Engine.Core.Types;
 using YaneuraOu.CSharp.Engine.Search;
 using YaneuraOu.CSharp.Engine.Usi;
@@ -615,6 +616,30 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// 複雑局面のposition適用後に手番がずれないことを検証する。
+    /// </summary>
+    [TestMethod]
+    public void ApplyPosition_ComplexSequence_KeepsExpectedSideToMove()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        string[] moves = "2g2f 3c3d 7g7f 2b8h+ 7i8h 3a2b B*5b 6a5b 1g1f 2b3c 6i5h 4a3b 4i4h B*5e 8h7g 8c8d 2f2e 8d8e 2e2d 2c2d 5i6i 7a7b 6i7h 5a4b 5g5f 5e6d 6g6f 4b3a 2h2d 3c2d 5f5e R*2g 3i3h 2g2h+ P*2e 2d2e 5h6g 2h1i"
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        FieldInfo? field = typeof(UsiEngine).GetField("position", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.IsNotNull(field);
+        for (int i = 1; i <= moves.Length; i++)
+        {
+            string command = $"position startpos moves {string.Join(' ', moves.Take(i))}";
+            engine.HandleCommand(command);
+            var pos = field.GetValue(engine) as Position;
+            Assert.IsNotNull(pos);
+
+            Color expected = i % 2 == 0 ? Color.BLACK : Color.WHITE;
+            Assert.AreEqual(expected, pos.side_to_move(), $"手番がずれています i={i} move={moves[i - 1]}");
+        }
+    }
+
+    /// <summary>
     /// LazySMP有効時でも秒読み超過が過大にならないことを検証する。
     /// </summary>
     [TestMethod]
@@ -848,6 +873,8 @@ public class UsiProtocolTests
         return int.TryParse(parts[2], out int depth) ? depth : 0;
     }
 }
+
+
 
 
 

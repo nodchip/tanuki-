@@ -424,22 +424,40 @@ public sealed class UsiEngine
 
         for (int i = movesIndex + 1; i < parts.Length; i++)
         {
-            Move move = ParseUsiMove(parts[i]);
+            string usiMoveText = parts[i];
+            Move move = ParseUsiMove(usiMoveText);
             if (!move.is_ok())
             {
-                continue;
-            }
-
-            if (!position.pseudo_legal(move) || !position.legal(move))
-            {
-                AddInfo($"ignore illegal move: {parts[i]}");
-                continue;
+                move = ResolveLegalMoveFromUsi(usiMoveText);
+                if (!move.is_ok())
+                {
+                    AddInfo($"ignore illegal move: {usiMoveText}");
+                    break;
+                }
             }
 
             position.do_move(move, new StateInfo(), position.gives_check(move));
         }
 
         lastBestMove = Move.none();
+    }
+
+    /// <summary>
+    /// 現局面の合法手からUSI文字列に一致する手を解決する。
+    /// </summary>
+    private Move ResolveLegalMoveFromUsi(string usiMoveText)
+    {
+        MoveList legalMoves = MoveGenerator.GenerateLegal(position);
+        for (int i = 0; i < legalMoves.Count; i++)
+        {
+            Move legal = legalMoves[i];
+            if (string.Equals(ToUsi(legal), usiMoveText, StringComparison.OrdinalIgnoreCase))
+            {
+                return legal;
+            }
+        }
+
+        return Move.none();
     }
 
     /// <summary>
@@ -582,7 +600,7 @@ public sealed class UsiEngine
         }
 
         Piece pc = position.piece_on(from);
-        if (pc == Piece.NO_PIECE)
+        if (pc == Piece.NO_PIECE || ShogiTypes.color_of(pc) != us)
         {
             return Move.none();
         }
