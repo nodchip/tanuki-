@@ -20,6 +20,7 @@ public sealed class Searcher
 
     private Stopwatch? timer;
     private int maxTimeMs;
+    private Func<bool>? shouldStopCallback;
 
     /// <summary>
     /// Searcherのインスタンスを初期化する。
@@ -43,6 +44,7 @@ public sealed class Searcher
 
         LastTranspositionHitCount = 0;
         maxTimeMs = limits.MaxTimeMs;
+        shouldStopCallback = limits.ShouldStop;
         timer = Stopwatch.StartNew();
 
         Move bestMove = Move.none();
@@ -272,6 +274,11 @@ public sealed class Searcher
     /// </summary>
     private bool IsTimeUp()
     {
+        if (shouldStopCallback is not null && shouldStopCallback())
+        {
+            return true;
+        }
+
         return maxTimeMs > 0 && timer is not null && timer.ElapsedMilliseconds >= maxTimeMs;
     }
 

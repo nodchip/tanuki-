@@ -140,8 +140,11 @@ public class UsiProtocolTests
 
         string response = engine.HandleCommand("go infinite");
 
-        StringAssert.StartsWith(response, "bestmove ");
+        Assert.AreEqual(string.Empty, response);
         Assert.AreEqual(3, engine.LastSearchDepth);
+
+        string stopResponse = engine.HandleCommand("stop");
+        StringAssert.StartsWith(stopResponse, "bestmove ");
     }
 
     /// <summary>

@@ -19,4 +19,9 @@ public sealed class SearchLimits
     /// 探索スレッド数。現実装では1を推奨。
     /// </summary>
     public int Threads { get; set; } = 1;
+
+    /// <summary>
+    /// 外部停止要求を返すコールバック。
+    /// </summary>
+    public Func<bool>? ShouldStop { get; set; }
 }

@@ -19,6 +19,9 @@ public sealed class UsiEngine
     private Searcher searcher;
     private INnueBackend nnueBackend = new NullNnueBackend();
     private Move lastBestMove = Move.none();
+    private Task<SearchResult>? thinkingTask;
+    private CancellationTokenSource? thinkingCts;
+    private readonly object thinkingLock = new();
 
     /// <summary>
     /// UsiEngineのインスタンスを初期化する。
@@ -93,11 +96,13 @@ public sealed class UsiEngine
 
         if (string.Equals(trimmed, "stop", StringComparison.OrdinalIgnoreCase))
         {
+            CompleteThinkingIfNeeded();
             return $"bestmove {FormatBestMove(lastBestMove)}";
         }
 
         if (string.Equals(trimmed, "quit", StringComparison.OrdinalIgnoreCase))
         {
+            CompleteThinkingIfNeeded();
             ShouldQuit = true;
             return string.Empty;
         }
@@ -120,6 +125,15 @@ public sealed class UsiEngine
             LastSearchDepth = limits.Depth;
             LastSearchTimeLimitMs = limits.MaxTimeMs;
             LastSearchThreads = limits.Threads;
+            bool infinite = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .Any(p => p.Equals("infinite", StringComparison.OrdinalIgnoreCase));
+
+            if (infinite)
+            {
+                StartThinking(limits);
+                return string.Empty;
+            }
+
             SearchResult result = searcher.Search(position, limits);
             lastBestMove = result.BestMove;
             return $"bestmove {FormatBestMove(result.BestMove)}";
@@ -133,6 +147,7 @@ public sealed class UsiEngine
     /// </summary>
     private void ResetToStartPosition()
     {
+        CompleteThinkingIfNeeded();
         position.set(Position.StartSfen, new StateInfo());
         lastBestMove = Move.none();
     }
@@ -142,6 +157,7 @@ public sealed class UsiEngine
     /// </summary>
     private void ApplySetOption(string command)
     {
+        CompleteThinkingIfNeeded();
         string[] parts = command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length < 5)
         {
@@ -192,6 +208,7 @@ public sealed class UsiEngine
     /// </summary>
     private void ApplyPosition(string command)
     {
+        CompleteThinkingIfNeeded();
         string[] parts = command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length < 2)
         {
@@ -501,5 +518,62 @@ public sealed class UsiEngine
     {
         IEvaluator evaluator = new NnueEvaluator(nnueBackend, new MaterialEvaluator());
         return new Searcher(evaluator);
+    }
+
+    /// <summary>
+    /// 非同期探索を開始する。
+    /// </summary>
+    private void StartThinking(SearchLimits limits)
+    {
+        CompleteThinkingIfNeeded();
+
+        lock (thinkingLock)
+        {
+            thinkingCts = new CancellationTokenSource();
+            limits.ShouldStop = () => thinkingCts.IsCancellationRequested;
+            thinkingTask = Task.Run(() => searcher.Search(position, limits));
+        }
+    }
+
+    /// <summary>
+    /// 進行中の探索を停止して結果を取り込む。
+    /// </summary>
+    private void CompleteThinkingIfNeeded()
+    {
+        Task<SearchResult>? task;
+        CancellationTokenSource? cts;
+        lock (thinkingLock)
+        {
+            task = thinkingTask;
+            cts = thinkingCts;
+        }
+
+        if (task is null || cts is null)
+        {
+            return;
+        }
+
+        cts.Cancel();
+        try
+        {
+            task.Wait();
+            if (task.Status == TaskStatus.RanToCompletion)
+            {
+                lastBestMove = task.Result.BestMove;
+            }
+        }
+        catch (AggregateException)
+        {
+            // 停止要求起因の例外は握りつぶす。
+        }
+        finally
+        {
+            cts.Dispose();
+            lock (thinkingLock)
+            {
+                thinkingTask = null;
+                thinkingCts = null;
+            }
+        }
     }
 }
