@@ -512,7 +512,7 @@ public sealed class UsiEngine
         }
 
         timeManagement.Init(limits, position.side_to_move());
-        SearchStopPolicy stopPolicy = new(timeManagement, limits.Infinite, limits.Nodes, null);
+        SearchStopPolicy stopPolicy = new(timeManagement, limits.Infinite, limits.Nodes, null, limits.Ponder);
         lastLimits = limits;
         return new SearchLimits
         {
