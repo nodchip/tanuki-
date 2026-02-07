@@ -702,7 +702,7 @@ public sealed class UsiEngine
 
         AddInfo($"lazysmp workers={workers}");
         string rootSfen = position.sfen();
-        var tasks = new Task<(int WorkerId, SearchResult Result)>[workers];
+        var tasks = new Task<(int WorkerId, SearchResult Result, int PvLength, int CompletedDepth)>[workers];
         for (int workerId = 0; workerId < workers; workerId++)
         {
             int capturedWorkerId = workerId;
@@ -712,24 +712,47 @@ public sealed class UsiEngine
                 workerPosition.set(rootSfen, new StateInfo());
                 Searcher workerSearcher = CreateParallelWorkerSearcher();
                 SearchLimits workerLimits = CloneWorkerLimits(limits);
+                int latestPvLength = 0;
+                int latestCompletedDepth = 0;
                 SearchResult workerResult = workerSearcher.Search(
                     workerPosition,
                     workerLimits,
-                    capturedWorkerId == 0 ? OnSearchProgress : null);
-                return (capturedWorkerId, workerResult);
+                    progress =>
+                    {
+                        latestPvLength = progress.PrincipalVariation.Length;
+                        latestCompletedDepth = progress.Depth;
+                        if (capturedWorkerId == 0)
+                        {
+                            OnSearchProgress(progress);
+                        }
+                    });
+
+                if (latestPvLength <= 0 && workerResult.BestMove.to_u32() != Move.none().to_u32())
+                {
+                    latestPvLength = 1;
+                }
+
+                if (latestCompletedDepth <= 0)
+                {
+                    latestCompletedDepth = workerResult.Depth;
+                }
+
+                return (capturedWorkerId, workerResult, latestPvLength, latestCompletedDepth);
             });
         }
 
         Task.WaitAll(tasks);
 
         SearchResult[] workerResults = tasks.Select(task => task.Result.Result).ToArray();
-        int winnerIndex = SelectLazySmpWinnerIndex(workerResults);
+        int[] workerPvLengths = tasks.Select(task => task.Result.PvLength).ToArray();
+        int[] workerCompletedDepths = tasks.Select(task => task.Result.CompletedDepth).ToArray();
+        int winnerIndex = SelectLazySmpWinnerIndex(workerResults, workerPvLengths, workerCompletedDepths);
         if (winnerIndex < 0 || winnerIndex >= tasks.Length)
         {
             winnerIndex = 0;
         }
 
-        (int WorkerId, SearchResult Result) selected = tasks[winnerIndex].Result;
+        (int WorkerId, SearchResult Result, int PvLength, int CompletedDepth) selected = tasks[winnerIndex].Result;
 
         AddInfo($"lazysmp selected_worker={selected.WorkerId} score={selected.Result.Score} depth={selected.Result.Depth}");
         return selected.Result;
@@ -773,9 +796,9 @@ public sealed class UsiEngine
     /// <summary>
     /// LazySMPのwinner indexを選出する。
     /// </summary>
-    private static int SelectLazySmpWinnerIndex(SearchResult[] workers)
+    private static int SelectLazySmpWinnerIndex(SearchResult[] workers, int[] pvLengths, int[] completedDepths)
     {
-        if (workers.Length == 0)
+        if (workers.Length == 0 || workers.Length != pvLengths.Length || workers.Length != completedDepths.Length)
         {
             return -1;
         }
@@ -787,7 +810,8 @@ public sealed class UsiEngine
         for (int i = 0; i < workers.Length; i++)
         {
             SearchResult worker = workers[i];
-            long value = ((long)worker.Score - minScore + 14L) * Math.Max(1, worker.Depth);
+            int completedDepth = Math.Max(1, completedDepths[i]);
+            long value = ((long)worker.Score - minScore + 14L) * completedDepth;
             threadVotingValue[i] = value;
             uint move = worker.BestMove.to_u32();
             if (!voteByMove.TryAdd(move, value))
@@ -813,8 +837,8 @@ public sealed class UsiEngine
             bool candidateInProvenLoss = IsProvenLoss(candidateScore);
 
             bool betterVotingValue =
-                threadVotingValue[i] * (HasPrincipalMove(candidate) ? 1 : 0)
-                > threadVotingValue[best] * (HasPrincipalMove(bestResult) ? 1 : 0);
+                threadVotingValue[i] * (pvLengths[i] > 2 ? 1 : 0)
+                > threadVotingValue[best] * (pvLengths[best] > 2 ? 1 : 0);
 
             if (bestInProvenWin)
             {
@@ -857,14 +881,6 @@ public sealed class UsiEngine
     private static bool IsProvenLoss(int score)
     {
         return score <= -MateScoreThreshold;
-    }
-
-    /// <summary>
-    /// principal variationが有効かどうかを判定する。
-    /// </summary>
-    private static bool HasPrincipalMove(SearchResult result)
-    {
-        return result.BestMove.to_u32() != Move.none().to_u32();
     }
 
     /// <summary>

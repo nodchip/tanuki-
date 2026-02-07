@@ -510,10 +510,37 @@ public class UsiProtocolTests
             new SearchResult(new Move(2), 110, 1200, 1),
             new SearchResult(new Move(1), 105, 3000, 4),
         ];
+        int[] pvLengths = [3, 3, 3];
+        int[] completedDepths = [1, 1, 4];
 
-        object? result = method.Invoke(null, [workers]);
+        object? result = method.Invoke(null, [workers, pvLengths, completedDepths]);
         Assert.IsNotNull(result);
         Assert.AreEqual(2, (int)result);
+    }
+
+    /// <summary>
+    /// LazySMPの同票比較でPVが短い候補を選ばないことを検証する。
+    /// </summary>
+    [TestMethod]
+    public void LazySmpWinnerSelection_ShortPvDoesNotWinTieBreak()
+    {
+        MethodInfo? method = typeof(UsiEngine).GetMethod(
+            "SelectLazySmpWinnerIndex",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.IsNotNull(method);
+
+        SearchResult[] workers =
+        [
+            new SearchResult(new Move(1), 100, 1000, 4),
+            new SearchResult(new Move(1), 105, 1200, 5),
+            new SearchResult(new Move(2), 90, 500, 1),
+        ];
+        int[] pvLengths = [3, 1, 3];
+        int[] completedDepths = [4, 5, 1];
+
+        object? result = method.Invoke(null, [workers, pvLengths, completedDepths]);
+        Assert.IsNotNull(result);
+        Assert.AreEqual(0, (int)result);
     }
 
     /// <summary>
