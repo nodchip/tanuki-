@@ -62,6 +62,22 @@ public class PositionToMoveTests
 
     [TestMethod]
     /// <summary>
+    /// 空升を移動元にした Move16 は Move.none() になることを検証する。
+    /// </summary>
+    public void ToMove_FromEmptySquare_ReturnsNone()
+    {
+        var pos = new Position();
+        pos.set("9/9/9/9/9/9/9/9/9 b - 1", new StateInfo());
+        pos.put_piece(Piece.B_KING, Square.SQ_99);
+        pos.put_piece(Piece.W_KING, Square.SQ_11);
+
+        Move move = pos.to_move(ShogiTypes.make_move16(Square.SQ_55, Square.SQ_54));
+
+        Assert.AreEqual(Move.none().to_u32(), move.to_u32());
+    }
+
+    [TestMethod]
+    /// <summary>
     /// 駒打ち Move16 の to_move で手番側の駒種が付与されることを検証する。
     /// </summary>
     public void ToMove_DropMove_AttachesDroppedPieceForSideToMove()
@@ -73,6 +89,23 @@ public class PositionToMoveTests
 
         Assert.IsTrue(move.is_drop());
         Assert.AreEqual(Piece.B_GOLD, move.moved_after_piece());
+    }
+
+    [TestMethod]
+    /// <summary>
+    /// 後手番の駒打ち Move16 では後手側の駒種が付与されることを検証する。
+    /// </summary>
+    public void ToMove_DropMoveForWhite_AttachesWhiteDroppedPiece()
+    {
+        var pos = new Position();
+        pos.set("9/9/9/9/9/9/9/9/9 w - 1", new StateInfo());
+        pos.put_piece(Piece.B_KING, Square.SQ_99);
+        pos.put_piece(Piece.W_KING, Square.SQ_11);
+
+        Move move = pos.to_move(ShogiTypes.make_move_drop16(PieceType.SILVER, Square.SQ_55));
+
+        Assert.IsTrue(move.is_drop());
+        Assert.AreEqual(Piece.W_SILVER, move.moved_after_piece());
     }
 
     [TestMethod]
@@ -124,6 +157,23 @@ public class PositionToMoveTests
         pos.put_piece(Piece.B_PAWN, Square.SQ_44);
 
         Move move = ShogiTypes.make_move_promote(Square.SQ_44, Square.SQ_43, Piece.B_PAWN);
+
+        Assert.IsTrue(pos.legal_promote(move));
+    }
+
+    [TestMethod]
+    /// <summary>
+    /// 非成り指し手は legal_promote が true を返すことを検証する。
+    /// </summary>
+    public void LegalPromote_NonPromoteMove_ReturnsTrue()
+    {
+        var pos = new Position();
+        pos.set("9/9/9/9/9/9/9/9/9 b - 1", new StateInfo());
+        pos.put_piece(Piece.B_KING, Square.SQ_99);
+        pos.put_piece(Piece.W_KING, Square.SQ_11);
+        pos.put_piece(Piece.B_PAWN, Square.SQ_57);
+
+        Move move = ShogiTypes.make_move(Square.SQ_57, Square.SQ_56, Piece.B_PAWN);
 
         Assert.IsTrue(pos.legal_promote(move));
     }
