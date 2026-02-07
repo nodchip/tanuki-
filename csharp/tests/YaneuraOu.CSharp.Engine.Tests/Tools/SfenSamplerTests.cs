@@ -53,4 +53,33 @@ public class SfenSamplerTests
             Assert.IsFalse(string.IsNullOrWhiteSpace(pos.sfen()));
         }
     }
+
+    /// <summary>
+    /// 注釈付き生成で玉移動・成り・打ちの各ケースが含まれることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void GenerateAnnotated_ContainsKingMovePromotionDropCoverage()
+    {
+        var sampler = new SfenSampler();
+
+        IReadOnlyList<SfenSample> samples = sampler.GenerateAnnotated(count: 60, seed: 20260207, minPlies: 24, maxPlies: 60);
+
+        Assert.IsTrue(samples.Any(s => (s.Features & SfenSampleFeatures.KingMove) != 0), "king move coverage missing");
+        Assert.IsTrue(samples.Any(s => (s.Features & SfenSampleFeatures.Promotion) != 0), "promotion coverage missing");
+        Assert.IsTrue(samples.Any(s => (s.Features & SfenSampleFeatures.Drop) != 0), "drop coverage missing");
+    }
+
+    /// <summary>
+    /// 注釈付き生成も同一seedで決定的であることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void GenerateAnnotated_WithSameSeed_IsDeterministic()
+    {
+        var sampler = new SfenSampler();
+
+        IReadOnlyList<SfenSample> first = sampler.GenerateAnnotated(count: 20, seed: 20260208, minPlies: 20, maxPlies: 40);
+        IReadOnlyList<SfenSample> second = sampler.GenerateAnnotated(count: 20, seed: 20260208, minPlies: 20, maxPlies: 40);
+
+        CollectionAssert.AreEqual(first.Select(s => $"{s.Sfen}|{(int)s.Features}").ToList(), second.Select(s => $"{s.Sfen}|{(int)s.Features}").ToList());
+    }
 }
