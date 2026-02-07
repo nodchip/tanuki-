@@ -362,6 +362,37 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// DebugLog有効時にgo応答でNNUE差分統計infoが出力されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_DebugLogAndEvalFileEnabled_EmitsNnueStatsInfo()
+    {
+        string modelPath = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(modelPath, "42");
+            var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+            var outputs = new List<string>();
+            engine.OutputSink = outputs.Add;
+
+            engine.HandleCommand("setoption name DebugLog value true");
+            engine.HandleCommand($"setoption name EvalFile value {modelPath}");
+            string response = engine.HandleCommand("go depth 1");
+
+            Assert.IsTrue(response.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Any(line => line.StartsWith("bestmove ", StringComparison.Ordinal)));
+            Assert.IsTrue(outputs.Any(line => line.StartsWith("info string nnue stats ", StringComparison.Ordinal)));
+        }
+        finally
+        {
+            if (File.Exists(modelPath))
+            {
+                File.Delete(modelPath);
+            }
+        }
+    }
+
+    /// <summary>
     /// 反復深化の各depth完了時にinfoが出力されることを検証する。
     /// </summary>
     [TestMethod]
