@@ -20,6 +20,7 @@ public static class Program
         }
 
         var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.OutputSink = Console.WriteLine;
 
         while (!engine.ShouldQuit)
         {

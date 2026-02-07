@@ -10,6 +10,9 @@ namespace YaneuraOu.CSharp.Engine.Usi;
 /// </summary>
 public sealed class UsiEngine
 {
+    private const int MateScore = 100_000;
+    private const int MateScoreThreshold = MateScore - 512;
+
     private readonly string name;
     private readonly string author;
     private readonly UsiOptions options = new();
@@ -60,6 +63,11 @@ public sealed class UsiEngine
     /// NNUE評価が有効かどうかを返す。
     /// </summary>
     public bool IsNnueEnabled => nnueBackend.IsEnabled;
+
+    /// <summary>
+    /// 即時出力の受け取り先を返す。
+    /// </summary>
+    public Action<string>? OutputSink { get; set; }
 
     /// <summary>
     /// USIコマンドを処理して応答文字列を返す。
@@ -163,7 +171,7 @@ public sealed class UsiEngine
                 return FlushInfo(string.Empty);
             }
 
-            SearchResult result = searcher.Search(position, limits);
+            SearchResult result = searcher.Search(position, limits, OnSearchProgress);
             lastBestMove = result.BestMove;
             AddInfo($"search depth {limits.Depth} time {limits.MaxTimeMs} nodes {result.Nodes} score cp {result.Score}");
             response = $"bestmove {FormatBestMove(result.BestMove)}";
@@ -604,7 +612,7 @@ public sealed class UsiEngine
         {
             thinkingCts = new CancellationTokenSource();
             limits.ShouldStop = () => thinkingCts.IsCancellationRequested;
-            thinkingTask = Task.Run(() => searcher.Search(position, limits));
+            thinkingTask = Task.Run(() => searcher.Search(position, limits, OnSearchProgress));
             AddInfo($"start thinking depth {limits.Depth} time {limits.MaxTimeMs} threads {limits.Threads}");
         }
     }
@@ -672,6 +680,53 @@ public sealed class UsiEngine
         }
 
         infoMessages.Add($"info string {message}");
+    }
+
+    /// <summary>
+    /// 探索進捗をUSI info形式で出力する。
+    /// </summary>
+    private void OnSearchProgress(SearchProgress progress)
+    {
+        int elapsedMs = Math.Max(1, progress.ElapsedMilliseconds);
+        long nps = (long)progress.Nodes * 1000L / elapsedMs;
+        string scoreToken = FormatScoreToken(progress.Score);
+        string currmove = progress.CurrentMove.to_u32() == Move.none().to_u32() ? "none" : ToUsi(progress.CurrentMove);
+        string pv = progress.PrincipalVariation.Length == 0
+            ? currmove
+            : string.Join(' ', progress.PrincipalVariation.Select(ToUsi));
+
+        string line =
+            $"info depth {progress.Depth} seldepth {progress.SelDepth} score {scoreToken} nodes {progress.Nodes} nps {nps} time {elapsedMs} hashfull {progress.HashFullPermill} currmove {currmove} pv {pv}";
+
+        EmitInfoLine(line);
+    }
+
+    /// <summary>
+    /// 評価値をUSI scoreトークンへ変換する。
+    /// </summary>
+    private static string FormatScoreToken(int score)
+    {
+        int abs = Math.Abs(score);
+        if (abs < MateScoreThreshold)
+        {
+            return $"cp {score}";
+        }
+
+        int matePly = Math.Max(1, MateScore - abs + 1);
+        if (score < 0)
+        {
+            matePly = -matePly;
+        }
+
+        return $"mate {matePly}";
+    }
+
+    /// <summary>
+    /// info行を即時または遅延で出力する。
+    /// </summary>
+    private void EmitInfoLine(string line)
+    {
+        OutputSink?.Invoke(line);
     }
 
     /// <summary>

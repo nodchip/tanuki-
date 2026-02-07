@@ -38,7 +38,7 @@ public sealed class Searcher
     /// <summary>
     /// 探索を実行して最善手を返す。
     /// </summary>
-    public SearchResult Search(Position position, SearchLimits limits)
+    public SearchResult Search(Position position, SearchLimits limits, Action<SearchProgress>? progress = null)
     {
         int depth = limits.Depth <= 0 ? 1 : limits.Depth;
 
@@ -61,13 +61,22 @@ public sealed class Searcher
 
             (Move currentBest, int currentScore, int currentNodes) = SearchRoot(position, d);
             nodes += currentNodes;
+            bestScore = currentScore;
             if (currentBest.to_u32() != Move.none().to_u32())
             {
                 bestMove = currentBest;
-                bestScore = currentScore;
             }
 
             completedDepth = d;
+            progress?.Invoke(new SearchProgress(
+                d,
+                d,
+                bestScore,
+                nodes,
+                (int)timer.ElapsedMilliseconds,
+                0,
+                bestMove,
+                bestMove.to_u32() == Move.none().to_u32() ? [] : [bestMove]));
         }
 
         timer.Stop();
@@ -80,6 +89,18 @@ public sealed class Searcher
     /// </summary>
     private (Move BestMove, int Score, int Nodes) SearchRoot(Position position, int depth)
     {
+        Color us = position.side_to_move();
+        Color them = us == Color.BLACK ? Color.WHITE : Color.BLACK;
+        if (position.king_square(us) == Square.SQ_NB)
+        {
+            return (Move.none(), -MateScore, 1);
+        }
+
+        if (position.king_square(them) == Square.SQ_NB)
+        {
+            return (Move.none(), MateScore, 1);
+        }
+
         MoveList legal = MoveGenerator.GenerateLegal(position);
         if (legal.Count == 0)
         {
@@ -317,6 +338,19 @@ public sealed class Searcher
     /// </summary>
     private readonly record struct TranspositionEntry(int Depth, int Score, Move BestMove);
 }
+
+/// <summary>
+/// 探索進捗を表す値オブジェクト。
+/// </summary>
+public readonly record struct SearchProgress(
+    int Depth,
+    int SelDepth,
+    int Score,
+    int Nodes,
+    int ElapsedMilliseconds,
+    int HashFullPermill,
+    Move CurrentMove,
+    Move[] PrincipalVariation);
 
 /// <summary>
 /// 探索結果を表す値オブジェクト。

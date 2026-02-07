@@ -349,6 +349,42 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// 反復深化の各depth完了時にinfoが出力されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GoDepth_EmitsInfoPerDepth()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        var outputs = new List<string>();
+        engine.OutputSink = outputs.Add;
+
+        string response = engine.HandleCommand("go depth 2");
+
+        StringAssert.StartsWith(response, "bestmove ");
+        int infoCount = outputs.Count(line => line.StartsWith("info depth ", StringComparison.Ordinal));
+        Assert.IsTrue(infoCount >= 2);
+        Assert.IsTrue(outputs.Any(line => line.Contains(" pv ", StringComparison.Ordinal)));
+        Assert.IsTrue(outputs.Any(line => line.Contains(" currmove ", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
+    /// mate閾値以上の評価でscore mateが出力されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GoNoLegalMove_EmitsMateScoreInfo()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        var outputs = new List<string>();
+        engine.OutputSink = outputs.Add;
+        engine.HandleCommand("position sfen 9/9/9/9/9/9/9/9/4k4 b - 1");
+
+        string response = engine.HandleCommand("go depth 1");
+
+        Assert.AreEqual("bestmove resign", response);
+        Assert.IsTrue(outputs.Any(line => line.Contains("score mate", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
     /// gameoverコマンドを受理できることを検証する。
     /// </summary>
     [TestMethod]
