@@ -722,15 +722,14 @@ public sealed class UsiEngine
 
         Task.WaitAll(tasks);
 
-        (int WorkerId, SearchResult Result) selected = tasks[0].Result;
-        for (int i = 1; i < tasks.Length; i++)
+        SearchResult[] workerResults = tasks.Select(task => task.Result.Result).ToArray();
+        int winnerIndex = SelectLazySmpWinnerIndex(workerResults);
+        if (winnerIndex < 0 || winnerIndex >= tasks.Length)
         {
-            var candidate = tasks[i].Result;
-            if (IsBetterWorkerResult(candidate.Result, selected.Result))
-            {
-                selected = candidate;
-            }
+            winnerIndex = 0;
         }
+
+        (int WorkerId, SearchResult Result) selected = tasks[winnerIndex].Result;
 
         AddInfo($"lazysmp selected_worker={selected.WorkerId} score={selected.Result.Score} depth={selected.Result.Depth}");
         return selected.Result;
@@ -772,27 +771,100 @@ public sealed class UsiEngine
     }
 
     /// <summary>
-    /// ワーカー探索結果の優劣を判定する。
+    /// LazySMPのwinner indexを選出する。
     /// </summary>
-    private static bool IsBetterWorkerResult(SearchResult candidate, SearchResult currentBest)
+    private static int SelectLazySmpWinnerIndex(SearchResult[] workers)
     {
-        if (candidate.Score != currentBest.Score)
+        if (workers.Length == 0)
         {
-            return candidate.Score > currentBest.Score;
+            return -1;
         }
 
-        if (candidate.Depth != currentBest.Depth)
+        int minScore = workers.Min(result => result.Score);
+        var voteByMove = new Dictionary<uint, long>(workers.Length * 2);
+        long[] threadVotingValue = new long[workers.Length];
+
+        for (int i = 0; i < workers.Length; i++)
         {
-            return candidate.Depth > currentBest.Depth;
+            SearchResult worker = workers[i];
+            long value = ((long)worker.Score - minScore + 14L) * Math.Max(1, worker.Depth);
+            threadVotingValue[i] = value;
+            uint move = worker.BestMove.to_u32();
+            if (!voteByMove.TryAdd(move, value))
+            {
+                voteByMove[move] += value;
+            }
         }
 
-        if (candidate.Nodes != currentBest.Nodes)
+        int best = 0;
+        for (int i = 1; i < workers.Length; i++)
         {
-            return candidate.Nodes > currentBest.Nodes;
+            SearchResult bestResult = workers[best];
+            SearchResult candidate = workers[i];
+            int bestScore = bestResult.Score;
+            int candidateScore = candidate.Score;
+
+            long bestMoveVote = voteByMove[bestResult.BestMove.to_u32()];
+            long candidateMoveVote = voteByMove[candidate.BestMove.to_u32()];
+
+            bool bestInProvenWin = IsProvenWin(bestScore);
+            bool candidateInProvenWin = IsProvenWin(candidateScore);
+            bool bestInProvenLoss = IsProvenLoss(bestScore);
+            bool candidateInProvenLoss = IsProvenLoss(candidateScore);
+
+            bool betterVotingValue =
+                threadVotingValue[i] * (HasPrincipalMove(candidate) ? 1 : 0)
+                > threadVotingValue[best] * (HasPrincipalMove(bestResult) ? 1 : 0);
+
+            if (bestInProvenWin)
+            {
+                if (candidateScore > bestScore)
+                {
+                    best = i;
+                }
+            }
+            else if (bestInProvenLoss)
+            {
+                if (candidateInProvenLoss && candidateScore < bestScore)
+                {
+                    best = i;
+                }
+            }
+            else if (candidateInProvenWin
+                || candidateInProvenLoss
+                || (!IsProvenLoss(candidateScore)
+                    && (candidateMoveVote > bestMoveVote
+                        || (candidateMoveVote == bestMoveVote && betterVotingValue))))
+            {
+                best = i;
+            }
         }
 
-        return candidate.BestMove.to_u32() != Move.none().to_u32()
-            && currentBest.BestMove.to_u32() == Move.none().to_u32();
+        return best;
+    }
+
+    /// <summary>
+    /// 詰み確定勝ち相当の評価値かどうかを判定する。
+    /// </summary>
+    private static bool IsProvenWin(int score)
+    {
+        return score >= MateScoreThreshold;
+    }
+
+    /// <summary>
+    /// 詰み確定負け相当の評価値かどうかを判定する。
+    /// </summary>
+    private static bool IsProvenLoss(int score)
+    {
+        return score <= -MateScoreThreshold;
+    }
+
+    /// <summary>
+    /// principal variationが有効かどうかを判定する。
+    /// </summary>
+    private static bool HasPrincipalMove(SearchResult result)
+    {
+        return result.BestMove.to_u32() != Move.none().to_u32();
     }
 
     /// <summary>

@@ -1,4 +1,7 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Reflection;
+using YaneuraOu.CSharp.Engine.Core.Types;
+using YaneuraOu.CSharp.Engine.Search;
 using YaneuraOu.CSharp.Engine.Usi;
 
 namespace YaneuraOu.CSharp.Engine.Tests.Usi;
@@ -491,6 +494,29 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// LazySMP winner選出が1位手の投票と深さ重みを優先することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void LazySmpWinnerSelection_UsesVoteAndDepthWeight()
+    {
+        MethodInfo? method = typeof(UsiEngine).GetMethod(
+            "SelectLazySmpWinnerIndex",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.IsNotNull(method);
+
+        SearchResult[] workers =
+        [
+            new SearchResult(new Move(1), 100, 1000, 1),
+            new SearchResult(new Move(2), 110, 1200, 1),
+            new SearchResult(new Move(1), 105, 3000, 4),
+        ];
+
+        object? result = method.Invoke(null, [workers]);
+        Assert.IsNotNull(result);
+        Assert.AreEqual(2, (int)result);
+    }
+
+    /// <summary>
     /// ponderhitコマンドを受理できることを検証する。
     /// </summary>
     [TestMethod]
@@ -707,3 +733,4 @@ public class UsiProtocolTests
         return int.TryParse(parts[2], out int depth) ? depth : 0;
     }
 }
+
