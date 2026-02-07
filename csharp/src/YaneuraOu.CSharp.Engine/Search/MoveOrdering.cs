@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using YaneuraOu.CSharp.Engine.Core;
 using YaneuraOu.CSharp.Engine.Core.MoveGen;
 using YaneuraOu.CSharp.Engine.Core.Types;
@@ -6,20 +6,29 @@ using YaneuraOu.CSharp.Engine.Core.Types;
 namespace YaneuraOu.CSharp.Engine.Search;
 
 /// <summary>
-/// 探索用の指し手並び替えを行うクラス。
+/// 探索用の指し手順序付けを行うクラス。
 /// </summary>
 public static class MoveOrdering
 {
     /// <summary>
-    /// 簡易ヒューリスティクスで指し手を並び替える。
+    /// 指し手をスコア順に並べる。
     /// </summary>
-    public static List<Move> Order(Position position, MoveList moves)
+    public static List<Move> Order(Position position, MoveList moves, MoveOrderingContext? context = null, int ply = 0, Move ttMove = default)
     {
         var scored = new List<(Move Move, int Score)>();
         Color us = position.side_to_move();
+        uint tt = ttMove.to_u32();
+
         foreach (Move move in moves)
         {
             int score = 0;
+            uint moveKey = move.to_u32();
+
+            if (tt != 0 && moveKey == tt)
+            {
+                score += 1_000_000;
+            }
+
             if (!move.is_drop())
             {
                 Piece target = position.piece_on(move.to_sq());
@@ -32,6 +41,11 @@ public static class MoveOrdering
             if (move.is_promote())
             {
                 score += 1_000;
+            }
+
+            if (context is not null)
+            {
+                score += context.GetBonus(move, ply);
             }
 
             scored.Add((move, score));

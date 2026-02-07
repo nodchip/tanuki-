@@ -14,6 +14,7 @@ public sealed class Searcher
     private const int MateScore = 100_000;
 
     private readonly IEvaluator evaluator;
+    private readonly MoveOrderingContext orderingContext = new();
     private readonly Dictionary<ulong, TranspositionEntry> transpositionTable = new();
 
     /// <summary>
@@ -67,15 +68,18 @@ public sealed class Searcher
             return (Move.none(), position.in_check() ? -MateScore : 0, 1);
         }
 
+        ulong rootKey = position.state().key().ToUInt64();
+        Move ttMove = TryProbeTransposition(rootKey, depth, out _, out Move savedMove) ? savedMove : Move.none();
+
         Move bestMove = legal[0];
         int bestScore = int.MinValue;
         int nodes = 0;
 
-        foreach (Move move in MoveOrdering.Order(position, legal))
+        foreach (Move move in MoveOrdering.Order(position, legal, orderingContext, 0, ttMove))
         {
             var st = new StateInfo();
             position.do_move(move, st, position.gives_check(move));
-            int score = -AlphaBeta(position, depth - 1, int.MinValue + 1, int.MaxValue - 1, ref nodes);
+            int score = -AlphaBeta(position, depth - 1, int.MinValue + 1, int.MaxValue - 1, 1, ref nodes);
             position.undo_move(move);
 
             if (score > bestScore)
@@ -85,18 +89,19 @@ public sealed class Searcher
             }
         }
 
+        StoreTransposition(rootKey, depth, bestScore, bestMove);
         return (bestMove, bestScore, nodes);
     }
 
     /// <summary>
     /// alpha-beta探索を実行する。
     /// </summary>
-    private int AlphaBeta(Position position, int depth, int alpha, int beta, ref int nodes)
+    private int AlphaBeta(Position position, int depth, int alpha, int beta, int ply, ref int nodes)
     {
         nodes++;
 
         ulong key = position.state().key().ToUInt64();
-        if (TryProbeTransposition(key, depth, out int ttScore))
+        if (TryProbeTransposition(key, depth, out int ttScore, out Move ttMove))
         {
             LastTranspositionHitCount++;
             return ttScore;
@@ -105,7 +110,7 @@ public sealed class Searcher
         if (depth <= 0)
         {
             int q = Quiescence(position, alpha, beta, ref nodes);
-            StoreTransposition(key, 0, q);
+            StoreTransposition(key, 0, q, Move.none());
             return q;
         }
 
@@ -113,31 +118,45 @@ public sealed class Searcher
         if (legal.Count == 0)
         {
             int terminal = position.in_check() ? -MateScore + depth : 0;
-            StoreTransposition(key, depth, terminal);
+            StoreTransposition(key, depth, terminal, Move.none());
             return terminal;
         }
 
         int best = alpha;
-        foreach (Move move in MoveOrdering.Order(position, legal))
+        Move bestMove = Move.none();
+
+        foreach (Move move in MoveOrdering.Order(position, legal, orderingContext, ply, ttMove))
         {
             var st = new StateInfo();
             position.do_move(move, st, position.gives_check(move));
-            int score = -AlphaBeta(position, depth - 1, -beta, -best, ref nodes);
+            int score = -AlphaBeta(position, depth - 1, -beta, -best, ply + 1, ref nodes);
             position.undo_move(move);
 
             if (score >= beta)
             {
-                StoreTransposition(key, depth, beta);
+                orderingContext.RegisterKiller(ply, move);
+                if (!move.is_drop())
+                {
+                    orderingContext.AddHistory(move, depth);
+                }
+
+                StoreTransposition(key, depth, beta, move);
                 return beta;
             }
 
             if (score > best)
             {
                 best = score;
+                bestMove = move;
             }
         }
 
-        StoreTransposition(key, depth, best);
+        if (bestMove.to_u32() != Move.none().to_u32() && !bestMove.is_drop())
+        {
+            orderingContext.AddHistory(bestMove, depth);
+        }
+
+        StoreTransposition(key, depth, best, bestMove);
         return best;
     }
 
@@ -159,7 +178,7 @@ public sealed class Searcher
         }
 
         MoveList captures = MoveGenerator.GenerateCaptures(position);
-        foreach (Move move in MoveOrdering.Order(position, captures))
+        foreach (Move move in MoveOrdering.Order(position, captures, orderingContext))
         {
             var st = new StateInfo();
             position.do_move(move, st, position.gives_check(move));
@@ -183,35 +202,37 @@ public sealed class Searcher
     /// <summary>
     /// 置換表を参照する。
     /// </summary>
-    private bool TryProbeTransposition(ulong key, int depth, out int score)
+    private bool TryProbeTransposition(ulong key, int depth, out int score, out Move bestMove)
     {
         if (transpositionTable.TryGetValue(key, out TranspositionEntry entry) && entry.Depth >= depth)
         {
             score = entry.Score;
+            bestMove = entry.BestMove;
             return true;
         }
 
         score = 0;
+        bestMove = Move.none();
         return false;
     }
 
     /// <summary>
     /// 置換表へ結果を保存する。
     /// </summary>
-    private void StoreTransposition(ulong key, int depth, int score)
+    private void StoreTransposition(ulong key, int depth, int score, Move bestMove)
     {
         if (transpositionTable.TryGetValue(key, out TranspositionEntry current) && current.Depth > depth)
         {
             return;
         }
 
-        transpositionTable[key] = new TranspositionEntry(depth, score);
+        transpositionTable[key] = new TranspositionEntry(depth, score, bestMove);
     }
 
     /// <summary>
     /// 置換表エントリを表す値型。
     /// </summary>
-    private readonly record struct TranspositionEntry(int Depth, int Score);
+    private readonly record struct TranspositionEntry(int Depth, int Score, Move BestMove);
 }
 
 /// <summary>
