@@ -294,20 +294,31 @@ public sealed class Searcher
 
         nodes++;
         totalNodes++;
-        int standPat = evaluator.Evaluate(position);
-        if (standPat >= beta)
+        bool inCheck = position.in_check();
+        if (!inCheck)
         {
-            return beta;
+            int standPat = evaluator.Evaluate(position);
+            if (standPat >= beta)
+            {
+                return beta;
+            }
+
+            if (standPat > alpha)
+            {
+                alpha = standPat;
+            }
         }
 
-        if (standPat > alpha)
+        MoveList moves = inCheck
+            ? MoveGenerator.GenerateLegal(position)
+            : MoveGenerator.GenerateCaptures(position);
+        if (moves.Count == 0)
         {
-            alpha = standPat;
+            return inCheck ? -MateScore + 1 : alpha;
         }
 
-        MoveList captures = MoveGenerator.GenerateCaptures(position);
         Color us = position.side_to_move();
-        foreach (Move move in MoveOrdering.Order(position, captures, orderingContext))
+        foreach (Move move in MoveOrdering.Order(position, moves, orderingContext))
         {
             if (ShouldStopNow())
             {

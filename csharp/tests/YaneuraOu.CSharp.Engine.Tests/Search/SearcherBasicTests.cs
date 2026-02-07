@@ -1,4 +1,5 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Reflection;
 using YaneuraOu.CSharp.Engine.Core;
 using YaneuraOu.CSharp.Engine.Core.MoveGen;
 using YaneuraOu.CSharp.Engine.Core.Types;
@@ -122,6 +123,22 @@ public class SearcherBasicTests
     }
 
     /// <summary>
+    /// 静止探索で王手中の局面では王手回避手を探索してstand pat固定を回避することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void Quiescence_InCheckPosition_SearchesEvasions()
+    {
+        var pos = new Position();
+        pos.set("4k4/9/4r4/9/9/9/9/9/4K4 b - 1", new StateInfo());
+        var searcher = new Searcher(new CheckPenaltyEvaluator());
+        int nodes = 0;
+
+        int score = InvokeQuiescence(searcher, pos, -30000, 30000, ref nodes);
+
+        Assert.IsTrue(score > -10000, $"score={score}");
+    }
+
+    /// <summary>
     /// 呼び出し回数検証用の差分更新評価器。
     /// </summary>
     private sealed class CountingIncrementalEvaluator : IEvaluator, IIncrementalEvaluator
@@ -149,5 +166,29 @@ public class SearcherBasicTests
         {
             MoveUndoneCount++;
         }
+    }
+
+    /// <summary>
+    /// 王手中の局面へ大きなペナルティを与える検証用評価器。
+    /// </summary>
+    private sealed class CheckPenaltyEvaluator : IEvaluator
+    {
+        public int Evaluate(Position position)
+        {
+            return position.in_check() ? -10000 : 0;
+        }
+    }
+
+    /// <summary>
+    /// private静止探索をテストから呼び出す。
+    /// </summary>
+    private static int InvokeQuiescence(Searcher searcher, Position position, int alpha, int beta, ref int nodes)
+    {
+        MethodInfo? method = typeof(Searcher).GetMethod("Quiescence", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.IsNotNull(method);
+        object?[] args = { position, alpha, beta, nodes };
+        int score = (int)method.Invoke(searcher, args)!;
+        nodes = (int)args[3]!;
+        return score;
     }
 }
