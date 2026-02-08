@@ -14,6 +14,8 @@ namespace YaneuraOu.CSharp.Engine.Search;
 /// </summary>
 public sealed class Searcher
 {
+    private const int BytesPerTranspositionEntry = 32;
+    private const int MinimumTranspositionEntries = 1024;
     private const int MateScore = 100_000;
     private const int NullMoveDepthThreshold = 3;
     private const int NullMoveReductionBase = 2;
@@ -34,6 +36,7 @@ public sealed class Searcher
     private long totalNodes;
     private Func<bool>? shouldStopCallback;
     private SearchStopPolicy? stopPolicy;
+    private int maxTranspositionEntries = MinimumTranspositionEntries;
 
     /// <summary>
     /// Searcherのインスタンスを初期化する。
@@ -43,6 +46,7 @@ public sealed class Searcher
         this.evaluator = evaluator ?? new MaterialEvaluator();
         this.features = features ?? new SearchFeatures();
         incrementalEvaluator = this.evaluator as IIncrementalEvaluator;
+        SetTranspositionCapacityMb(64);
     }
 
     /// <summary>
@@ -71,11 +75,31 @@ public sealed class Searcher
     public int TranspositionEntryCount => transpositionTable.Count;
 
     /// <summary>
+    /// 置換表の最大エントリ数を返す。
+    /// </summary>
+    public int TranspositionCapacityEntries => maxTranspositionEntries;
+
+    /// <summary>
     /// 置換表をクリアする。
     /// </summary>
     public void ClearTranspositionTable()
     {
         transpositionTable.Clear();
+    }
+
+    /// <summary>
+    /// 置換表容量をMB単位で設定する。
+    /// </summary>
+    public void SetTranspositionCapacityMb(int hashSizeMb)
+    {
+        int mb = Math.Max(1, hashSizeMb);
+        long bytes = (long)mb * 1024L * 1024L;
+        long entries = bytes / BytesPerTranspositionEntry;
+        maxTranspositionEntries = (int)Math.Max(MinimumTranspositionEntries, Math.Min(entries, int.MaxValue));
+        if (transpositionTable.Count > maxTranspositionEntries)
+        {
+            ClearTranspositionTable();
+        }
     }
 
     /// <summary>
@@ -748,6 +772,15 @@ public sealed class Searcher
         if (transpositionTable.TryGetValue(key, out TranspositionEntry current) && current.Depth > depth)
         {
             return;
+        }
+
+        if (!transpositionTable.ContainsKey(key) && transpositionTable.Count >= maxTranspositionEntries)
+        {
+            using Dictionary<ulong, TranspositionEntry>.Enumerator e = transpositionTable.GetEnumerator();
+            if (e.MoveNext())
+            {
+                transpositionTable.Remove(e.Current.Key);
+            }
         }
 
         transpositionTable[key] = new TranspositionEntry(depth, score, bestMove, bound);

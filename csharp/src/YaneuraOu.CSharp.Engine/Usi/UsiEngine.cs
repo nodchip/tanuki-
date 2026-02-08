@@ -369,6 +369,7 @@ public sealed class UsiEngine
             && hashMb > 0)
         {
             options.HashSizeMb = hashMb;
+            ApplyHashSizeToSearchers();
             AddInfo($"USI_Hash={hashMb}");
         }
 
@@ -772,7 +773,9 @@ public sealed class UsiEngine
             EnableLmr = options.UseLmr,
             EnableAspirationWindow = options.UseAspirationWindow,
         };
-        return new Searcher(evaluator, features);
+        var created = new Searcher(evaluator, features);
+        created.SetTranspositionCapacityMb(options.HashSizeMb);
+        return created;
     }
 
     /// <summary>
@@ -880,7 +883,9 @@ public sealed class UsiEngine
             EnableAspirationWindow = options.UseAspirationWindow,
         };
 
-        return new Searcher(evaluator, features);
+        var created = new Searcher(evaluator, features);
+        created.SetTranspositionCapacityMb(options.HashSizeMb);
+        return created;
     }
 
     /// <summary>
@@ -911,6 +916,18 @@ public sealed class UsiEngine
         foreach (Searcher worker in lazySmpSearchers)
         {
             worker.ClearTranspositionTable();
+        }
+    }
+
+    /// <summary>
+    /// 全探索器へHashサイズ設定を反映する。
+    /// </summary>
+    private void ApplyHashSizeToSearchers()
+    {
+        searcher.SetTranspositionCapacityMb(options.HashSizeMb);
+        foreach (Searcher worker in lazySmpSearchers)
+        {
+            worker.SetTranspositionCapacityMb(options.HashSizeMb);
         }
     }
 

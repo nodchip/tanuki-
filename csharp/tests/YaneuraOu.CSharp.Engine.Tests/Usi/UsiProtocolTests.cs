@@ -790,6 +790,25 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// USI_Hash設定が探索器の置換表容量へ反映されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionHash_AppliesTranspositionCapacity()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        FieldInfo? searcherField = typeof(UsiEngine).GetField("searcher", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.IsNotNull(searcherField);
+        var searcher = searcherField.GetValue(engine) as Searcher;
+        Assert.IsNotNull(searcher);
+
+        int before = searcher.TranspositionCapacityEntries;
+        engine.HandleCommand("setoption name USI_Hash value 1");
+        int after = searcher.TranspositionCapacityEntries;
+
+        Assert.IsTrue(after < before, $"before={before} after={after}");
+    }
+
+    /// <summary>
     /// Clear Hashオプションで置換表をクリアできることを検証する。
     /// </summary>
     [TestMethod]
