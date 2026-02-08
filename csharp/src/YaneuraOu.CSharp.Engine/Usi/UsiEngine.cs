@@ -28,6 +28,7 @@ public sealed class UsiEngine
     private Task<SearchResult>? thinkingTask;
     private CancellationTokenSource? thinkingCts;
     private readonly object thinkingLock = new();
+    private readonly object infoLock = new();
     private readonly List<string> infoMessages = new();
     private readonly List<Searcher> lazySmpSearchers = new();
     private readonly TimeManagement timeManagement = new();
@@ -995,7 +996,7 @@ public sealed class UsiEngine
             limits.ShouldStop = () => thinkingCts.IsCancellationRequested;
             limits.StopPolicy?.SetExternalStop(limits.ShouldStop);
             activeStopPolicy = limits.StopPolicy;
-            thinkingTask = Task.Run(() => searcher.Search(position, limits, OnSearchProgress));
+            thinkingTask = Task.Run(() => SearchWithLazySmpIfNeeded(limits));
             AddInfo($"start thinking depth {limits.Depth} time {limits.MaxTimeMs} threads {limits.Threads}");
         }
     }
@@ -1153,7 +1154,10 @@ public sealed class UsiEngine
             return;
         }
 
-        infoMessages.Add($"info string {message}");
+        lock (infoLock)
+        {
+            infoMessages.Add($"info string {message}");
+        }
     }
 
     /// <summary>
@@ -1241,15 +1245,19 @@ public sealed class UsiEngine
     /// </summary>
     private string FlushInfo(string response)
     {
-        if (infoMessages.Count == 0)
+        string[] lines;
+        lock (infoLock)
         {
-            return response;
+            if (infoMessages.Count == 0)
+            {
+                return response;
+            }
+
+            lines = infoMessages.ToArray();
+            infoMessages.Clear();
         }
 
-        string joined = string.Join('\n', infoMessages);
-        infoMessages.Clear();
+        string joined = string.Join('\n', lines);
         return string.IsNullOrEmpty(response) ? joined : $"{joined}\n{response}";
     }
 }
-
-

@@ -1,6 +1,7 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Diagnostics;
 using System.Reflection;
+using System.Threading;
 using YaneuraOu.CSharp.Engine.Core;
 using YaneuraOu.CSharp.Engine.Core.Types;
 using YaneuraOu.CSharp.Engine.Search;
@@ -717,6 +718,25 @@ public class UsiProtocolTests
         Assert.AreEqual(string.Empty, ponderResponse);
         Assert.AreEqual(string.Empty, ponderHitResponse);
         StringAssert.StartsWith(stopResponse, "bestmove ");
+    }
+
+    /// <summary>
+    /// go infiniteでThreadsが2以上のときに非同期探索でもLazySMP情報が出力されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_GoInfiniteWithThreads_ThenStop_EmitsLazySmpInfo()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+        engine.HandleCommand("setoption name Threads value 3");
+
+        string goResponse = engine.HandleCommand("go infinite");
+        Thread.Sleep(100);
+        string stopResponse = engine.HandleCommand("stop");
+
+        Assert.IsTrue(goResponse.Contains("info string start thinking", StringComparison.Ordinal));
+        StringAssert.Contains(stopResponse, "info string lazysmp workers=3");
+        StringAssert.Contains(stopResponse, "bestmove ");
     }
 
     /// <summary>
