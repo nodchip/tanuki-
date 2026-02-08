@@ -72,17 +72,17 @@ public class UsiProtocolTests
     }
 
     /// <summary>
-    /// stopコマンドがbestmove応答を返すことを検証する。
+    /// 同期探索完了後のstopコマンドは応答を返さないことを検証する。
     /// </summary>
     [TestMethod]
-    public void HandleCommand_Stop_ReturnsBestmoveResponse()
+    public void HandleCommand_StopAfterSyncGo_ReturnsEmptyResponse()
     {
         var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
 
         engine.HandleCommand("go depth 1");
         string response = engine.HandleCommand("stop");
 
-        StringAssert.StartsWith(response, "bestmove ");
+        Assert.AreEqual(string.Empty, response);
     }
 
     /// <summary>

@@ -131,7 +131,13 @@ public sealed class UsiEngine
 
         if (string.Equals(trimmed, "stop", StringComparison.OrdinalIgnoreCase))
         {
-            CompleteThinkingIfNeeded();
+            bool hadActiveSearch = CompleteThinkingIfNeeded();
+            if (!hadActiveSearch)
+            {
+                AddInfo("stop ignored: not thinking");
+                return FlushInfo(string.Empty);
+            }
+
             response = $"bestmove {FormatBestMove(lastBestMove)}";
             return FlushInfo(response);
         }
@@ -997,7 +1003,7 @@ public sealed class UsiEngine
     /// <summary>
     /// 進行中の探索を停止して結果を取り込む。
     /// </summary>
-    private void CompleteThinkingIfNeeded()
+    private bool CompleteThinkingIfNeeded()
     {
         Task<SearchResult>? task;
         CancellationTokenSource? cts;
@@ -1009,7 +1015,7 @@ public sealed class UsiEngine
 
         if (task is null || cts is null)
         {
-            return;
+            return false;
         }
 
         cts.Cancel();
@@ -1036,6 +1042,8 @@ public sealed class UsiEngine
                 activeStopPolicy = null;
             }
         }
+
+        return true;
     }
 
     /// <summary>
