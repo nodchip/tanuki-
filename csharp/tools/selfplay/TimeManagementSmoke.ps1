@@ -1,4 +1,6 @@
 ﻿param(
+    [ValidateSet("Custom", "ShogiHomeByoyomi3s", "ShogidokoroFischer")]
+    [string]$Profile = "Custom",
     [int]$ByoyomiMs = 3000,
     [int]$BTimeMs = 15000,
     [int]$WTimeMs = 15000,
@@ -7,14 +9,36 @@
 
 $project = "csharp/src/YaneuraOu.CSharp.Engine/YaneuraOu.CSharp.Engine.csproj"
 
+switch ($Profile) {
+    "ShogiHomeByoyomi3s" {
+        $ByoyomiMs = 3000
+        $BTimeMs = 0
+        $WTimeMs = 0
+        $IncMs = 0
+    }
+    "ShogidokoroFischer" {
+        $ByoyomiMs = 0
+        $BTimeMs = 300000
+        $WTimeMs = 300000
+        $IncMs = 5000
+    }
+}
+
+$goPrimary = "go btime $BTimeMs wtime $WTimeMs binc $IncMs winc $IncMs byoyomi $ByoyomiMs"
+$goSecondary = if ($ByoyomiMs -gt 0) {
+    "go btime 0 wtime 0 byoyomi $ByoyomiMs"
+} else {
+    "go btime $BTimeMs wtime $WTimeMs binc $IncMs winc $IncMs"
+}
+
 $script = @(
     "usi",
     "isready",
     "setoption name DebugLog value true",
     "usinewgame",
     "position startpos",
-    "go btime $BTimeMs wtime $WTimeMs binc $IncMs winc $IncMs byoyomi $ByoyomiMs",
-    "go btime 0 wtime 0 byoyomi $ByoyomiMs",
+    $goPrimary,
+    $goSecondary,
     "setoption name MoveOverhead value 5000",
     "go byoyomi 1000",
     "quit"
@@ -47,4 +71,4 @@ if ($output | Select-String "Unhandled exception") {
 }
 
 $output
-Write-Host ("time management smoke success: byoyomiMs={0} btime={1} wtime={2} inc={3} tm_ok={4} tm_fallback={5}" -f $ByoyomiMs, $BTimeMs, $WTimeMs, $IncMs, $tmOk, $tmFallback)
+Write-Host ("time management smoke success: profile={0} byoyomiMs={1} btime={2} wtime={3} inc={4} tm_ok={5} tm_fallback={6}" -f $Profile, $ByoyomiMs, $BTimeMs, $WTimeMs, $IncMs, $tmOk, $tmFallback)

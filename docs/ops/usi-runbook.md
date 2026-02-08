@@ -43,6 +43,9 @@
   - `bestmove` 応答数が想定回数以上である。
   - 出力に `Exception` が含まれない。
 - 主な引数:
+  - `-Profile ShogiHomeByoyomi3s`（ShogiHome秒読み3秒プリセット）
+  - `-Profile ShogidokoroFischer`（将棋所フィッシャー5分+5秒プリセット）
+  - `-Profile Custom`（既定、下記個別引数を使用）
   - `-ByoyomiMs 3000`
   - `-BTimeMs 15000 -WTimeMs 15000`
   - `-IncMs 0`
