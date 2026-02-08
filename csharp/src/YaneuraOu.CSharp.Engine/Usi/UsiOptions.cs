@@ -81,6 +81,16 @@ public sealed class UsiOptions
     public bool AnalyseMode { get; set; }
 
     /// <summary>
+    /// レーティング制限を有効化するかどうか。
+    /// </summary>
+    public bool LimitStrength { get; set; }
+
+    /// <summary>
+    /// 目標Eloを保持する。
+    /// </summary>
+    public int Elo { get; set; } = 3500;
+
+    /// <summary>
     /// 定跡利用を有効化するかどうか。
     /// </summary>
     public bool OwnBookEnabled { get; set; }

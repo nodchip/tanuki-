@@ -260,6 +260,8 @@ public class UsiProtocolTests
         StringAssert.Contains(response, "option name USI_Ponder type check");
         StringAssert.Contains(response, "option name MultiPV type spin");
         StringAssert.Contains(response, "option name USI_AnalyseMode type check");
+        StringAssert.Contains(response, "option name USI_LimitStrength type check");
+        StringAssert.Contains(response, "option name USI_Elo type spin");
         StringAssert.Contains(response, "option name USI_OwnBook type check");
         StringAssert.Contains(response, "option name BookFile type string");
         StringAssert.Contains(response, "option name DebugLog type check");
@@ -884,6 +886,34 @@ public class UsiProtocolTests
         string response = engine.HandleCommand("setoption name MaxMovesToDraw value 320");
 
         StringAssert.Contains(response, "info string MaxMovesToDraw=320");
+    }
+
+    /// <summary>
+    /// USI_LimitStrengthオプションを受理できることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionUsiLimitStrength_EmitsInfoString()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+
+        string response = engine.HandleCommand("setoption name USI_LimitStrength value true");
+
+        StringAssert.Contains(response, "info string USI_LimitStrength=true");
+    }
+
+    /// <summary>
+    /// USI_Eloオプションを受理できることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionUsiElo_EmitsInfoString()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+
+        string response = engine.HandleCommand("setoption name USI_Elo value 1800");
+
+        StringAssert.Contains(response, "info string USI_Elo=1800");
     }
 
     /// <summary>
