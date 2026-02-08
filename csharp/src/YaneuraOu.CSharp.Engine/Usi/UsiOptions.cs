@@ -76,6 +76,16 @@ public sealed class UsiOptions
     public bool AnalyseMode { get; set; }
 
     /// <summary>
+    /// 定跡利用を有効化するかどうか。
+    /// </summary>
+    public bool OwnBookEnabled { get; set; }
+
+    /// <summary>
+    /// 定跡ファイルのパス。
+    /// </summary>
+    public string BookFilePath { get; set; } = string.Empty;
+
+    /// <summary>
     /// デバッグログ出力を有効化するかどうか。
     /// </summary>
     public bool DebugLog { get; set; }

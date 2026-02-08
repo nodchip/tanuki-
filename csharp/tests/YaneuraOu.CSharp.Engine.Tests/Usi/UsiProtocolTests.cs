@@ -240,6 +240,8 @@ public class UsiProtocolTests
         StringAssert.Contains(response, "option name USI_Ponder type check");
         StringAssert.Contains(response, "option name MultiPV type spin");
         StringAssert.Contains(response, "option name USI_AnalyseMode type check");
+        StringAssert.Contains(response, "option name USI_OwnBook type check");
+        StringAssert.Contains(response, "option name BookFile type string");
         StringAssert.Contains(response, "option name DebugLog type check");
         StringAssert.Contains(response, "option name NnueIncrementalStrict type check");
     }
@@ -779,6 +781,34 @@ public class UsiProtocolTests
         string response = engine.HandleCommand("setoption name Ponder value true");
 
         StringAssert.Contains(response, "info string USI_Ponder=true");
+    }
+
+    /// <summary>
+    /// USI_OwnBookオプションを受理できることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionUsiOwnBook_EmitsInfoString()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+
+        string response = engine.HandleCommand("setoption name USI_OwnBook value true");
+
+        StringAssert.Contains(response, "info string USI_OwnBook=true");
+    }
+
+    /// <summary>
+    /// BookFileオプションを受理できることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionBookFile_EmitsInfoString()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+
+        string response = engine.HandleCommand("setoption name BookFile value book/standard.db");
+
+        StringAssert.Contains(response, "info string BookFile=book/standard.db");
     }
 
     /// <summary>

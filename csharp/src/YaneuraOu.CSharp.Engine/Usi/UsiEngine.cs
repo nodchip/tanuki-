@@ -110,6 +110,8 @@ public sealed class UsiEngine
                 "option name USI_Ponder type check default false\n" +
                 "option name MultiPV type spin default 1 min 1 max 16\n" +
                 "option name USI_AnalyseMode type check default false\n" +
+                "option name USI_OwnBook type check default false\n" +
+                "option name BookFile type string default \n" +
                 "option name DebugLog type check default false\n" +
                 "option name NnueIncrementalStrict type check default false\n" +
                 "option name EvalFile type string default \n" +
@@ -362,6 +364,19 @@ public sealed class UsiEngine
         {
             options.AnalyseMode = ParseBooleanOption(optionValue);
             AddInfo($"USI_AnalyseMode={options.AnalyseMode.ToString().ToLowerInvariant()}");
+        }
+
+        if (optionName.Equals("USI_OwnBook", StringComparison.OrdinalIgnoreCase)
+            || optionName.Equals("OwnBook", StringComparison.OrdinalIgnoreCase))
+        {
+            options.OwnBookEnabled = ParseBooleanOption(optionValue);
+            AddInfo($"USI_OwnBook={options.OwnBookEnabled.ToString().ToLowerInvariant()}");
+        }
+
+        if (optionName.Equals("BookFile", StringComparison.OrdinalIgnoreCase))
+        {
+            options.BookFilePath = optionValue;
+            AddInfo($"BookFile={options.BookFilePath}");
         }
 
         if (optionName.Equals("DebugLog", StringComparison.OrdinalIgnoreCase))
