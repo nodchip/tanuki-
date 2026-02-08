@@ -236,8 +236,8 @@ public class UsiProtocolTests
         StringAssert.Contains(response, "option name UseLmr type check");
         StringAssert.Contains(response, "option name UseAspirationWindow type check");
         StringAssert.Contains(response, "option name Threads type spin");
-        StringAssert.Contains(response, "option name Hash type spin");
-        StringAssert.Contains(response, "option name Ponder type check");
+        StringAssert.Contains(response, "option name USI_Hash type spin");
+        StringAssert.Contains(response, "option name USI_Ponder type check");
         StringAssert.Contains(response, "option name MultiPV type spin");
         StringAssert.Contains(response, "option name USI_AnalyseMode type check");
         StringAssert.Contains(response, "option name DebugLog type check");
@@ -748,9 +748,37 @@ public class UsiProtocolTests
         var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
         engine.HandleCommand("setoption name DebugLog value true");
 
-        string response = engine.HandleCommand("setoption name Hash value 128");
+        string response = engine.HandleCommand("setoption name USI_Hash value 128");
 
-        StringAssert.Contains(response, "info string Hash=128");
+        StringAssert.Contains(response, "info string USI_Hash=128");
+    }
+
+    /// <summary>
+    /// 互換性のため旧Hashオプション名も受理できることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionLegacyHash_AcceptsAlias()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+
+        string response = engine.HandleCommand("setoption name Hash value 256");
+
+        StringAssert.Contains(response, "info string USI_Hash=256");
+    }
+
+    /// <summary>
+    /// 互換性のため旧Ponderオプション名も受理できることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionLegacyPonder_AcceptsAlias()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+
+        string response = engine.HandleCommand("setoption name Ponder value true");
+
+        StringAssert.Contains(response, "info string USI_Ponder=true");
     }
 
     /// <summary>

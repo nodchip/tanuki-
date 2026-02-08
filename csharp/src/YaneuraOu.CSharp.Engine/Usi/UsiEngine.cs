@@ -106,8 +106,8 @@ public sealed class UsiEngine
                 "option name UseLmr type check default true\n" +
                 "option name UseAspirationWindow type check default true\n" +
                 "option name Threads type spin default 1 min 1 max 256\n" +
-                "option name Hash type spin default 64 min 1 max 8192\n" +
-                "option name Ponder type check default false\n" +
+                "option name USI_Hash type spin default 64 min 1 max 8192\n" +
+                "option name USI_Ponder type check default false\n" +
                 "option name MultiPV type spin default 1 min 1 max 16\n" +
                 "option name USI_AnalyseMode type check default false\n" +
                 "option name DebugLog type check default false\n" +
@@ -334,12 +334,13 @@ public sealed class UsiEngine
             AddInfo($"Threads={threads}");
         }
 
-        if (optionName.Equals("Hash", StringComparison.OrdinalIgnoreCase)
+        if ((optionName.Equals("Hash", StringComparison.OrdinalIgnoreCase)
+            || optionName.Equals("USI_Hash", StringComparison.OrdinalIgnoreCase))
             && int.TryParse(optionValue, out int hashMb)
             && hashMb > 0)
         {
             options.HashSizeMb = hashMb;
-            AddInfo($"Hash={hashMb}");
+            AddInfo($"USI_Hash={hashMb}");
         }
 
         if (optionName.Equals("MultiPV", StringComparison.OrdinalIgnoreCase)
@@ -350,10 +351,11 @@ public sealed class UsiEngine
             AddInfo($"MultiPV={multiPv}");
         }
 
-        if (optionName.Equals("Ponder", StringComparison.OrdinalIgnoreCase))
+        if (optionName.Equals("Ponder", StringComparison.OrdinalIgnoreCase)
+            || optionName.Equals("USI_Ponder", StringComparison.OrdinalIgnoreCase))
         {
             options.PonderEnabled = ParseBooleanOption(optionValue);
-            AddInfo($"Ponder={options.PonderEnabled.ToString().ToLowerInvariant()}");
+            AddInfo($"USI_Ponder={options.PonderEnabled.ToString().ToLowerInvariant()}");
         }
 
         if (optionName.Equals("USI_AnalyseMode", StringComparison.OrdinalIgnoreCase))
