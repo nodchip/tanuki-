@@ -50,6 +50,18 @@
   - `-BTimeMs 15000 -WTimeMs 15000`
   - `-IncMs 0`
 
+## 6.2 実対局ログ集計
+- ShogiHome/将棋所のUSIログを保存し、次を実行する。
+  - `powershell -ExecutionPolicy Bypass -File csharp/tools/selfplay/AnalyzeUsiMatchLogs.ps1 -LogDir <ログフォルダ>`
+- 主な出力:
+  - `tm status=ok/fallback` 件数
+  - `bestmove resign` 件数
+  - `反則手` 件数
+  - `info depth ... time` からの秒読み超過疑い件数
+- 失敗条件を有効化する場合:
+  - `-FailOnIllegalMove`
+  - `-FailOnOverrun`
+
 ## 7. NNUE parity strict
 - C++版エンジン実行ファイルを `source/YaneuraOu-by-gcc.exe` に配置する。
 - `eval/nn.bin` を配置する。
