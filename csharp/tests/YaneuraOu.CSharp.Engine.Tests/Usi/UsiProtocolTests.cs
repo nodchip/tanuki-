@@ -1102,6 +1102,7 @@ public class UsiProtocolTests
         Assert.IsTrue(infoCount >= 2);
         Assert.IsTrue(outputs.Any(line => line.Contains(" pv ", StringComparison.Ordinal)));
         Assert.IsTrue(outputs.Any(line => line.Contains(" currmove ", StringComparison.Ordinal)));
+        Assert.IsTrue(outputs.Any(line => line.Contains(" multipv 1 ", StringComparison.Ordinal)));
     }
 
     /// <summary>

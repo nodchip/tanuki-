@@ -1285,7 +1285,7 @@ public sealed class UsiEngine
             : string.Join(' ', progress.PrincipalVariation.Select(ToUsi));
 
         string line =
-            $"info depth {progress.Depth} seldepth {progress.SelDepth} score {scoreToken} nodes {progress.Nodes} nps {nps} time {elapsedMs} hashfull {progress.HashFullPermill} currmove {currmove} pv {pv}";
+            $"info depth {progress.Depth} seldepth {progress.SelDepth} multipv 1 score {scoreToken} nodes {progress.Nodes} nps {nps} time {elapsedMs} hashfull {progress.HashFullPermill} currmove {currmove} pv {pv}";
 
         EmitInfoLine(line);
         EmitCurrLineIfEnabled(progress);
