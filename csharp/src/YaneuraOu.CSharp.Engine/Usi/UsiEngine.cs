@@ -1288,6 +1288,33 @@ public sealed class UsiEngine
             $"info depth {progress.Depth} seldepth {progress.SelDepth} score {scoreToken} nodes {progress.Nodes} nps {nps} time {elapsedMs} hashfull {progress.HashFullPermill} currmove {currmove} pv {pv}";
 
         EmitInfoLine(line);
+        EmitRefutationLineIfEnabled(progress);
+    }
+
+    /// <summary>
+    /// USI_ShowRefutations有効時にrefutation情報を出力する。
+    /// </summary>
+    private void EmitRefutationLineIfEnabled(SearchProgress progress)
+    {
+        if (!options.ShowRefutations)
+        {
+            return;
+        }
+
+        if (progress.CurrentMove.to_u32() == Move.none().to_u32())
+        {
+            return;
+        }
+
+        string head = ToUsi(progress.CurrentMove);
+        if (progress.PrincipalVariation.Length == 0)
+        {
+            EmitInfoLine($"info refutation {head}");
+            return;
+        }
+
+        string tail = string.Join(' ', progress.PrincipalVariation.Select(ToUsi));
+        EmitInfoLine($"info refutation {head} {tail}");
     }
 
     /// <summary>

@@ -947,6 +947,22 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// USI_ShowRefutations有効時にinfo refutationを出力することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_UsiShowRefutationsEnabled_EmitsRefutationInfo()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        var outputs = new List<string>();
+        engine.OutputSink = outputs.Add;
+
+        engine.HandleCommand("setoption name USI_ShowRefutations value true");
+        engine.HandleCommand("go depth 1");
+
+        Assert.IsTrue(outputs.Any(line => line.StartsWith("info refutation ", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
     /// NnueIncrementalStrictオプション設定を受理してinfo stringに反映することを検証する。
     /// </summary>
     [TestMethod]
