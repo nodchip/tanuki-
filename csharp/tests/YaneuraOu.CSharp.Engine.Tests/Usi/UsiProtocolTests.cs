@@ -933,6 +933,22 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// USI_ShowCurrLine有効時にinfo currlineを出力することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_UsiShowCurrLineEnabled_EmitsCurrLineInfo()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        var outputs = new List<string>();
+        engine.OutputSink = outputs.Add;
+
+        engine.HandleCommand("setoption name USI_ShowCurrLine value true");
+        engine.HandleCommand("go depth 1");
+
+        Assert.IsTrue(outputs.Any(line => line.StartsWith("info currline ", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
     /// USI_ShowRefutationsオプションを受理できることを検証する。
     /// </summary>
     [TestMethod]

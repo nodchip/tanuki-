@@ -1288,7 +1288,33 @@ public sealed class UsiEngine
             $"info depth {progress.Depth} seldepth {progress.SelDepth} score {scoreToken} nodes {progress.Nodes} nps {nps} time {elapsedMs} hashfull {progress.HashFullPermill} currmove {currmove} pv {pv}";
 
         EmitInfoLine(line);
+        EmitCurrLineIfEnabled(progress);
         EmitRefutationLineIfEnabled(progress);
+    }
+
+    /// <summary>
+    /// USI_ShowCurrLine有効時にcurrline情報を出力する。
+    /// </summary>
+    private void EmitCurrLineIfEnabled(SearchProgress progress)
+    {
+        if (!options.ShowCurrentLine)
+        {
+            return;
+        }
+
+        if (progress.PrincipalVariation.Length == 0)
+        {
+            if (progress.CurrentMove.to_u32() == Move.none().to_u32())
+            {
+                return;
+            }
+
+            EmitInfoLine($"info currline {ToUsi(progress.CurrentMove)}");
+            return;
+        }
+
+        string line = string.Join(' ', progress.PrincipalVariation.Select(ToUsi));
+        EmitInfoLine($"info currline {line}");
     }
 
     /// <summary>
