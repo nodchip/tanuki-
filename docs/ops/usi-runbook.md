@@ -62,6 +62,13 @@
   - `-FailOnIllegalMove`
   - `-FailOnOverrun`
 
+## 6.3 GUIログ監査（ワンコマンド）
+- 上位スクリプト:
+  - `powershell -ExecutionPolicy Bypass -File csharp/tools/selfplay/RunGuiLogAudit.ps1 -Profile ShogiHome -LogDir <ログフォルダ>`
+  - `powershell -ExecutionPolicy Bypass -File csharp/tools/selfplay/RunGuiLogAudit.ps1 -Profile Shogidokoro -LogDir <ログフォルダ>`
+- `-Strict` を付けると、反則手または秒読み超過疑いが1件でもあれば終了コード1を返す。
+- 監査結果は `logs/usi-audit/*.json` に保存される。
+
 ## 7. NNUE parity strict
 - C++版エンジン実行ファイルを `source/YaneuraOu-by-gcc.exe` に配置する。
 - `eval/nn.bin` を配置する。
