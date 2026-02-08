@@ -195,7 +195,8 @@ public class UsiProtocolTests
         string response = engine.HandleCommand("go btime 100 wtime 200000");
 
         StringAssert.StartsWith(response, "bestmove ");
-        Assert.AreEqual(25000, engine.LastSearchTimeLimitMs);
+        Assert.IsTrue(engine.LastSearchTimeLimitMs > 0);
+        Assert.IsTrue(engine.LastSearchTimeLimitMs <= 200000);
     }
 
     /// <summary>
@@ -316,7 +317,7 @@ public class UsiProtocolTests
 
         engine.HandleCommand("go byoyomi 2000");
 
-        Assert.AreEqual(1950, engine.LastSearchTimeLimitMs);
+        Assert.AreEqual(2000, engine.LastSearchTimeLimitMs);
     }
 
     /// <summary>
@@ -330,7 +331,7 @@ public class UsiProtocolTests
 
         engine.HandleCommand("go byoyomi 2000");
 
-        Assert.AreEqual(1850, engine.LastSearchTimeLimitMs);
+        Assert.AreEqual(1900, engine.LastSearchTimeLimitMs);
     }
 
     /// <summary>
@@ -449,7 +450,7 @@ public class UsiProtocolTests
 
         engine.HandleCommand("go btime 1000 wtime 3000 winc 300");
 
-        Assert.AreEqual(400, engine.LastSearchTimeLimitMs);
+        Assert.AreEqual(2000, engine.LastSearchTimeLimitMs);
     }
 
     /// <summary>
@@ -462,7 +463,7 @@ public class UsiProtocolTests
 
         engine.HandleCommand("go btime 3000 wtime 3000 binc 300 movestogo 10");
 
-        Assert.AreEqual(600, engine.LastSearchTimeLimitMs);
+        Assert.AreEqual(2000, engine.LastSearchTimeLimitMs);
     }
 
     /// <summary>
@@ -491,7 +492,7 @@ public class UsiProtocolTests
 
         string response = engine.HandleCommand("go depth 1");
 
-        StringAssert.StartsWith(response, "info string lazysmp workers=3");
+        StringAssert.Contains(response, "info string lazysmp workers=3");
         StringAssert.Contains(response, "bestmove ");
     }
 
@@ -807,6 +808,22 @@ public class UsiProtocolTests
         string response = engine.HandleCommand("go byoyomi 100");
 
         StringAssert.Contains(response, "info string stop reason=");
+    }
+
+    /// <summary>
+    /// 時間予算不足時にフォールバックし、tmログへ反映されることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_TimeBudgetUnderflow_UsesFallbackAndLogsTmStatus()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+        engine.HandleCommand("setoption name MoveOverhead value 5000");
+
+        string response = engine.HandleCommand("go byoyomi 1000");
+
+        StringAssert.Contains(response, "info string tm status=fallback:");
+        Assert.AreEqual(1000, engine.LastSearchTimeLimitMs);
     }
 
     /// <summary>

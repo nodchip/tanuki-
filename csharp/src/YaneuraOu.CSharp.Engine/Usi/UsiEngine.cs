@@ -471,12 +471,14 @@ public sealed class UsiEngine
         {
             StartTime = DateTimeOffset.UtcNow,
             Depth = options.DefaultDepth,
+            GamePly = position.game_ply(),
             MoveOverheadMs = options.MoveOverheadMs,
             MinimumThinkingTimeMs = options.MinimumThinkingTimeMs,
             SlowMover = options.SlowMover,
             RoundUpToFullSecond = options.RoundUpToFullSecond,
             NetworkDelayMs = options.NetworkDelayMs,
             NetworkDelay2Ms = options.NetworkDelay2Ms,
+            PonderEnabledOption = options.PonderEnabled,
         };
 
         for (int i = 1; i < parts.Length; i++)
@@ -561,6 +563,7 @@ public sealed class UsiEngine
         }
 
         timeManagement.Init(limits, position.side_to_move());
+        AddInfo(timeManagement.LastSummary);
         SearchStopPolicy stopPolicy = new(timeManagement, limits.Infinite, limits.Nodes, null, limits.Ponder);
         lastLimits = limits;
         return new SearchLimits

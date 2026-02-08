@@ -7,6 +7,21 @@ namespace YaneuraOu.CSharp.Engine.Search.Time;
 public sealed class LimitsType
 {
     /// <summary>
+    /// 現局面の手数(開始局面を1とする)を保持する。
+    /// </summary>
+    public int GamePly { get; set; } = 1;
+
+    /// <summary>
+    /// 最大手数上限を保持する。
+    /// </summary>
+    public int MaxMovesToDraw { get; set; } = 256;
+
+    /// <summary>
+    /// USI_Ponderオプションの有効状態を保持する。
+    /// </summary>
+    public bool PonderEnabledOption { get; set; }
+
+    /// <summary>
     /// 蜈域焔/蠕梧焔縺ｮ谿九ｊ譎る俣(繝溘Μ遘・繧剃ｿ晄戟縺吶ｋ縲・    /// </summary>
     public int[] TimeMs { get; } = new int[2];
 

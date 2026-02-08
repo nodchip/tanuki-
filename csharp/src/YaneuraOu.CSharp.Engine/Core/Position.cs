@@ -121,6 +121,11 @@ public sealed class Position
     public uint hand_of(Color c) => hand[(int)c];
     public Square king_square(Color c) => kingSquare[(int)c];
 
+    /// <summary>
+    /// 現局面の手数(開始局面を1とする)を返す。
+    /// </summary>
+    public int game_ply() => gamePly;
+
     public void put_piece(Piece pc, Square sq)
     {
         board[(int)sq] = pc;
