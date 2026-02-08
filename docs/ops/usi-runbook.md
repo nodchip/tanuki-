@@ -35,6 +35,18 @@
 - 秒読み系で実行する場合は `-ByoyomiMs 1000` のように指定する。
 - スクリプトは `bestmove` 応答数と例外文字列を自動検証し、異常時は終了コード1を返す。
 
+## 6.1 時間管理スモーク
+- PowerShell で `csharp/tools/selfplay/TimeManagementSmoke.ps1` を実行する。
+- スクリプトは以下を自動検証する。
+  - 通常ケースで `info string tm status=ok` が複数回出る。
+  - 予算不足ケースで `info string tm status=fallback:` が出る。
+  - `bestmove` 応答数が想定回数以上である。
+  - 出力に `Exception` が含まれない。
+- 主な引数:
+  - `-ByoyomiMs 3000`
+  - `-BTimeMs 15000 -WTimeMs 15000`
+  - `-IncMs 0`
+
 ## 7. NNUE parity strict
 - C++版エンジン実行ファイルを `source/YaneuraOu-by-gcc.exe` に配置する。
 - `eval/nn.bin` を配置する。

@@ -811,6 +811,20 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// DebugLog有効時に通常ケースでtmログがstatus=okを出力することを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_DebugLogEnabled_EmitsTmStatusOk()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+
+        string response = engine.HandleCommand("go byoyomi 1000");
+
+        StringAssert.Contains(response, "info string tm status=ok");
+    }
+
+    /// <summary>
     /// 時間予算不足時にフォールバックし、tmログへ反映されることを検証する。
     /// </summary>
     [TestMethod]
