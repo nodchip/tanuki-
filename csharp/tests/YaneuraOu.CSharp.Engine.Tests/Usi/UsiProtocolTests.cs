@@ -237,6 +237,7 @@ public class UsiProtocolTests
         StringAssert.Contains(response, "option name UseAspirationWindow type check");
         StringAssert.Contains(response, "option name Threads type spin");
         StringAssert.Contains(response, "option name USI_Hash type spin");
+        StringAssert.Contains(response, "option name Clear Hash type button");
         StringAssert.Contains(response, "option name USI_Ponder type check");
         StringAssert.Contains(response, "option name MultiPV type spin");
         StringAssert.Contains(response, "option name USI_AnalyseMode type check");
@@ -767,6 +768,28 @@ public class UsiProtocolTests
         string response = engine.HandleCommand("setoption name Hash value 256");
 
         StringAssert.Contains(response, "info string USI_Hash=256");
+    }
+
+    /// <summary>
+    /// Clear Hashオプションで置換表をクリアできることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionClearHash_ClearsTranspositionTable()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+        engine.HandleCommand("go depth 2");
+
+        FieldInfo? searcherField = typeof(UsiEngine).GetField("searcher", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.IsNotNull(searcherField);
+        var searcher = searcherField.GetValue(engine) as Searcher;
+        Assert.IsNotNull(searcher);
+        Assert.IsTrue(searcher.TranspositionEntryCount > 0);
+
+        string response = engine.HandleCommand("setoption name Clear Hash");
+
+        Assert.AreEqual(0, searcher.TranspositionEntryCount);
+        StringAssert.Contains(response, "info string Clear Hash=ok");
     }
 
     /// <summary>

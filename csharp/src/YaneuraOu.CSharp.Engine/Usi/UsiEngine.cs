@@ -107,6 +107,7 @@ public sealed class UsiEngine
                 "option name UseAspirationWindow type check default true\n" +
                 "option name Threads type spin default 1 min 1 max 256\n" +
                 "option name USI_Hash type spin default 64 min 1 max 8192\n" +
+                "option name Clear Hash type button\n" +
                 "option name USI_Ponder type check default false\n" +
                 "option name MultiPV type spin default 1 min 1 max 16\n" +
                 "option name USI_AnalyseMode type check default false\n" +
@@ -227,20 +228,37 @@ public sealed class UsiEngine
     {
         CompleteThinkingIfNeeded();
         string[] parts = command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length < 5)
+        if (parts.Length < 3)
         {
             return;
         }
 
         int nameIndex = Array.FindIndex(parts, p => p.Equals("name", StringComparison.OrdinalIgnoreCase));
         int valueIndex = Array.FindIndex(parts, p => p.Equals("value", StringComparison.OrdinalIgnoreCase));
-        if (nameIndex < 0 || valueIndex < 0 || valueIndex <= nameIndex + 1)
+        if (nameIndex < 0 || nameIndex + 1 >= parts.Length)
         {
             return;
         }
 
-        string optionName = string.Join(' ', parts[(nameIndex + 1)..valueIndex]);
-        string optionValue = string.Join(' ', parts[(valueIndex + 1)..]);
+        string optionName;
+        string optionValue;
+        if (valueIndex < 0)
+        {
+            optionName = string.Join(' ', parts[(nameIndex + 1)..]);
+            optionValue = string.Empty;
+        }
+        else
+        {
+            if (valueIndex <= nameIndex + 1)
+            {
+                return;
+            }
+
+            optionName = string.Join(' ', parts[(nameIndex + 1)..valueIndex]);
+            optionValue = valueIndex + 1 < parts.Length
+                ? string.Join(' ', parts[(valueIndex + 1)..])
+                : string.Empty;
+        }
 
         if (optionName.Equals("Depth", StringComparison.OrdinalIgnoreCase)
             && int.TryParse(optionValue, out int depth)
@@ -343,6 +361,12 @@ public sealed class UsiEngine
         {
             options.HashSizeMb = hashMb;
             AddInfo($"USI_Hash={hashMb}");
+        }
+
+        if (optionName.Equals("Clear Hash", StringComparison.OrdinalIgnoreCase))
+        {
+            ClearHashTables();
+            AddInfo("Clear Hash=ok");
         }
 
         if (optionName.Equals("MultiPV", StringComparison.OrdinalIgnoreCase)
@@ -866,6 +890,18 @@ public sealed class UsiEngine
     private void InvalidateLazySmpSearchers()
     {
         lazySmpSearchers.Clear();
+    }
+
+    /// <summary>
+    /// 全探索器の置換表をクリアする。
+    /// </summary>
+    private void ClearHashTables()
+    {
+        searcher.ClearTranspositionTable();
+        foreach (Searcher worker in lazySmpSearchers)
+        {
+            worker.ClearTranspositionTable();
+        }
     }
 
     /// <summary>

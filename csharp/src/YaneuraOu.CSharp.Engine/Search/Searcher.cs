@@ -66,6 +66,19 @@ public sealed class Searcher
     public int LastAspirationReSearchCount { get; private set; }
 
     /// <summary>
+    /// 現在の置換表エントリ数を返す。
+    /// </summary>
+    public int TranspositionEntryCount => transpositionTable.Count;
+
+    /// <summary>
+    /// 置換表をクリアする。
+    /// </summary>
+    public void ClearTranspositionTable()
+    {
+        transpositionTable.Clear();
+    }
+
+    /// <summary>
     /// 探索を実行して最善手を返す。
     /// </summary>
     public SearchResult Search(Position position, SearchLimits limits, Action<SearchProgress>? progress = null)
