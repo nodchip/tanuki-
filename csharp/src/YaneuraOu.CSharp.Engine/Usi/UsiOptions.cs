@@ -16,6 +16,11 @@ public sealed class UsiOptions
     public int DefaultMoveTimeMs { get; set; } = 1000;
 
     /// <summary>
+    /// 引き分け相当までの最大手数。
+    /// </summary>
+    public int MaxMovesToDraw { get; set; } = 256;
+
+    /// <summary>
     /// 1手あたりの固定オーバーヘッド(ミリ秒)。
     /// </summary>
     public int MoveOverheadMs { get; set; }

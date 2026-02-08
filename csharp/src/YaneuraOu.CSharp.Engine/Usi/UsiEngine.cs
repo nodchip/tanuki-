@@ -96,6 +96,7 @@ public sealed class UsiEngine
                 $"id author {author}\n" +
                 "option name Depth type spin default 64 min 1 max 128\n" +
                 "option name MoveTime type spin default 1000 min 1 max 600000\n" +
+                "option name MaxMovesToDraw type spin default 256 min 32 max 1024\n" +
                 "option name MoveOverhead type spin default 0 min 0 max 10000\n" +
                 "option name MinimumThinkingTime type spin default 2000 min 1 max 100000\n" +
                 "option name SlowMover type spin default 100 min 1 max 1000\n" +
@@ -274,6 +275,14 @@ public sealed class UsiEngine
         {
             options.DefaultMoveTimeMs = moveTime;
             AddInfo($"MoveTime={moveTime}");
+        }
+
+        if (optionName.Equals("MaxMovesToDraw", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(optionValue, out int maxMovesToDraw)
+            && maxMovesToDraw >= 32)
+        {
+            options.MaxMovesToDraw = maxMovesToDraw;
+            AddInfo($"MaxMovesToDraw={maxMovesToDraw}");
         }
 
         if (optionName.Equals("MoveOverhead", StringComparison.OrdinalIgnoreCase)
@@ -520,6 +529,7 @@ public sealed class UsiEngine
             StartTime = DateTimeOffset.UtcNow,
             Depth = options.DefaultDepth,
             GamePly = position.game_ply(),
+            MaxMovesToDraw = options.MaxMovesToDraw,
             MoveOverheadMs = options.MoveOverheadMs,
             MinimumThinkingTimeMs = options.MinimumThinkingTimeMs,
             SlowMover = options.SlowMover,

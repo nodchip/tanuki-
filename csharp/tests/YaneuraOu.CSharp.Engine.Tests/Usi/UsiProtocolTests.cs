@@ -184,6 +184,24 @@ public class UsiProtocolTests
     }
 
     /// <summary>
+    /// MaxMovesToDrawを小さくすると同条件で思考時間上限が増えることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionMaxMovesToDraw_AffectsTimeLimit()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+
+        engine.HandleCommand("go btime 60000 wtime 60000");
+        int baseline = engine.LastSearchTimeLimitMs;
+
+        engine.HandleCommand("setoption name MaxMovesToDraw value 32");
+        engine.HandleCommand("go btime 60000 wtime 60000");
+        int updated = engine.LastSearchTimeLimitMs;
+
+        Assert.IsTrue(updated > baseline, $"baseline={baseline} updated={updated}");
+    }
+
+    /// <summary>
     /// 手番側の持ち時間に応じて探索時間上限が算出されることを検証する。
     /// </summary>
     [TestMethod]
@@ -226,6 +244,7 @@ public class UsiProtocolTests
 
         StringAssert.Contains(response, "option name Depth type spin");
         StringAssert.Contains(response, "option name MoveTime type spin");
+        StringAssert.Contains(response, "option name MaxMovesToDraw type spin");
         StringAssert.Contains(response, "option name MoveOverhead type spin");
         StringAssert.Contains(response, "option name MinimumThinkingTime type spin");
         StringAssert.Contains(response, "option name SlowMover type spin");
@@ -832,6 +851,20 @@ public class UsiProtocolTests
         string response = engine.HandleCommand("setoption name BookFile value book/standard.db");
 
         StringAssert.Contains(response, "info string BookFile=book/standard.db");
+    }
+
+    /// <summary>
+    /// MaxMovesToDrawオプションを受理できることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionMaxMovesToDraw_EmitsInfoString()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+
+        string response = engine.HandleCommand("setoption name MaxMovesToDraw value 320");
+
+        StringAssert.Contains(response, "info string MaxMovesToDraw=320");
     }
 
     /// <summary>

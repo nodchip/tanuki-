@@ -238,6 +238,6 @@ public sealed class TimeManagement
     private string BuildSummary(LimitsType limits, Color sideToMove, string status)
     {
         int us = (int)sideToMove;
-        return $"tm status={status} side={(sideToMove == Color.BLACK ? "b" : "w")} btime={limits.TimeMs[(int)Color.BLACK]} wtime={limits.TimeMs[(int)Color.WHITE]} binc={limits.IncMs[(int)Color.BLACK]} winc={limits.IncMs[(int)Color.WHITE]} byoyomi={limits.ByoyomiMs} movetime={limits.MoveTimeMs} movestogo={limits.MovesToGo} ply={limits.GamePly} opt={OptimumTimeMs} max={MaximumTimeMs} min={MinimumTimeMs} remain={(limits.TimeMs[us] + limits.IncMs[us] + limits.ByoyomiMs)} fallback={(FallbackUsed ? "true" : "false")}";
+        return $"tm status={status} side={(sideToMove == Color.BLACK ? "b" : "w")} btime={limits.TimeMs[(int)Color.BLACK]} wtime={limits.TimeMs[(int)Color.WHITE]} binc={limits.IncMs[(int)Color.BLACK]} winc={limits.IncMs[(int)Color.WHITE]} byoyomi={limits.ByoyomiMs} movetime={limits.MoveTimeMs} movestogo={limits.MovesToGo} ply={limits.GamePly} maxdraw={limits.MaxMovesToDraw} opt={OptimumTimeMs} max={MaximumTimeMs} min={MinimumTimeMs} remain={(limits.TimeMs[us] + limits.IncMs[us] + limits.ByoyomiMs)} fallback={(FallbackUsed ? "true" : "false")}";
     }
 }
