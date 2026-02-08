@@ -260,6 +260,8 @@ public class UsiProtocolTests
         StringAssert.Contains(response, "option name USI_Ponder type check");
         StringAssert.Contains(response, "option name MultiPV type spin");
         StringAssert.Contains(response, "option name USI_AnalyseMode type check");
+        StringAssert.Contains(response, "option name USI_ShowCurrLine type check");
+        StringAssert.Contains(response, "option name USI_ShowRefutations type check");
         StringAssert.Contains(response, "option name USI_LimitStrength type check");
         StringAssert.Contains(response, "option name USI_Elo type spin");
         StringAssert.Contains(response, "option name USI_OwnBook type check");
@@ -914,6 +916,34 @@ public class UsiProtocolTests
         string response = engine.HandleCommand("setoption name USI_Elo value 1800");
 
         StringAssert.Contains(response, "info string USI_Elo=1800");
+    }
+
+    /// <summary>
+    /// USI_ShowCurrLineオプションを受理できることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionUsiShowCurrLine_EmitsInfoString()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+
+        string response = engine.HandleCommand("setoption name USI_ShowCurrLine value true");
+
+        StringAssert.Contains(response, "info string USI_ShowCurrLine=true");
+    }
+
+    /// <summary>
+    /// USI_ShowRefutationsオプションを受理できることを検証する。
+    /// </summary>
+    [TestMethod]
+    public void HandleCommand_SetOptionUsiShowRefutations_EmitsInfoString()
+    {
+        var engine = new UsiEngine("YaneuraOu.CSharp", "hakubishin");
+        engine.HandleCommand("setoption name DebugLog value true");
+
+        string response = engine.HandleCommand("setoption name USI_ShowRefutations value true");
+
+        StringAssert.Contains(response, "info string USI_ShowRefutations=true");
     }
 
     /// <summary>

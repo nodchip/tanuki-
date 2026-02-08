@@ -112,6 +112,8 @@ public sealed class UsiEngine
                 "option name USI_Ponder type check default false\n" +
                 "option name MultiPV type spin default 1 min 1 max 16\n" +
                 "option name USI_AnalyseMode type check default false\n" +
+                "option name USI_ShowCurrLine type check default false\n" +
+                "option name USI_ShowRefutations type check default false\n" +
                 "option name USI_LimitStrength type check default false\n" +
                 "option name USI_Elo type spin default 3500 min 600 max 4000\n" +
                 "option name USI_OwnBook type check default false\n" +
@@ -400,6 +402,18 @@ public sealed class UsiEngine
         {
             options.AnalyseMode = ParseBooleanOption(optionValue);
             AddInfo($"USI_AnalyseMode={options.AnalyseMode.ToString().ToLowerInvariant()}");
+        }
+
+        if (optionName.Equals("USI_ShowCurrLine", StringComparison.OrdinalIgnoreCase))
+        {
+            options.ShowCurrentLine = ParseBooleanOption(optionValue);
+            AddInfo($"USI_ShowCurrLine={options.ShowCurrentLine.ToString().ToLowerInvariant()}");
+        }
+
+        if (optionName.Equals("USI_ShowRefutations", StringComparison.OrdinalIgnoreCase))
+        {
+            options.ShowRefutations = ParseBooleanOption(optionValue);
+            AddInfo($"USI_ShowRefutations={options.ShowRefutations.ToString().ToLowerInvariant()}");
         }
 
         if (optionName.Equals("USI_LimitStrength", StringComparison.OrdinalIgnoreCase))

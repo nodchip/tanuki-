@@ -81,6 +81,16 @@ public sealed class UsiOptions
     public bool AnalyseMode { get; set; }
 
     /// <summary>
+    /// 現在探索中のライン表示を有効化するかどうか。
+    /// </summary>
+    public bool ShowCurrentLine { get; set; }
+
+    /// <summary>
+    /// Refutation表示を有効化するかどうか。
+    /// </summary>
+    public bool ShowRefutations { get; set; }
+
+    /// <summary>
     /// レーティング制限を有効化するかどうか。
     /// </summary>
     public bool LimitStrength { get; set; }
