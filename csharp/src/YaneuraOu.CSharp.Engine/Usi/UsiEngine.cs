@@ -1309,12 +1309,12 @@ public sealed class UsiEngine
                 return;
             }
 
-            EmitInfoLine($"info currline {ToUsi(progress.CurrentMove)}");
+            EmitInfoLine($"info currline 1 {ToUsi(progress.CurrentMove)}");
             return;
         }
 
         string line = string.Join(' ', progress.PrincipalVariation.Select(ToUsi));
-        EmitInfoLine($"info currline {line}");
+        EmitInfoLine($"info currline 1 {line}");
     }
 
     /// <summary>

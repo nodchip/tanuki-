@@ -945,7 +945,7 @@ public class UsiProtocolTests
         engine.HandleCommand("setoption name USI_ShowCurrLine value true");
         engine.HandleCommand("go depth 1");
 
-        Assert.IsTrue(outputs.Any(line => line.StartsWith("info currline ", StringComparison.Ordinal)));
+        Assert.IsTrue(outputs.Any(line => line.StartsWith("info currline 1 ", StringComparison.Ordinal)));
     }
 
     /// <summary>
