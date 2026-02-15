@@ -391,6 +391,22 @@ namespace Eval::dlshogi
 			int f2idx = f2idx_b + (int)MAX_FEATURES2_HAND_NUM;
 			packed_features2[f2idx >> 3] |= (1 << (f2idx & 7));
 		}
+
+		// 手番。後手番なら1にする。
+		if (SideToMove == WHITE) {
+			int f2idx = f2idx_b + (int)MAX_FEATURES2_HAND_NUM + 1;
+			packed_features2[f2idx >> 3] |= (1 << (f2idx & 7));
+		}
+
+		// 手数。190手超を40手刻みで8段階に量子化する。
+		const int gp = position.game_ply();
+		if (gp > 190) {
+			int g = ((gp - 190) / 40) + 1;
+			if (g > 8)
+				g = 8;
+			int f2idx = f2idx_b + (int)MAX_FEATURES2_HAND_NUM + 2 + g - 1;
+			packed_features2[f2idx >> 3] |= (1 << (f2idx & 7));
+		}
 	}
 
 

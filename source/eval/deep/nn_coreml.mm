@@ -172,7 +172,7 @@ namespace Eval::dlshogi
 			// 所有権を移さない(プログラマのまま)
 			MLModel* model = (__bridge MLModel*)(this->model);
 
-			// x1: [batch_size, 62 (MAX_FEATURES1_NUM * COLOR_NB), 9, 9], x2: [batch_size, 57 (MAX_FEATURES2_NUM), 9, 9]として与えられたものを、[batch_size, 119, 9, 9]に詰め替える
+			// x1: [batch_size, COLOR_NB * MAX_FEATURES1_NUM, 9, 9], x2: [batch_size, MAX_FEATURES2_NUM, 9, 9]として与えられたものを、[batch_size, COLOR_NB * MAX_FEATURES1_NUM + MAX_FEATURES2_NUM, 9, 9]に詰め替える
 			// fixed_batch_sizeに関わらず、意味のある部分だけ更新
 			for (int i = 0; i < batch_size; i++) {
 				memcpy(&input_buf[(sizeof(NN_Input1) + sizeof(NN_Input2)) / sizeof(DType) * i], &x1[i], sizeof(NN_Input1));

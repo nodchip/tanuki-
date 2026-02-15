@@ -34,7 +34,7 @@ namespace Eval::dlshogi
 	// 駒割自体は正しく計算できるはず。
 	// MAX_HPAWN_NUMが7だと、手駒を先手が9枚、後手が7枚持っているような状況だと、どちらが数多く持っているのかが判定できないのでまずい。
 
-	constexpr int MAX_HPAWN_NUM   = 8; // 歩の持ち駒の上限
+	constexpr int MAX_HPAWN_NUM   = 18; // 歩の持ち駒の上限(AobaZero互換)
 	constexpr int MAX_HLANCE_NUM  = 4;
 	constexpr int MAX_HKNIGHT_NUM = 4;
 	constexpr int MAX_HSILVER_NUM = 4;
@@ -82,7 +82,9 @@ namespace Eval::dlshogi
 	// 手駒に関する入力特徴量のチャンネルの数。
 	// 手駒は、AperyのHandPiece enumの順なので注意が必要。
 	// ※　歩、香、桂、銀、金、角、飛の順。
-	constexpr u32 MAX_FEATURES2_NUM = MAX_FEATURES2_HAND_NUM + 1/*王手*/;
+	constexpr u32 MAX_FEATURES2_NUM = MAX_FEATURES2_HAND_NUM + 1/*王手*/ + 1/*手番*/ + 8/*手数*/;
+	static_assert(MAX_HPAWN_NUM == 18, "AobaZero feature migration: MAX_HPAWN_NUM must be 18");
+	static_assert(MAX_FEATURES2_NUM == 86, "AobaZero feature migration: MAX_FEATURES2_NUM must be 86");
 
 	// 移動の定数
 	// 成らない移動。10方向 + 成る移動 10方向。= 20方向

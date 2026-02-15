@@ -10,8 +10,8 @@ typedef int FType;
 constexpr FType ftype_one = 0x3f800000;
 #endif
 
-constexpr int features1_size = 62;
-constexpr int features2_size = 57;
+constexpr int features1_size = (int)COLOR_NB * (int)Eval::dlshogi::MAX_FEATURES1_NUM;
+constexpr int features2_size = (int)Eval::dlshogi::MAX_FEATURES2_NUM;
 
 __global__ void unpack_features1_kernel(char *p1, FType *x1, int max_tid) {
 	int tid = blockIdx.x * blockDim.x + threadIdx.x;
