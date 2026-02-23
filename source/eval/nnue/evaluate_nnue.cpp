@@ -15,6 +15,7 @@
 #include "../../evaluate.h"
 #include "../../position.h"
 #include "../../memory.h"
+#include "../../tanuki_progress.h"
 #include "../../usi.h"
 
 #if defined(USE_EVAL_HASH)
@@ -338,16 +339,9 @@ namespace {
     }
 
 #if defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536)
-    // レイヤースタックの選択。双方の玉の段に応じて9通りに分岐させる。
+    // レイヤースタックの選択。進行度(0.0〜1.0)を8分割して選ぶ。
     static int stack_index_for_nnue(const Position& pos) {
-        constexpr int kFToIndex[] = { 0, 0, 0, 3, 3, 3, 6, 6, 6 };
-        constexpr int kEToIndex[] = { 0, 0, 0, 1, 1, 1, 2, 2, 2 };
-        const auto stm = pos.side_to_move();
-        const auto f_king = pos.square<KING>(stm);
-        const auto e_king = pos.square<KING>(~stm);
-        const auto f_rank = stm == BLACK ? rank_of(f_king) : rank_of(Inv(f_king));
-        const auto e_rank = stm == BLACK ? rank_of(Inv(e_king)) : rank_of(e_king);
-        int idx = kFToIndex[f_rank] + kEToIndex[e_rank];
+        int idx = static_cast<int>(Tanuki::Progress::Estimate(pos) * 8.0);
         if (idx < 0) idx = 0;
         if (idx >= kLayerStacks) idx = kLayerStacks - 1;
         return idx;
