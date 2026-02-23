@@ -13,7 +13,7 @@ namespace Progress {
 
 bool add_options(YaneuraOu::OptionsMap& options);
 bool Load();
-double Estimate(const YaneuraOu::Position& pos);
+int LayerStackIndex(const YaneuraOu::Position& pos);
 
 }  // namespace Progress
 }  // namespace Tanuki
