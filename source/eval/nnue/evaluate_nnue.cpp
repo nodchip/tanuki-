@@ -339,9 +339,9 @@ namespace {
     }
 
 #if defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536)
-    // レイヤースタックの選択。進行度(0.0〜1.0)を8分割して選ぶ。
+    // レイヤースタックの選択。Tanuki::Progressが直接indexを返す。
     static int stack_index_for_nnue(const Position& pos) {
-        int idx = static_cast<int>(Tanuki::Progress::Estimate(pos) * 8.0);
+        int idx = Tanuki::Progress::LayerStackIndex(pos);
         if (idx < 0) idx = 0;
         if (idx >= kLayerStacks) idx = kLayerStacks - 1;
         return idx;
