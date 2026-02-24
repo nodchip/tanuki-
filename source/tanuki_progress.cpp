@@ -22,9 +22,11 @@ constexpr char kProgressFilePath[] = "ProgressFilePath";
 constexpr char kInternalPath[] = "<internal>";
 constexpr int kLayerStacks = 8;
 
-// logit((i+1)/8) を Q16.16 に丸めた閾値
-static constexpr int32_t kThresholdsQ16[7] = {
-    -127527, -71999, -33477, 0, 33477, 71999, 127527,
+// logit((i+1)/8) を Q16.16 に丸めた閾値 + 番兵
+static constexpr int64_t kMaxAbsSumQ16 =
+    static_cast<int64_t>(YaneuraOu::PIECE_NUMBER_KING) * 2 * static_cast<int64_t>(INT32_MAX);
+static constexpr int64_t kThresholdsQ16[8] = {
+    -127527, -71999, -33477, 0, 33477, 71999, 127527, kMaxAbsSumQ16 + 1,
 };
 
 constexpr double kQ16Scale = 65536.0;
@@ -87,7 +89,7 @@ void store_sum_cache(const YaneuraOu::Position& pos, YaneuraOu::Square sq_bk, Ya
 
 int table_index_linear_q16(int64_t sum_q16) {
     int idx = 0;
-    while (idx < 7 && sum_q16 >= kThresholdsQ16[idx]) {
+    while (sum_q16 >= kThresholdsQ16[idx]) {
         ++idx;
     }
     return idx;
