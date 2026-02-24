@@ -82,7 +82,7 @@ struct StateInfo {
 
 	// Tanuki::Progress の差分計算用キャッシュ
 	Key tanuki_progress_key;
-	double tanuki_progress_sum;
+	int32_t tanuki_progress_sum;
 	Square tanuki_progress_sq_bk;
 	Square tanuki_progress_sq_wk;
 	bool tanuki_progress_valid;

@@ -54,11 +54,11 @@ inline int32_t contribution(YaneuraOu::Square sq, int bona_piece) {
     return g_weights_q16[sq][bona_piece];
 }
 
-int64_t compute_full_sum_q16(const YaneuraOu::Position& pos, YaneuraOu::Square sq_bk, YaneuraOu::Square sq_wk) {
+int32_t compute_full_sum_q16(const YaneuraOu::Position& pos, YaneuraOu::Square sq_bk, YaneuraOu::Square sq_wk) {
     const auto& list0 = pos.eval_list()->piece_list_fb();
     const auto& list1 = pos.eval_list()->piece_list_fw();
 
-    int64_t sum_q16 = 0;
+    int32_t sum_q16 = 0;
     for (int i = 0; i < YaneuraOu::PIECE_NUMBER_KING; ++i) {
         sum_q16 += contribution(sq_bk, list0[i]);
         sum_q16 += contribution(sq_wk, list1[i]);
@@ -67,26 +67,26 @@ int64_t compute_full_sum_q16(const YaneuraOu::Position& pos, YaneuraOu::Square s
 }
 
 bool try_get_sum_from_cache(const YaneuraOu::Position& pos, YaneuraOu::Square sq_bk, YaneuraOu::Square sq_wk,
-                            int64_t& sum_q16) {
+                            int32_t& sum_q16) {
     auto* st = pos.state();
     if (!st->tanuki_progress_valid) return false;
     if (st->tanuki_progress_key != pos.key()) return false;
     if (st->tanuki_progress_sq_bk != sq_bk || st->tanuki_progress_sq_wk != sq_wk) return false;
 
-    sum_q16 = static_cast<int64_t>(std::llround(st->tanuki_progress_sum));
+    sum_q16 = st->tanuki_progress_sum;
     return true;
 }
 
-void store_sum_cache(const YaneuraOu::Position& pos, YaneuraOu::Square sq_bk, YaneuraOu::Square sq_wk, int64_t sum_q16) {
+void store_sum_cache(const YaneuraOu::Position& pos, YaneuraOu::Square sq_bk, YaneuraOu::Square sq_wk, int32_t sum_q16) {
     auto* st = pos.state();
     st->tanuki_progress_key = pos.key();
-    st->tanuki_progress_sum = static_cast<double>(sum_q16);
+    st->tanuki_progress_sum = sum_q16;
     st->tanuki_progress_sq_bk = sq_bk;
     st->tanuki_progress_sq_wk = sq_wk;
     st->tanuki_progress_valid = true;
 }
 
-int table_index_linear_q16(int64_t sum_q16) {
+int table_index_linear_q16(int32_t sum_q16) {
     int idx = 0;
     while (sum_q16 >= kThresholdsQ16[idx]) {
         ++idx;
@@ -157,7 +157,7 @@ int LayerStackIndex(const YaneuraOu::Position& pos) {
     const auto sq_bk = pos.square<YaneuraOu::KING>(YaneuraOu::BLACK);
     const auto sq_wk = YaneuraOu::Inv(pos.square<YaneuraOu::KING>(YaneuraOu::WHITE));
 
-    int64_t sum_q16 = 0;
+    int32_t sum_q16 = 0;
     if (!try_get_sum_from_cache(pos, sq_bk, sq_wk, sum_q16)) {
         sum_q16 = compute_full_sum_q16(pos, sq_bk, sq_wk);
         store_sum_cache(pos, sq_bk, sq_wk, sum_q16);
