@@ -20,7 +20,6 @@ namespace {
 
 constexpr char kProgressFilePath[] = "ProgressFilePath";
 constexpr char kInternalPath[] = "<internal>";
-constexpr int kLayerStacks = 8;
 
 // logit((i+1)/8) を Q16.16 に丸めた閾値 + 番兵
 static constexpr int64_t kMaxAbsSumQ16 =
@@ -165,8 +164,6 @@ int LayerStackIndex(const YaneuraOu::Position& pos) {
     }
 
     int idx = table_index_linear_q16(sum_q16);
-    if (idx < 0) idx = 0;
-    if (idx >= kLayerStacks) idx = kLayerStacks - 1;
     return idx;
 }
 

@@ -300,10 +300,7 @@ namespace {
 #if defined(SFNNwoPSQT)
     // レイヤースタックの選択。進行度(0.0〜1.0)を8分割して選ぶ。
     static int stack_index_for_nnue(const Position& pos) {
-        int idx = Tanuki::Progress::LayerStackIndex(pos);
-        if (idx < 0) idx = 0;
-        if (idx >= kLayerStacks) idx = kLayerStacks - 1;
-        return idx;
+        return Tanuki::Progress::LayerStackIndex(pos);
     }
 #endif
 
