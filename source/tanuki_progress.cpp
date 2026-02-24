@@ -49,12 +49,7 @@ void load_weights_from_raw(const double* raw_weights) {
     }
 }
 
-inline bool is_valid_bona_piece(int value) {
-    return value >= 0 && value < static_cast<int>(YaneuraOu::Eval::fe_end);
-}
-
 inline int32_t contribution(YaneuraOu::Square sq, int bona_piece) {
-    if (!is_valid_bona_piece(bona_piece)) return 0;
     return g_weights_q16[sq][bona_piece];
 }
 
