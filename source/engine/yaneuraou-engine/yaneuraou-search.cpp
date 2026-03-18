@@ -2896,7 +2896,7 @@ Value YaneuraOuWorker::search(Position& pos, Stack* ss, Value alpha, Value beta,
 
         undo_null_move(pos);
 
-        if (nullValue >= beta && !is_win(nullValue))
+        if (nullValue >= beta)
             return is_win(nullValue) ? beta : nullValue;
     }
 
