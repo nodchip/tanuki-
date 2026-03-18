@@ -655,7 +655,6 @@ void Search::YaneuraOuWorker::pre_start_searching() {
 
     // 📝 StockfishではThreadPool::start_thinking()で行っているが、
     //     やねうら王では、派生classのpre_start_thinking()以降で行う。
-    nmpMinPly       = 0;
     bestMoveChanges = 0;
     rootDepth = completedDepth = 0;
 
@@ -2869,7 +2868,7 @@ Value YaneuraOuWorker::search(Position& pos, Stack* ss, Value alpha, Value beta,
     // 💡 盤上にpawn以外の駒がある ≒ pawnだけの終盤ではない。
     // 🤔 将棋でもこれに相当する条件が必要かも。
 #endif
-        && ss->ply >= nmpMinPly && !is_loss(beta)
+        && !is_loss(beta)
         // 同じ手番側に連続してnull moveを適用しない
     )
     {
@@ -2897,38 +2896,8 @@ Value YaneuraOuWorker::search(Position& pos, Stack* ss, Value alpha, Value beta,
 
         undo_null_move(pos);
 
-        // Do not return unproven mate or TB scores
-        // 証明されていないmate scoreやTB scoreはreturnで返さない。
-
         if (nullValue >= beta && !is_win(nullValue))
-        {
-            // 1手パスしてもbetaを上回りそうであることがわかったので
-            // これをもう少しちゃんと検証しなおす。
-
-            if (nmpMinPly || depth < 16)
-                return nullValue;
-
-            ASSERT_LV3(!nmpMinPly);  // Recursive verification is not allowed
-                                     // 再帰的な検証は認めていない。
-
-            // Do verification search at high depths, with null move pruning disabled
-            // until ply exceeds nmpMinPly.
-            //
-            // 💡 null move枝刈りを無効化して、plyがnmpMinPlyを超えるまで
-            //     高いdepthで検証のための探索を行う。
-
-            nmpMinPly = ss->ply + 3 * (depth - R) / 4;
-
-            // 📝 nullMoveせずに(現在のnodeと同じ手番で)同じ深さで探索しなおして本当にbetaを超えるか検証する。
-            //     cutNodeにしない。
-
-            Value v = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
-
-            nmpMinPly = 0;
-
-            if (v >= beta)
-                return nullValue;
-        }
+            return is_win(nullValue) ? beta : nullValue;
     }
 
 	// ここでimproving計算しなおす。
