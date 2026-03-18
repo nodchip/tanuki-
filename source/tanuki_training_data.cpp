@@ -1,7 +1,11 @@
 ﻿#include "tanuki_training_data.h"
 
+#include <cstdio>
+#include <ctime>
 #include <filesystem>
+#include <iomanip>
 #include <random>
+#include <string>
 
 #include "engine/dlshogi-engine/dlshogi_searcher.h"
 #include "engine/dlshogi-engine/UctSearch.h"
@@ -17,6 +21,9 @@ namespace
 {
 	static constexpr size_t BUFFER_SIZE = 1024 * 1024 * 1024;
 	static constexpr int kMaxGamePlay = 400;
+	static constexpr time_t kInitialRescoreReportIntervalSec = 1;
+	static constexpr time_t kMaxRescoreReportIntervalSec = 60 * 60;
+	static constexpr double kRescoreReportAlpha = 0.2;
 
 	template <typename T>
 	T ParseOptionOrDie(const char* name) {
@@ -35,6 +42,152 @@ namespace
 		GameResultWin = 1,
 		GameResultLose = -1,
 		GameResultDraw = 0,
+	};
+
+	std::string FormatDuration(time_t seconds) {
+		if (seconds < 0) {
+			seconds = 0;
+		}
+
+		const int hour = static_cast<int>(seconds / 3600);
+		const int minute = static_cast<int>((seconds / 60) % 60);
+		const int second = static_cast<int>(seconds % 60);
+
+		char buffer[32];
+		std::snprintf(buffer, sizeof(buffer), "%02d:%02d:%02d", hour, minute, second);
+		return buffer;
+	}
+
+	std::string FormatTimestamp(time_t timestamp) {
+		std::tm local_time = {};
+		localtime_s(&local_time, &timestamp);
+
+		char buffer[32];
+		std::snprintf(
+			buffer,
+			sizeof(buffer),
+			"%04d-%02d-%02d %02d:%02d:%02d",
+			local_time.tm_year + 1900,
+			local_time.tm_mon + 1,
+			local_time.tm_mday,
+			local_time.tm_hour,
+			local_time.tm_min,
+			local_time.tm_sec);
+		return buffer;
+	}
+
+	std::string FormatRate(double records_per_second) {
+		const char* suffixes[] = { "rec/s", "K rec/s", "M rec/s", "G rec/s" };
+		size_t suffix_index = 0;
+		while (1000.0 <= records_per_second && suffix_index + 1 < _countof(suffixes)) {
+			records_per_second /= 1000.0;
+			++suffix_index;
+		}
+
+		char buffer[64];
+		if (suffix_index == 0) {
+			std::snprintf(buffer, sizeof(buffer), "%.0f %s", records_per_second, suffixes[suffix_index]);
+		}
+		else {
+			std::snprintf(buffer, sizeof(buffer), "%.1f %s", records_per_second, suffixes[suffix_index]);
+		}
+		return buffer;
+	}
+
+	class RescoreProgressReporter {
+	public:
+		explicit RescoreProgressReporter(int64_t total_records)
+			: total_records_(total_records),
+			start_time_(std::time(nullptr)),
+			last_report_time_(start_time_),
+			last_reported_records_(0),
+			next_interval_sec_(kInitialRescoreReportIntervalSec) {
+		}
+
+		void MaybeReport(int64_t processed_records) {
+			const time_t now = std::time(nullptr);
+			if (now < last_report_time_ + next_interval_sec_) {
+				return;
+			}
+
+			Report(processed_records, now, false);
+			next_interval_sec_ =
+				std::min(next_interval_sec_ * 2, kMaxRescoreReportIntervalSec);
+		}
+
+		void ReportFinal(int64_t processed_records) {
+			Report(processed_records, std::time(nullptr), true);
+		}
+
+	private:
+		void Report(int64_t processed_records, time_t now, bool is_final) {
+			if (processed_records < 0) {
+				processed_records = 0;
+			}
+			if (total_records_ < processed_records) {
+				processed_records = total_records_;
+			}
+
+			const time_t elapsed_sec = std::max<time_t>(now - start_time_, 0);
+			const time_t duration_since_last_report =
+				std::max<time_t>(now - last_report_time_, 1);
+			const int64_t records_since_last_report =
+				std::max<int64_t>(processed_records - last_reported_records_, 0);
+			const double current_rate =
+				static_cast<double>(records_since_last_report) / duration_since_last_report;
+			if (!has_smoothed_rate_) {
+				smoothed_rate_ = current_rate;
+				has_smoothed_rate_ = 0.0 < current_rate;
+			}
+			else if (0.0 < current_rate) {
+				smoothed_rate_ =
+					kRescoreReportAlpha * current_rate + (1.0 - kRescoreReportAlpha) * smoothed_rate_;
+			}
+
+			double progress_percent = 100.0;
+			if (0 < total_records_) {
+				progress_percent =
+					100.0 * static_cast<double>(processed_records) / static_cast<double>(total_records_);
+			}
+
+			time_t eta_time = now;
+			if (has_smoothed_rate_ && processed_records < total_records_) {
+				const double remaining_records =
+					static_cast<double>(total_records_ - processed_records);
+				eta_time += static_cast<time_t>(remaining_records / smoothed_rate_);
+			}
+
+			sync_cout
+				<< "info string Rescore "
+				<< processed_records << "/" << total_records_
+				<< " (" << std::fixed << std::setprecision(1) << progress_percent
+				<< std::defaultfloat << "%) ";
+			if (has_smoothed_rate_) {
+				sync_cout << FormatRate(smoothed_rate_);
+			}
+			else {
+				sync_cout << "warming up";
+			}
+
+			sync_cout
+				<< " elapsed " << FormatDuration(elapsed_sec)
+				<< " ETA " << FormatTimestamp(eta_time);
+			if (!is_final) {
+				sync_cout << " next report in " << FormatDuration(next_interval_sec_);
+			}
+			sync_cout << sync_endl;
+
+			last_report_time_ = now;
+			last_reported_records_ = processed_records;
+		}
+
+		const int64_t total_records_;
+		const time_t start_time_;
+		time_t last_report_time_;
+		int64_t last_reported_records_;
+		time_t next_interval_sec_;
+		double smoothed_rate_ = 0.0;
+		bool has_smoothed_rate_ = false;
 	};
 }
 
@@ -68,7 +221,7 @@ void Tanuki::InitializeGenerator(USI::OptionsMap& o) {
 
 void Tanuki::Rescore(std::istringstream& is)
 {
-	int batch_size = 1024;
+	static constexpr int batch_size = 1024;
 
 	Options["DNN_Batch_Size1"] = std::to_string(batch_size);
 
@@ -91,17 +244,52 @@ void Tanuki::Rescore(std::istringstream& is)
 	NN_Output_Value* y2 = searcher->y2;
 
 	FILE* input_file = std::fopen(input_file_path.c_str(), "rb");
+	if (input_file == nullptr) {
+		sync_cout << "info string Rescore failed to open input file: "
+			<< input_file_path << sync_endl;
+		return;
+	}
 	std::setvbuf(input_file, nullptr, _IOFBF, BUFFER_SIZE);
 
 	FILE* output_file = std::fopen(output_file_path.c_str(), "wb");
+	if (output_file == nullptr) {
+		sync_cout << "info string Rescore failed to open output file: "
+			<< output_file_path << sync_endl;
+		std::fclose(input_file);
+		return;
+	}
 	std::setvbuf(output_file, nullptr, _IOFBF, BUFFER_SIZE);
 
+	_fseeki64(input_file, 0, SEEK_END);
+	const int64_t input_file_size = _ftelli64(input_file);
+	_fseeki64(input_file, 0, SEEK_SET);
+	if (input_file_size < 0
+		|| input_file_size % static_cast<int64_t>(sizeof(PackedSfenValue)) != 0) {
+		sync_cout << "info string Rescore failed: invalid input file size: "
+			<< input_file_size << sync_endl;
+		std::fclose(output_file);
+		std::fclose(input_file);
+		return;
+	}
+
+	const int64_t total_records =
+		input_file_size / static_cast<int64_t>(sizeof(PackedSfenValue));
+	if (total_records == 0) {
+		sync_cout << "info string Rescore finished 0/0 (empty input)" << sync_endl;
+		std::fclose(output_file);
+		std::fclose(input_file);
+		return;
+	}
+
+	// Show progress quickly at startup, then back off to keep Jenkins logs compact.
+	RescoreProgressReporter progress_reporter(total_records);
 	int64_t num_processed = 0;
-	int64_t progress_duration = 10000000;
-	int64_t next_progress = progress_duration;
 	std::vector<PackedSfenValue> packed_sfens(batch_size);
-	while (!std::feof(input_file)) {
+	for (;;) {
 		size_t num_samples = std::fread(&packed_sfens[0], sizeof(PackedSfenValue), batch_size, input_file);
+		if (num_samples == 0) {
+			break;
+		}
 
 		for (int sample_index = 0; sample_index < num_samples; ++sample_index) {
 			Position& position = Threads.main()->rootPos;
@@ -123,13 +311,11 @@ void Tanuki::Rescore(std::istringstream& is)
 		std::fwrite(&packed_sfens[0], sizeof(PackedSfenValue), num_samples, output_file);
 
 		num_processed += num_samples;
-		if (next_progress < num_processed) {
-			std::cout << num_processed << std::endl;
-			next_progress += progress_duration;
-		}
+		progress_reporter.MaybeReport(num_processed);
 	}
 
-	std::cout << "Finished." << std::endl;
+	progress_reporter.ReportFinal(num_processed);
+	sync_cout << "info string Rescore finished." << sync_endl;
 
 	std::fclose(output_file);
 	output_file = nullptr;
