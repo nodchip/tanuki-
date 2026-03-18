@@ -529,7 +529,7 @@ class YaneuraOuWorker: public Worker {
 
     // selDepth : 選択探索の深さ。
     // 💡depthとPV lineに対するUSI infoで出力するselDepth。
-    int selDepth, nmpMinPly;
+    int selDepth;
 
 	// 探索時に評価値に楽観的バイアスを与えるために用いるパラメーター。
 	Value optimism[COLOR_NB];
