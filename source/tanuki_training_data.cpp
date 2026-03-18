@@ -338,21 +338,81 @@ void Tanuki::Ensemble(std::istringstream& is)
 	std::string output_file_path = file_paths.back();
 
 	std::vector<FILE*> input_files;
+	int64_t total_records = -1;
 	for (const auto& input_file_path : input_file_paths) {
-		input_files.push_back(std::fopen(input_file_path.c_str(), "rb"));
+		FILE* input_file = std::fopen(input_file_path.c_str(), "rb");
+		if (input_file == nullptr) {
+			sync_cout << "info string Ensemble failed to open input file: "
+				<< input_file_path << sync_endl;
+			for (auto& opened_input_file : input_files) {
+				std::fclose(opened_input_file);
+				opened_input_file = nullptr;
+			}
+			return;
+		}
+		input_files.push_back(input_file);
 		std::setvbuf(input_files.back(), nullptr, _IOFBF, BUFFER_SIZE);
+
+		_fseeki64(input_files.back(), 0, SEEK_END);
+		const int64_t input_file_size = _ftelli64(input_files.back());
+		_fseeki64(input_files.back(), 0, SEEK_SET);
+		if (input_file_size < 0
+			|| input_file_size % static_cast<int64_t>(sizeof(PackedSfenValue)) != 0) {
+			sync_cout << "info string Ensemble failed: invalid input file size: "
+				<< input_file_path << " size=" << input_file_size << sync_endl;
+			for (auto& opened_input_file : input_files) {
+				std::fclose(opened_input_file);
+				opened_input_file = nullptr;
+			}
+			return;
+		}
+
+		const int64_t current_total_records =
+			input_file_size / static_cast<int64_t>(sizeof(PackedSfenValue));
+		if (total_records < 0) {
+			total_records = current_total_records;
+		}
+		else if (total_records != current_total_records) {
+			sync_cout << "info string Ensemble failed: input sizes do not match: "
+				<< input_file_path << " records=" << current_total_records
+				<< " expected=" << total_records << sync_endl;
+			for (auto& opened_input_file : input_files) {
+				std::fclose(opened_input_file);
+				opened_input_file = nullptr;
+			}
+			return;
+		}
 	}
 
 	FILE* output_file = std::fopen(output_file_path.c_str(), "wb");
+	if (output_file == nullptr) {
+		sync_cout << "info string Ensemble failed to open output file: "
+			<< output_file_path << sync_endl;
+		for (auto& input_file : input_files) {
+			std::fclose(input_file);
+			input_file = nullptr;
+		}
+		return;
+	}
 	std::setvbuf(output_file, nullptr, _IOFBF, BUFFER_SIZE);
 
+	if (total_records == 0) {
+		sync_cout << "info string Ensemble finished 0/0 (empty input)" << sync_endl;
+		std::fclose(output_file);
+		output_file = nullptr;
+		for (auto& input_file : input_files) {
+			std::fclose(input_file);
+			input_file = nullptr;
+		}
+		return;
+	}
+
+	RescoreProgressReporter progress_reporter(total_records);
 	int64_t num_processed = 0;
-	int64_t progress_duration = 10000000;
-	int64_t next_progress = progress_duration;
 	int num_input_files = static_cast<int>(input_file_paths.size());
 	std::vector<std::vector<PackedSfenValue>> input_packed_sfens(
 		num_input_files, std::vector<PackedSfenValue>(batch_size));
-	while (!std::feof(input_files[0])) {
+	for (;;) {
 		size_t min_num_samples = std::numeric_limits<size_t>::max();
 		for (int input_file_index = 0; input_file_index < static_cast<int>(num_input_files);
 			++input_file_index) {
@@ -360,6 +420,9 @@ void Tanuki::Ensemble(std::istringstream& is)
 				&input_packed_sfens[input_file_index][0], sizeof(PackedSfenValue), batch_size,
 				input_files[input_file_index]);
 			min_num_samples = std::min(min_num_samples, num_samples);
+		}
+		if (min_num_samples == 0) {
+			break;
 		}
 
 		std::vector<PackedSfenValue> output_packed_sfens = input_packed_sfens[0];
@@ -377,13 +440,11 @@ void Tanuki::Ensemble(std::istringstream& is)
 		std::fwrite(&output_packed_sfens[0], sizeof(PackedSfenValue), min_num_samples, output_file);
 
 		num_processed += min_num_samples;
-		if (next_progress < num_processed) {
-			std::cout << num_processed << std::endl;
-			next_progress += progress_duration;
-		}
+		progress_reporter.MaybeReport(num_processed);
 	}
 
-	std::cout << "Finished." << std::endl;
+	progress_reporter.ReportFinal(num_processed);
+	sync_cout << "info string Ensemble finished." << sync_endl;
 
 	std::fclose(output_file);
 	output_file = nullptr;
