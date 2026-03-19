@@ -2877,7 +2877,7 @@ Value YaneuraOuWorker::search(Position& pos, Stack* ss, Value alpha, Value beta,
         // Null move dynamic reduction based on depth
         // (残り探索)深さと評価値に基づくnull moveの動的なreduction
 
-        Depth R = 7 + depth / 3;
+        Depth R = 7 + depth / 2;
 
         ss->currentMove                   = Move::null();
         ss->continuationHistory           = &continuationHistory[0][0][NO_PIECE][0];
