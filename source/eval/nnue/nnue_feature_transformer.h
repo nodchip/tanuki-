@@ -31,6 +31,8 @@ namespace Eval::NNUE {
 
 #if defined(USE_AVX512)
 using vec_t = __m512i;
+static_assert(kSimdWidth == sizeof(vec_t),
+              "AVX512 NNUE requires kSimdWidth to match the 64-byte vector width.");
 #define vec_load(a) _mm512_load_si512(a)
 #define vec_store(a, b) _mm512_store_si512(a, b)
 #define vec_add_16(a, b) _mm512_add_epi16(a, b)
