@@ -488,7 +488,7 @@ class FeatureTransformer {
 					auto accumulation      = reinterpret_cast<vec_t*>(&accumulator.accumulation[perspective][i][0]);
 					auto column            = reinterpret_cast<const vec_t*>(&weights_[offset]);
 #if defined(USE_AVX512)
-					constexpr IndexType kNumChunks = kHalfDimensions / kSimdWidth;
+					constexpr IndexType kNumChunks = kHalfDimensions / (kSimdWidth / 2);
 #else
 					constexpr IndexType kNumChunks = kHalfDimensions / (kSimdWidth / 2);
 #endif
@@ -530,7 +530,7 @@ class FeatureTransformer {
 			for (Color perspective : {BLACK, WHITE}) {
 #if defined(VECTOR)
 #if defined(USE_AVX512)
-				constexpr IndexType kNumChunks = kHalfDimensions / kSimdWidth;
+				constexpr IndexType kNumChunks = kHalfDimensions / (kSimdWidth / 2);
 #else
 				constexpr IndexType kNumChunks = kHalfDimensions / (kSimdWidth / 2);
 #endif
