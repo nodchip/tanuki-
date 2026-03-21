@@ -2007,7 +2007,7 @@ Value YaneuraOuWorker::search(Position& pos, Stack* ss, Value alpha, Value beta,
         evaluated = true;
         return this->evaluate(pos);
     };
-    auto do_move = [&](Position & pos, Move move, StateInfo st, bool givesCheck, Stack* ss) {
+    auto do_move = [&](Position & pos, Move move, StateInfo& st, bool givesCheck, Stack* ss) {
         if (!evaluated)
         {
             evaluated = true;
@@ -2018,7 +2018,7 @@ Value YaneuraOuWorker::search(Position& pos, Stack* ss, Value alpha, Value beta,
 
 	// 🤔 同じ名前で呼び分けできないので、
 	//     こちらを名前を do_move_ にする。
-    auto do_move_ = [&](Position & pos, Move move, StateInfo st, Stack* ss) {
+    auto do_move_ = [&](Position & pos, Move move, StateInfo& st, Stack* ss) {
         if (!evaluated)
         {
             evaluated = true;
@@ -2026,7 +2026,7 @@ Value YaneuraOuWorker::search(Position& pos, Stack* ss, Value alpha, Value beta,
         }
         this->do_move(pos, move, st, ss);
     };
-    auto do_null_move = [&](Position& pos, StateInfo st) {
+    auto do_null_move = [&](Position& pos, StateInfo& st) {
         if (!evaluated)
         {
             evaluated = true;
@@ -2035,7 +2035,7 @@ Value YaneuraOuWorker::search(Position& pos, Stack* ss, Value alpha, Value beta,
         this->do_null_move(pos, st);
     };
 #else
-    auto do_move_ = [&](Position& pos, Move move, StateInfo st, Stack* ss) { this->do_move(pos, move, st, ss); };
+    auto do_move_ = [&](Position& pos, Move move, StateInfo& st, Stack* ss) { this->do_move(pos, move, st, ss); };
 #endif
 
 	// 📌 Timerの監視
@@ -4142,7 +4142,7 @@ Value Search::YaneuraOuWorker::qsearch(Position& pos, Stack* ss, Value alpha, Va
         evaluated = true;
         return this->evaluate(pos);
     };
-    auto do_move = [&](Position& pos, Move move, StateInfo st, bool givesCheck, Stack* ss) {
+    auto do_move = [&](Position& pos, Move move, StateInfo& st, bool givesCheck, Stack* ss) {
         if (!evaluated)
         {
             evaluated = true;
