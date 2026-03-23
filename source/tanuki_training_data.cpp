@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <iomanip>
 #include <random>
+#include <sstream>
 #include <string>
 
 #include "engine/dlshogi-engine/dlshogi_searcher.h"
@@ -157,25 +158,26 @@ namespace
 				eta_time += static_cast<time_t>(remaining_records / smoothed_rate_);
 			}
 
-			sync_cout
+			std::ostringstream oss;
+			oss
 				<< "info string Rescore "
 				<< processed_records << "/" << total_records_
 				<< " (" << std::fixed << std::setprecision(1) << progress_percent
 				<< std::defaultfloat << "%) ";
 			if (has_smoothed_rate_) {
-				sync_cout << FormatRate(smoothed_rate_);
+				oss << FormatRate(smoothed_rate_);
 			}
 			else {
-				sync_cout << "warming up";
+				oss << "warming up";
 			}
 
-			sync_cout
+			oss
 				<< " elapsed " << FormatDuration(elapsed_sec)
 				<< " ETA " << FormatTimestamp(eta_time);
 			if (!is_final) {
-				sync_cout << " next report in " << FormatDuration(next_interval_sec_);
+				oss << " next report in " << FormatDuration(next_interval_sec_);
 			}
-			sync_cout << sync_endl;
+			sync_cout << oss.str() << sync_endl;
 
 			last_report_time_ = now;
 			last_reported_records_ = processed_records;
@@ -294,7 +296,15 @@ void Tanuki::Rescore(std::istringstream& is)
 		for (int sample_index = 0; sample_index < num_samples; ++sample_index) {
 			Position& position = Threads.main()->rootPos;
 			StateInfo state_info;
-			position.set_from_packed_sfen(packed_sfens[sample_index].sfen, &state_info, Threads.main());
+			const auto result =
+				position.set_from_packed_sfen(packed_sfens[sample_index].sfen, &state_info, Threads.main());
+			if (result.is_not_ok()) {
+				sync_cout << "info string Rescore failed: invalid packed sfen at sample "
+					<< sample_index << " result " << result.to_string() << sync_endl;
+				std::fclose(output_file);
+				std::fclose(input_file);
+				return;
+			}
 			Eval::dlshogi::make_input_features(position, sample_index, packed_features1, packed_features2);
 		}
 
