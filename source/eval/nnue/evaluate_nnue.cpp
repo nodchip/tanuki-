@@ -344,7 +344,7 @@ namespace {
         feature_transformer->UpdateAccumulatorIfPossible(pos);
     }
 
-#if defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536)
+#if defined(SFNNwoPSQT)
     // レイヤースタックの選択。Tanuki::Progressが直接indexを返す。
     static int stack_index_for_nnue(const Position& pos) {
         return Tanuki::Progress::LayerStackIndex(pos);
