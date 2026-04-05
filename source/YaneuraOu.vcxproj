@@ -614,6 +614,7 @@
     <ClInclude Include="eval\nnue\architectures\halfkpvm_256x2-32-32.h" />
     <ClInclude Include="eval\nnue\architectures\kp_256x2-32-32.h" />
     <ClInclude Include="eval\nnue\architectures\sfnnwop-1536.h" />
+    <ClInclude Include="eval\nnue\architectures\sfnnwop-2048.h" />
     <ClInclude Include="eval\nnue\evaluate_nnue.h" />
     <ClInclude Include="eval\nnue\evaluate_nnue_learner.h" />
     <ClInclude Include="eval\nnue\features\features_common.h" />

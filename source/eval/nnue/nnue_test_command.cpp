@@ -15,7 +15,7 @@ namespace Eval::NNUE {
 
 namespace {
 
-#if defined(USE_AVX512) && defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536)
+#if defined(USE_AVX512) && (defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536) || defined(YANEURAOU_ENGINE_NNUE_SFNNwoP2048))
 static_assert(kSimdWidth == 64,
               "AVX512 NNUE paths require kSimdWidth=64 to avoid output buffer overruns.");
 #endif

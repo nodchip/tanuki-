@@ -52,6 +52,11 @@
 // SFNN without Psqt 1536型
 #include "architectures/sfnnwop-1536.h"
 
+#elif defined(YANEURAOU_ENGINE_NNUE_SFNNwoP2048)
+
+// SFNN without Psqt 2048型
+#include "architectures/sfnnwop-2048.h"
+
 #elif defined(EVAL_NNUE_HALFKP_VM_256X2_32_32)
 
 // halfkpvm_256x2-32-32型

@@ -22,6 +22,8 @@ namespace Eval::NNUE {
 	// 評価関数の構造のハッシュ値
 #if defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536)
 	constexpr std::uint32_t kHashValue = 0x3c203b32u;
+#elif defined(YANEURAOU_ENGINE_NNUE_SFNNwoP2048)
+	constexpr std::uint32_t kHashValue = 0x3c203b32u;
 #else
 	constexpr std::uint32_t kHashValue =
 	    FeatureTransformer::GetHashValue() ^ Network::GetHashValue();
@@ -31,7 +33,7 @@ namespace Eval::NNUE {
 	extern LargePagePtr<FeatureTransformer> feature_transformer;
 
 	// 評価関数
-#if defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536)
+#if defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536) || defined(YANEURAOU_ENGINE_NNUE_SFNNwoP2048)
 	constexpr int kLayerStacks = LayerStacks;
 	extern AlignedPtr<Network> network[kLayerStacks];
 #else

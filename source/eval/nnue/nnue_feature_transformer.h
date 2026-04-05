@@ -8,7 +8,7 @@
 
 #if defined(EVAL_NNUE)
 
-#if defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536)
+#if defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536) || defined(YANEURAOU_ENGINE_NNUE_SFNNwoP2048)
 #define USE_ELEMENT_WISE_MULTIPLY
 #endif
 
@@ -146,6 +146,8 @@ class FeatureTransformer {
 	// 評価関数ファイルに埋め込むハッシュ値
 	static constexpr std::uint32_t GetHashValue() {
 #if defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536)
+		return 0x5f134ab8u;
+#elif defined(YANEURAOU_ENGINE_NNUE_SFNNwoP2048)
 		return 0x5f134ab8u;
 #else
 		return RawFeatures::kHashValue ^ kOutputDimensions;

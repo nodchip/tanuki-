@@ -440,6 +440,9 @@
     <ClInclude Include="eval\nnue\architectures\sfnnwop-1536.h">
       <Filter>リソース ファイル\eval\nnue\architectures</Filter>
     </ClInclude>
+    <ClInclude Include="eval\nnue\architectures\sfnnwop-2048.h">
+      <Filter>リソース ファイル\eval\nnue\architectures</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="movegen.cpp">
