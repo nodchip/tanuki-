@@ -1006,7 +1006,7 @@ namespace Book
         options.add("NarrowBook", Option(false));
 
 		// 定跡の指し手を何手目まで用いるか
-        options.add("BookMoves", Option(16, 0, 10000));
+        options.add("BookMoves", Option(320, 0, 10000));
 
 		// 一定の確率で定跡を無視して自力で思考させる
         options.add("BookIgnoreRate", Option(0, 0, 100));
@@ -1048,16 +1048,16 @@ namespace Book
 		//  BookEvalWhiteLimit : 同じく後手の下限。
 		//  BookDepthLimit : 定跡に登録されている指し手のdepthがこれを下回るなら採用しない。0を指定するとdepth無視。
 
-		options.add("BookEvalDiff", Option(30, 0, 99999));
-        options.add("BookEvalBlackLimit", Option(0, -99999, 99999));
-        options.add("BookEvalWhiteLimit", Option(-140, -99999, 99999));
-        options.add("BookDepthLimit", Option(16, 0, 99999));
+		options.add("BookEvalDiff", Option(0, 0, 99999));
+        options.add("BookEvalBlackLimit", Option(-100, -99999, 99999));
+        options.add("BookEvalWhiteLimit", Option(-100, -99999, 99999));
+        options.add("BookDepthLimit", Option(0, 0, 99999));
 
 		// 定跡をメモリに丸読みしないオプション。(default = false)
-        options.add("BookOnTheFly", Option(false));
+        options.add("BookOnTheFly", Option(true));
 
 		// 定跡データベースの採択率に比例して指し手を選択するオプション
-        options.add("ConsiderBookMoveCount", Option(false));
+        options.add("ConsiderBookMoveCount", Option(true));
 
 		// 定跡にヒットしたときにPVを何手目まで表示するか。あまり長いと時間がかかりうる。
         options.add("BookPvMoves", Option(8, 1, MAX_PLY));
@@ -1065,7 +1065,7 @@ namespace Book
 		// 定跡データベース上のply(開始局面からの手数)を無視するオプション。
 		// 例) 局面図が同じなら、DBの36手目の局面に40手目でもヒットする。
 		// これ変更したときに定跡ファイルの読み直しが必要になるのだが…(´ω｀)
-        options.add("IgnoreBookPly", Option(false));
+        options.add("IgnoreBookPly", Option(true));
 
 		// 反転させた局面が定跡DBに登録されていたら、それにヒットするようになるオプション。
         options.add("FlippedBook", Option(true));
