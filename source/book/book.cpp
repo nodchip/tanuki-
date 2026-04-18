@@ -1,4 +1,4 @@
-﻿#include "../config.h"
+#include "../config.h"
 
 #include <unordered_set>
 #include <iomanip>		// std::setprecision()
@@ -1029,10 +1029,10 @@ namespace Book
 			, "user_book1.db", "user_book2.db", "user_book3.db", "book.bin" };
 
 #if !defined(__EMSCRIPTEN__)
-		options.add("BookFile", Option(book_list, book_list[1]));
+		options.add("BookFile", Option(book_list[1].c_str()));
 #else
 		// WASM では no_book をデフォルトにする
-        options.add("BookFile", Option(book_list, book_list[0]));
+        options.add("BookFile", Option(book_list[0].c_str()));
 #endif
 
 #if !defined(__EMSCRIPTEN__)
@@ -1660,3 +1660,4 @@ namespace BookTools
 
 } // namespace Book
 } // namespace YaneuraOu
+
