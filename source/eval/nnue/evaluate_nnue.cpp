@@ -6,6 +6,11 @@
 
 #include <fstream>
 
+#if defined(EVAL_EMBEDDING) && !defined(_MSC_VER)
+#define INCBIN_SILENCE_BITCODE_WARNING
+#include "../../incbin/incbin.h"
+#endif
+
 #include "../../evaluate.h"
 #include "../../position.h"
 #include "../../memory.h"
@@ -16,6 +21,23 @@
 #endif
 
 #include "evaluate_nnue.h"
+
+// Macro to embed the default efficiently updatable neural network (NNUE) file
+// data in the engine binary (using incbin.h, by Dale Weiler).
+// This macro invocation will declare the following three variables:
+//     const unsigned char        gEmbeddedNNUEData[];
+//     const unsigned char *const gEmbeddedNNUEEnd;
+//     const unsigned int         gEmbeddedNNUESize;
+// Note that this does not work in Microsoft Visual Studio.
+#if defined(EVAL_EMBEDDING) && !defined(_MSC_VER)
+INCBIN(EmbeddedNNUE, EVALFILE);
+#elif defined(EVAL_EMBEDDING)
+extern "C" {
+const unsigned char        gEmbeddedNNUEData[1] = { 0x0 };
+const unsigned char* const gEmbeddedNNUEEnd = &gEmbeddedNNUEData[1];
+const unsigned int         gEmbeddedNNUESize = 1;
+}
+#endif
 
 namespace Eval {
 

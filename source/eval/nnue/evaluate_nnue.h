@@ -13,14 +13,17 @@
 //#include "../../misc.h"
 #include "../../memory.h"
 
-// 評価関数のソースコードへの埋め込みをする時は、EVAL_EMBEDDINGをdefineして、
-// ⇓この2つのシンボルを正しく定義するembedded_nnue.cppを書けば良い。
+// 評価関数のソースコードへの埋め込みをする時は、EVAL_EMBEDDINGをdefineする。
 #if defined(EVAL_EMBEDDING)
-	extern const char*  gEmbeddedNNUEData;
-	extern const size_t gEmbeddedNNUESize;
+extern "C" {
+	extern const unsigned char        gEmbeddedNNUEData[];
+	extern const unsigned char* const gEmbeddedNNUEEnd;
+	extern const unsigned int         gEmbeddedNNUESize;
+}
 #else
-	const char   gEmbeddedNNUEData[1] = {0x0};
-	const size_t gEmbeddedNNUESize = 1;
+	const unsigned char        gEmbeddedNNUEData[1] = {0x0};
+	const unsigned char* const gEmbeddedNNUEEnd = &gEmbeddedNNUEData[1];
+	const unsigned int         gEmbeddedNNUESize = 1;
 #endif
 
 namespace Eval::NNUE {
