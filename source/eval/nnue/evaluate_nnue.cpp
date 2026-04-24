@@ -110,7 +110,7 @@ void add_options_(OptionsMap& options, ThreadPool& threads) {
 // なお、この方法は Microsoft Visual Studio では動作しません。
 
 #if !defined(_MSC_VER) && !defined(NNUE_EMBEDDING_OFF)
-INCBIN(EmbeddedNNUE, EvalFileDefaultName);
+INCBIN(EmbeddedNNUE, EVALFILE);
 #else
 const unsigned char        gEmbeddedNNUEData[1] = { 0x0 };
 const unsigned char* const gEmbeddedNNUEEnd = &gEmbeddedNNUEData[1];

@@ -794,7 +794,7 @@ void USIEngine::benchmark(std::istream& args) {
     ss = std::istringstream("name UCI_Chess960 value false");
     setoption(ss);
 #else
-    ss = std::istringstream("name USI_Hash value " + std::to_string(setup.ttSize));
+    ss = std::istringstream("name Hash value " + std::to_string(setup.ttSize));
     setoption(ss);
 #endif
 
@@ -1695,7 +1695,7 @@ void USIEngine::isready()
 	// --- Keep Alive的な処理ここまで ---
 #endif
 
-	// スレッドを先に生成しないとUSI_Hashで確保したメモリクリアの並列化が行われなくて困る。
+	// スレッドを先に生成しないとHashで確保したメモリクリアの並列化が行われなくて困る。
 
 #if defined(YANEURAOU_ENGINE_DEEP)
 
@@ -1739,7 +1739,7 @@ void USIEngine::isready()
 #if defined(YANEURAOU_ENGINE_DEEP)
 	// ふかうら王では置換表は用いない。
 #else
-	//TT.resize(size_t(options["USI_Hash"]));
+	//TT.resize(size_t(options["Hash"]));
 #endif
 
 	//Search::clear();
