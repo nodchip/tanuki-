@@ -382,7 +382,7 @@ void TranspositionTable::clear(/* ThreadPool& threads */) {
 
 	// 進捗を表示しながら並列化してゼロクリア
 	// Stockfishのここにあったコードは、独自の置換表を実装した時にも使いたいため、tt.cppに移動させた。
-	Tools::memclear("USI_Hash", table, size);
+	Tools::memclear("Hash", table, size);
 }
 
 // Returns an approximation of the hashtable

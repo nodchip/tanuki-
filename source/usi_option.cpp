@@ -64,7 +64,7 @@ namespace USI {
 #if !defined(YANEURAOU_ENGINE_DEEP)
 
 		// ※　やねうら王独自改良
-		// スレッド数の変更やUSI_Hashのメモリ確保をそのハンドラでやってしまうと、
+		// スレッド数の変更やHashのメモリ確保をそのハンドラでやってしまうと、
 		// そのあとLargePageEnableを送られても困ることになる。
 		// ゆえにこれらは、"isready"に対する応答で行うことにする。
 		// そもそもで言うとsetoptionに対してそんなに時間のかかることをするとGUI側がtimeoutになる懸念もある。
@@ -82,7 +82,7 @@ namespace USI {
 
 #if !defined(TANUKI_MATE_ENGINE) && !defined(YANEURAOU_MATE_ENGINE)
 		// 置換表のサイズ。[MB]で指定。
-		o["USI_Hash"] << Option(1024, 1, MaxHashMB, []([[maybe_unused]] const Option& o) { /* on_hash_size(o); */ });
+		o["Hash"] << Option(1024, 1, MaxHashMB, []([[maybe_unused]] const Option& o) { /* on_hash_size(o); */ });
 
 #if defined(USE_EVAL_HASH)
 		// 評価値用のcacheサイズ。[MB]で指定。
@@ -119,15 +119,15 @@ namespace USI {
 		// ネットワークの平均遅延時間[ms]
 		// この時間だけ早めに指せばだいたい間に合う。
 		// 切れ負けの瞬間は、NetworkDelayのほうなので大丈夫。
-		o["NetworkDelay"] << Option(time_margin, 0, 10000);
+		o["NetworkDelay"] << Option(0, 0, 10000);
 
 		// ネットワークの最大遅延時間[ms]
 		// 切れ負けの瞬間だけはこの時間だけ早めに指す。
 		// 1.2秒ほど早く指さないとfloodgateで切れ負けしかねない。
-		o["NetworkDelay2"] << Option(time_margin + 1000, 0, 10000);
+		o["NetworkDelay2"] << Option(500, 0, 10000);
 
 		// 最小思考時間[ms]
-		o["MinimumThinkingTime"] << Option(2000, 1000, 100000);
+		o["MinimumThinkingTime"] << Option(0, 0, 100000);
 
 		// 切れ負けのときの思考時間を調整する。序盤重視率。百分率になっている。
 		// 例えば200を指定すると本来の最適時間の200%(2倍)思考するようになる。
@@ -178,7 +178,7 @@ namespace USI {
 #else
 
 		// TANUKI_MATE_ENGINEのとき
-		o["USI_Hash"] << Option(std::min(4096, MaxHashMB), 1, MaxHashMB);
+		o["Hash"] << Option(std::min(4096, MaxHashMB), 1, MaxHashMB);
 
 #endif // !defined(TANUKI_MATE_ENGINE) && !defined(YANEURAOU_MATE_ENGINE)
 
@@ -373,7 +373,7 @@ namespace USI {
 	// Optionオブジェクトを構築して、それをOptions[]に突っ込む。
 	// "engine_options.txt"というファイルの各行からOptionオブジェクト構築して
 	// Options[]の値を上書きするためにこの関数が必要。
-	// "option name USI_Hash type spin default 256"
+	// "option name Hash type spin default 256"
 	// のような文字列が引数として渡される。
 	// このとき、Optionのhandlerとidxは書き換えない。
 	void build_option(const std::string& line)

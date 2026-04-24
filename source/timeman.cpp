@@ -74,8 +74,6 @@ void Timer::init_(const Search::LimitsType& limits, Color us, int ply)
 	// 今回の最大残り時間(これを超えてはならない)
 	// byoyomiとincの指定は残り時間にこの時点で加算して考える。
 	remain_time = limits.time[us] + limits.byoyomi[us] + limits.inc[us] - (TimePoint)Options["NetworkDelay2"];
-	// ここを0にすると時間切れのあと自爆するのでとりあえず100にしておく。
-	remain_time = std::max(remain_time, (TimePoint)100);
 
 	// 最小思考時間
 	minimum_thinking_time = (int)Options["MinimumThinkingTime"];
@@ -147,8 +145,7 @@ void Timer::init_(const Search::LimitsType& limits, Color us, int ply)
 	// minimumとoptimumな時間を適当に計算する。
 
 	{
-		// 最小思考時間(これが1000より短く設定されることはないはず..)
-		minimumTime = std::max(minimum_thinking_time - network_delay, (TimePoint)1000);
+		minimumTime = std::max(minimum_thinking_time - network_delay, (TimePoint)0);
 
 		// 最適思考時間と、最大思考時間には、まずは上限値を設定しておく。
 		optimumTime = maximumTime = remain_time;
@@ -218,9 +215,9 @@ void Timer::init_(const Search::LimitsType& limits, Color us, int ply)
 	}
 
 	// 残り時間 - network_delay2よりは短くしないと切れ負けになる可能性が出てくる。
-	minimumTime = std::min(round_up(minimumTime), remain_time);
+	minimumTime = std::min(         minimumTime , remain_time);
 	optimumTime = std::min(         optimumTime , remain_time);
-	maximumTime = std::min(round_up(maximumTime), remain_time);
+	maximumTime = std::min(         maximumTime , remain_time);
 
 }
 

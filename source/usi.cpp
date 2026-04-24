@@ -213,7 +213,7 @@ void is_ready(bool skipCorruptCheck)
 	// --- Keep Alive的な処理ここまで ---
 #endif
 
-	// スレッドを先に生成しないとUSI_Hashで確保したメモリクリアの並列化が行われなくて困る。
+	// スレッドを先に生成しないとHashで確保したメモリクリアの並列化が行われなくて困る。
 
 #if defined(YANEURAOU_ENGINE_DEEP)
 
@@ -272,7 +272,7 @@ void is_ready(bool skipCorruptCheck)
 #if defined(YANEURAOU_ENGINE_DEEP)
 	// ふかうら王では置換表は用いない。
 #else
-	TT.resize(size_t(Options["USI_Hash"]));
+	TT.resize(size_t(Options["Hash"]));
 #endif
 
 	Search::clear();

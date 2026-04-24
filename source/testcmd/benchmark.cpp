@@ -61,10 +61,7 @@ void bench_cmd(Position& current, istringstream& is)
 	Search::LimitsType limits;
 	vector<std::string> fens;
 
-	// hashはデフォルト1024にしておかないと置換表あふれるな。
-//	std::string ttSize = "1024", threads  ="1", limit ="17" , fenFile ="default", limitType = "depth";
-	// →　固定depthにすると探索部の改良に左右されすぎる。固定timeの方がいいと思う。1局面15秒設定。
-	std::string ttSize = "1024", threads  ="1", limit ="15" , fenFile ="default", limitType = "time";
+	std::string ttSize = "16", threads  ="1", limit ="13" , fenFile ="default", limitType = "depth";
 
 	string* positional_args[] = { &ttSize, &threads, &limit, &fenFile, &limitType };
 
@@ -126,8 +123,8 @@ void bench_cmd(Position& current, istringstream& is)
 		// depth limit
 		limits.depth = stoi(limit);
 
-	if (Options.count("USI_Hash"))
-		Options["USI_Hash"] = ttSize;
+	if (Options.count("Hash"))
+		Options["Hash"] = ttSize;
 
 	// 定跡にhitされるとベンチマークにならない。
 	if (Options.count("BookFile"))

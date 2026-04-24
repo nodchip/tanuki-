@@ -51,8 +51,8 @@ void  Search::clear()
 	else
 		solver.ChangeSolverType(Mate::Dfpn::DfpnSolverType::None);
 
-	u64 mem = Options["USI_Hash"];
-	sync_cout << "info string DfPn memory allocation , USI_Hash = " << mem << " [MB]" << sync_endl;
+	u64 mem = Options["Hash"];
+	sync_cout << "info string DfPn memory allocation , Hash = " << mem << " [MB]" << sync_endl;
 	solver.alloc(mem);
 }
 

@@ -187,7 +187,7 @@ void ThreadPool::set(size_t requested)
 		// →　大きなメモリの置換表だと確保に時間がかかるのでやりたくない。
 		// 　　isreadyの応答でやるべき。
 
-		//TT.resize(size_t(Options["USI_Hash"]));
+		//TT.resize(size_t(Options["Hash"]));
 	}
 
 #if defined(EVAL_LEARN)

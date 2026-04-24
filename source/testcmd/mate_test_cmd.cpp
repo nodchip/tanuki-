@@ -544,7 +544,7 @@ namespace {
 		// →　デフォルト1024にしておかないと置換表あふれるな。
 		string ttSize = (is >> token) ? token : "1024";
 
-		Options["USI_Hash"] = ttSize;
+		Options["Hash"] = ttSize;
 
 		Search::LimitsType limits;
 
