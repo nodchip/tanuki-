@@ -10,6 +10,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <unordered_map>
 #include <vector>
 
@@ -59,6 +60,7 @@ struct UpdateStats {
 	std::uint64_t after_move_keys = 0;
 	std::uint64_t samples = 0;
 	std::uint64_t overwritten = 0;
+	std::uint64_t used_book_keys = 0;
 };
 
 struct Options {
@@ -546,6 +548,7 @@ public:
 			<< " book_moves=" << stats.book_moves
 			<< " root_keys=" << stats.root_keys
 			<< " after_move_keys=" << stats.after_move_keys
+			<< " used_book_keys=" << stats.used_book_keys
 			<< " samples=" << stats.samples
 			<< " overwritten=" << stats.overwritten
 			<< " bytes=" << processed_bytes << "/" << total_bytes_
@@ -714,6 +717,10 @@ void store_s16(std::array<char, 40>& record, int value) {
 	record[33] = static_cast<char>((v >> 8) & 0xff);
 }
 
+double percentage(std::uint64_t numerator, std::uint64_t denominator) {
+	return denominator == 0 ? 0.0 : 100.0 * static_cast<double>(numerator) / static_cast<double>(denominator);
+}
+
 UpdateStats overwrite_training_scores(const UpdateOptions& options) {
 	BookValueMaps maps = build_book_value_maps(options.book, options.progress_interval_sec);
 	std::ifstream input(options.input_training, std::ios::binary);
@@ -731,6 +738,7 @@ UpdateStats overwrite_training_scores(const UpdateOptions& options) {
 	}
 	UpdateProgressReporter progress(total_bytes, options.progress_interval_sec, "training");
 	UpdateStats stats = maps.stats;
+	std::unordered_set<std::string> used_book_keys;
 	std::array<char, 40> record{};
 
 	while (input.read(record.data(), static_cast<std::streamsize>(record.size()))) {
@@ -740,11 +748,13 @@ UpdateStats overwrite_training_scores(const UpdateOptions& options) {
 		if (root_it != maps.root_values.end()) {
 			store_s16(record, root_it->second);
 			++stats.overwritten;
+			used_book_keys.insert(key);
 		} else {
 			auto after_it = maps.after_move_values.find(key);
 			if (after_it != maps.after_move_values.end()) {
 				store_s16(record, after_it->second);
 				++stats.overwritten;
+				used_book_keys.insert(key);
 			}
 		}
 		output.write(record.data(), static_cast<std::streamsize>(record.size()));
@@ -753,6 +763,7 @@ UpdateStats overwrite_training_scores(const UpdateOptions& options) {
 	if (!input.eof()) {
 		throw std::runtime_error("failed while reading input training");
 	}
+	stats.used_book_keys = used_book_keys.size();
 	progress.maybe_report(total_bytes, stats, true);
 	return stats;
 }
@@ -809,8 +820,16 @@ int main(int argc, char** argv) {
 				<< " book_moves=" << stats.book_moves
 				<< " root_keys=" << stats.root_keys
 				<< " after_move_keys=" << stats.after_move_keys
+				<< " book_keys=" << (stats.root_keys + stats.after_move_keys)
+				<< " used_book_keys=" << stats.used_book_keys
+				<< " used_book_percent=" << std::fixed << std::setprecision(2)
+				<< percentage(stats.used_book_keys, stats.root_keys + stats.after_move_keys)
+				<< std::defaultfloat
 				<< " samples=" << stats.samples
 				<< " overwritten=" << stats.overwritten
+				<< " overwritten_percent=" << std::fixed << std::setprecision(2)
+				<< percentage(stats.overwritten, stats.samples)
+				<< std::defaultfloat
 				<< '\n';
 			return 0;
 		}
