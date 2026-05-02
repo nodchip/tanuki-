@@ -2843,7 +2843,7 @@ Value YaneuraOuWorker::search(Position& pos, Stack* ss, Value alpha, Value beta,
         // 💡 depth(残り探索深さ)に応じたfutility margin。
 
 		auto futility_margin = [&](Depth d) {
-            Value futilityMult = 115 - 2 * !ss->ttHit;
+            Value futilityMult = 115;
 
             return futilityMult * d                                //
                  - 1547 * improving * futilityMult / 1024          //
