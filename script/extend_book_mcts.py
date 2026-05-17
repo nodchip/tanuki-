@@ -465,6 +465,43 @@ def select_leaf_path(
         sfen = next_sfen
 
 
+def reserve_leaf_path(
+    book: OpeningBook,
+    root_sfen: str,
+    *,
+    navigator: Callable[[str, str], str],
+    multipv: int,
+    c_puct: float,
+    eval_scale: float,
+    inflight: Set[str],
+    max_ply: Optional[int] = None,
+    book_side: Optional[str] = None,
+    turn_provider: Optional[Callable[[str], str]] = None,
+    root_best_eval: Optional[int] = None,
+    eval_diff: Optional[int] = None,
+) -> Optional[LeafPath]:
+    """leaf を選択して inflight に予約する。予約済み leaf なら None を返す。"""
+    path = select_leaf_path(
+        book,
+        root_sfen,
+        navigator=navigator,
+        multipv=multipv,
+        c_puct=c_puct,
+        eval_scale=eval_scale,
+        inflight=inflight,
+        max_ply=max_ply,
+        book_side=book_side,
+        turn_provider=turn_provider,
+        root_best_eval=root_best_eval,
+        eval_diff=eval_diff,
+    )
+    leaf_key = path.leaf_sfen
+    if leaf_key in inflight:
+        return None
+    inflight.add(leaf_key)
+    return path
+
+
 def filter_entries_for_peta_rule(
     entries: Sequence[BookEntry],
     *,
@@ -756,12 +793,13 @@ def worker_loop(
     progress: ProgressReporter,
 ) -> None:
     """1 エンジン専有スレッドで leaf 選択と探索を繰り返す。"""
+    idle_sleep_sec = 0.05
     while not stop_event.is_set():
         with book_lock:
             if stop_limits.should_stop(stats) or not stop_limits.can_start_search(stats, nodes=nodes):
                 stop_event.set()
                 return
-            path = select_leaf_path(
+            path = reserve_leaf_path(
                 book,
                 root_sfen,
                 navigator=sfen_after_move,
@@ -775,13 +813,19 @@ def worker_loop(
                 root_best_eval=root_eval,
                 eval_diff=eval_diff,
             )
-            leaf_key = path.leaf_sfen
-            leaf_sfen = book.output_sfen(leaf_key)
-            if leaf_key in inflight:
-                continue
-            inflight.add(leaf_key)
-            stats.searches += 1
-            stats.total_nodes += nodes
+            if path is None:
+                leaf_key = None
+                leaf_sfen = None
+            else:
+                leaf_key = path.leaf_sfen
+                leaf_sfen = book.output_sfen(leaf_key)
+                stats.searches += 1
+                stats.total_nodes += nodes
+        if path is None:
+            stop_event.wait(idle_sleep_sec)
+            continue
+        assert leaf_key is not None
+        assert leaf_sfen is not None
         try:
             results = engine.search(leaf_sfen, nodes)
             with book_lock:

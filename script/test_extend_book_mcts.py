@@ -21,6 +21,7 @@ from extend_book_mcts import (
     StopLimits,
     UsiEngine,
     calculate_ucb,
+    reserve_leaf_path,
     merge_search_results,
     parse_info_line,
     propagate_minimax,
@@ -244,6 +245,28 @@ class ExtendBookMctsTest(unittest.TestCase):
 
         self.assertEqual(path.steps, [])
         self.assertEqual(path.leaf_sfen, "root")
+
+    def test_reserve_leaf_path_returns_none_when_leaf_is_already_inflight(self) -> None:
+        book = OpeningBook()
+        book.positions["root"] = BookPosition(
+            "root",
+            [BookEntry("a", "none", 10, 1, 1, 0)],
+            0,
+        )
+        inflight = {"root"}
+
+        reserved = reserve_leaf_path(
+            book,
+            "root",
+            navigator=lambda sfen, move: "child",
+            multipv=2,
+            c_puct=1.4,
+            eval_scale=600.0,
+            inflight=inflight,
+        )
+
+        self.assertIsNone(reserved)
+        self.assertEqual(inflight, {"root"})
 
     def test_propagate_minimax_updates_selected_path_entries(self) -> None:
         book = OpeningBook()
