@@ -138,10 +138,19 @@ class ProgressReporter:
         self._last_progress_time = current_time
         self._emit("[progress]", stats, now=current_time)
 
-    def searched(self, *, entries: int, leaf_sfen: str, stats: RunStats) -> None:
+    def search_start(self, *, worker_id: int, leaf_sfen: str, nodes: int, stats: RunStats) -> None:
+        """1 回の leaf 探索開始を出力する。"""
+        self.stream.write(
+            f"[search-start] worker={worker_id} searches={stats.searches} "
+            f"total_nodes={stats.total_nodes} nodes={nodes} "
+            f"sfen={leaf_sfen}\n"
+        )
+        self.stream.flush()
+
+    def search_finish(self, *, worker_id: int, entries: int, leaf_sfen: str, stats: RunStats) -> None:
         """1 回の leaf 探索完了を出力する。"""
         self.stream.write(
-            f"searched leaf entries={entries} searches={stats.searches} "
+            f"[search-finish] worker={worker_id} entries={entries} searches={stats.searches} "
             f"added_positions={stats.added_positions} total_nodes={stats.total_nodes} "
             f"sfen={leaf_sfen}\n"
         )
@@ -481,9 +490,9 @@ def reserve_leaf_path(
     eval_diff: Optional[int] = None,
 ) -> Optional[LeafPath]:
     """leaf を選択して inflight に予約する。予約済み leaf なら None を返す。"""
-    path = select_leaf_path(
+    path = select_available_leaf_path(
         book,
-        root_sfen,
+        book.position_key(root_sfen),
         navigator=navigator,
         multipv=multipv,
         c_puct=c_puct,
@@ -495,11 +504,123 @@ def reserve_leaf_path(
         root_best_eval=root_best_eval,
         eval_diff=eval_diff,
     )
+    if path is None:
+        return None
     leaf_key = path.leaf_sfen
     if leaf_key in inflight:
         return None
     inflight.add(leaf_key)
     return path
+
+
+def select_available_leaf_path(
+    book: OpeningBook,
+    sfen: str,
+    *,
+    navigator: Callable[[str, str], str],
+    multipv: int,
+    c_puct: float,
+    eval_scale: float,
+    inflight: Set[str],
+    max_ply: Optional[int],
+    book_side: Optional[str],
+    turn_provider: Optional[Callable[[str], str]],
+    root_best_eval: Optional[int],
+    eval_diff: Optional[int],
+) -> Optional[LeafPath]:
+    """予約済み leaf を避け、次善候補へバックトラックして leaf を選ぶ。"""
+    return _select_available_leaf_path(
+        book,
+        sfen,
+        navigator=navigator,
+        multipv=multipv,
+        c_puct=c_puct,
+        eval_scale=eval_scale,
+        inflight=inflight,
+        max_ply=max_ply,
+        book_side=book_side,
+        turn_provider=turn_provider,
+        root_best_eval=root_best_eval,
+        eval_diff=eval_diff,
+        depth=0,
+        visited=set(),
+    )
+
+
+def _select_available_leaf_path(
+    book: OpeningBook,
+    sfen: str,
+    *,
+    navigator: Callable[[str, str], str],
+    multipv: int,
+    c_puct: float,
+    eval_scale: float,
+    inflight: Set[str],
+    max_ply: Optional[int],
+    book_side: Optional[str],
+    turn_provider: Optional[Callable[[str], str]],
+    root_best_eval: Optional[int],
+    eval_diff: Optional[int],
+    depth: int,
+    visited: Set[str],
+) -> Optional[LeafPath]:
+    """select_available_leaf_path の再帰本体。"""
+    if max_ply is not None and depth >= max_ply:
+        return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
+
+    position = book.positions.get(sfen)
+    if position is None or len(position.entries) < multipv or not position.entries:
+        return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
+    if sfen in visited:
+        return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
+
+    parent_visits = sum(entry.visits for entry in position.entries)
+    filtered_entries = filter_entries_for_peta_rule(
+        position.entries,
+        sfen=sfen,
+        book_side=book_side,
+        turn_provider=turn_provider,
+        root_best_eval=root_best_eval,
+        eval_diff=eval_diff,
+    )
+    candidates: List[Tuple[float, BookEntry, str]] = []
+    for entry in filtered_entries:
+        child_sfen = book.position_key(navigator(sfen, entry.move))
+        ucb = calculate_ucb(
+            eval_cp=entry.eval_cp,
+            child_visits=entry.visits,
+            parent_visits=parent_visits,
+            c_puct=c_puct,
+            eval_scale=eval_scale,
+        )
+        candidates.append((ucb, entry, child_sfen))
+
+    candidates.sort(key=lambda item: (item[0], -item[1].order_index), reverse=True)
+    next_visited = set(visited)
+    next_visited.add(sfen)
+    for _, entry, child_sfen in candidates:
+        child_path = _select_available_leaf_path(
+            book,
+            child_sfen,
+            navigator=navigator,
+            multipv=multipv,
+            c_puct=c_puct,
+            eval_scale=eval_scale,
+            inflight=inflight,
+            max_ply=max_ply,
+            book_side=book_side,
+            turn_provider=turn_provider,
+            root_best_eval=root_best_eval,
+            eval_diff=eval_diff,
+            depth=depth + 1,
+            visited=next_visited,
+        )
+        if child_path is not None:
+            return LeafPath(
+                steps=[PathStep(sfen=sfen, entry=entry)] + child_path.steps,
+                leaf_sfen=child_path.leaf_sfen,
+            )
+    return None
 
 
 def filter_entries_for_peta_rule(
@@ -774,6 +895,7 @@ def parse_setoption(option: str) -> Tuple[str, Optional[str]]:
 
 def worker_loop(
     *,
+    worker_id: int,
     engine: UsiEngine,
     book: OpeningBook,
     root_sfen: str,
@@ -821,6 +943,12 @@ def worker_loop(
                 leaf_sfen = book.output_sfen(leaf_key)
                 stats.searches += 1
                 stats.total_nodes += nodes
+                progress.search_start(
+                    worker_id=worker_id,
+                    leaf_sfen=leaf_sfen,
+                    nodes=nodes,
+                    stats=stats,
+                )
         if path is None:
             stop_event.wait(idle_sleep_sec)
             continue
@@ -842,7 +970,12 @@ def worker_loop(
                     stats.added_positions += 1
                 if stop_limits.should_stop(stats):
                     stop_event.set()
-                progress.searched(entries=len(results), leaf_sfen=leaf_sfen, stats=stats)
+                progress.search_finish(
+                    worker_id=worker_id,
+                    entries=len(results),
+                    leaf_sfen=leaf_sfen,
+                    stats=stats,
+                )
                 progress.maybe_progress(stats)
         finally:
             with book_lock:
@@ -879,9 +1012,12 @@ def run_extend_loop(args: argparse.Namespace, progress_stream: TextIO = sys.stde
     try:
         for engine in engines:
             engine.start()
+
+        for worker_id, engine in enumerate(engines):
             thread = threading.Thread(
                 target=worker_loop,
                 kwargs={
+                    "worker_id": worker_id,
                     "engine": engine,
                     "book": book,
                     "root_sfen": args.root_sfen,

@@ -268,6 +268,44 @@ class ExtendBookMctsTest(unittest.TestCase):
         self.assertIsNone(reserved)
         self.assertEqual(inflight, {"root"})
 
+    def test_reserve_leaf_path_chooses_alternative_leaf_when_best_leaf_is_inflight(self) -> None:
+        book = OpeningBook()
+        book.positions["root"] = BookPosition(
+            "root",
+            [
+                BookEntry("best", "none", 100, 1, 1, 0),
+                BookEntry("second", "none", 50, 1, 1, 1),
+            ],
+            0,
+        )
+        book.positions["middle"] = BookPosition(
+            "middle",
+            [BookEntry("to-leaf", "none", 100, 1, 1, 0)],
+            1,
+        )
+        inflight = {"best-leaf"}
+        navigator = {
+            "root:best": "middle",
+            "middle:to-leaf": "best-leaf",
+            "root:second": "second-leaf",
+        }
+
+        reserved = reserve_leaf_path(
+            book,
+            "root",
+            navigator=lambda sfen, move: navigator[f"{sfen}:{move}"],
+            multipv=1,
+            c_puct=1.4,
+            eval_scale=600.0,
+            inflight=inflight,
+        )
+
+        self.assertIsNotNone(reserved)
+        assert reserved is not None
+        self.assertEqual([(step.sfen, step.entry.move) for step in reserved.steps], [("root", "second")])
+        self.assertEqual(reserved.leaf_sfen, "second-leaf")
+        self.assertEqual(inflight, {"best-leaf", "second-leaf"})
+
     def test_propagate_minimax_updates_selected_path_entries(self) -> None:
         book = OpeningBook()
         book.positions["root"] = BookPosition(
@@ -342,6 +380,24 @@ class ExtendBookMctsTest(unittest.TestCase):
         self.assertIn("[progress] elapsed=00:00:11 searches=5 added_positions=3 total_nodes=5000 nps_est=454.5", text)
         self.assertIn("[save] elapsed=00:00:12 output=out.db searches=5 added_positions=3 total_nodes=5000", text)
         self.assertIn("[stop] elapsed=00:00:13 reason=max-searches searches=5 added_positions=3 total_nodes=5000", text)
+
+    def test_progress_reporter_emits_search_start_and_finish_lines(self) -> None:
+        stream = io.StringIO()
+        stats = RunStats(start_time=100.0, searches=7, total_nodes=7000)
+        reporter = ProgressReporter(stream, interval_sec=10.0)
+
+        reporter.search_start(worker_id=3, leaf_sfen="root", nodes=1000, stats=stats)
+        reporter.search_finish(worker_id=3, entries=2, leaf_sfen="root", stats=stats)
+
+        self.assertEqual(
+            stream.getvalue(),
+            textwrap.dedent(
+                """\
+                [search-start] worker=3 searches=7 total_nodes=7000 nodes=1000 sfen=root
+                [search-finish] worker=3 entries=2 searches=7 added_positions=0 total_nodes=7000 sfen=root
+                """
+            ),
+        )
 
     def test_usi_engine_initializes_hash_option_with_hash_when_usi_hash_is_unavailable(self) -> None:
         engine = UsiEngine(
