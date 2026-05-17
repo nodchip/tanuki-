@@ -148,6 +148,28 @@ Run: `python -m unittest script.test_extend_book_mcts -v`
 
 Run: `python -m unittest script.test_extend_book_mcts -v`
 
+### Task 4.7: Ignore SFEN Ply
+
+**Files:**
+- Modify: `script/test_extend_book_mcts.py`
+- Modify: `script/extend_book_mcts.py`
+
+**Step 1: Write failing tests**
+
+`--ignore-ply` 指定時に、同一の board/turn/hand で手数だけが異なる局面を同一キーへ統合し、出力 DB の `sfen` 行の手数が `0` になることを検証する。
+
+**Step 2: Run test to verify it fails**
+
+Run: `python -m unittest script.test_extend_book_mcts -v`
+
+**Step 3: Implement ignore-ply**
+
+`OpeningBook` に `ignore_ply` を追加し、内部検索キーは手数なし、出力 SFEN は手数 `0` とする。CLI に `--ignore-ply` を追加する。
+
+**Step 4: Run test to verify it passes**
+
+Run: `python -m unittest script.test_extend_book_mcts -v`
+
 **Step 3: Implement progress reporter**
 
 `ProgressReporter` と `--progress-interval-sec` を追加し、探索完了、定期保存、終了処理へ接続する。

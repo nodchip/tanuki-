@@ -198,16 +198,17 @@ def format_elapsed(elapsed_sec: float) -> str:
 class OpeningBook:
     """やねうら王形式の定跡 DB をメモリ上で保持する。"""
 
-    def __init__(self) -> None:
+    def __init__(self, *, ignore_ply: bool = False) -> None:
         self.header = DEFAULT_HEADER
+        self.ignore_ply = ignore_ply
         self.positions: Dict[str, BookPosition] = {}
         self._next_position_order = 0
         self._next_entry_order = 0
 
     @classmethod
-    def from_text(cls, text: str) -> "OpeningBook":
+    def from_text(cls, text: str, *, ignore_ply: bool = False) -> "OpeningBook":
         """文字列から定跡 DB を読み込む。"""
-        book = cls()
+        book = cls(ignore_ply=ignore_ply)
         current: Optional[BookPosition] = None
         for raw_line in text.splitlines():
             line = raw_line.strip()
@@ -229,20 +230,37 @@ class OpeningBook:
         return book
 
     @classmethod
-    def load(cls, path: pathlib.Path) -> "OpeningBook":
+    def load(cls, path: pathlib.Path, *, ignore_ply: bool = False) -> "OpeningBook":
         """ファイルから定跡 DB を読み込む。"""
         data = pathlib.Path(path).read_text(encoding="utf-8-sig")
-        return cls.from_text(data)
+        return cls.from_text(data, ignore_ply=ignore_ply)
 
     def ensure_position(self, sfen: str) -> BookPosition:
         """局面がなければ作成し、既存または新規の局面を返す。"""
-        position = self.positions.get(sfen)
+        key = self.position_key(sfen)
+        position = self.positions.get(key)
         if position is not None:
             return position
-        position = BookPosition(sfen=sfen, entries=[], order_index=self._next_position_order)
+        position = BookPosition(
+            sfen=self.output_sfen(sfen),
+            entries=[],
+            order_index=self._next_position_order,
+        )
         self._next_position_order += 1
-        self.positions[sfen] = position
+        self.positions[key] = position
         return position
+
+    def position_key(self, sfen: str) -> str:
+        """局面検索に使うキーを返す。"""
+        if not self.ignore_ply:
+            return sfen
+        return strip_sfen_ply(sfen)
+
+    def output_sfen(self, sfen: str) -> str:
+        """出力 DB に書く SFEN を返す。"""
+        if not self.ignore_ply:
+            return sfen
+        return replace_sfen_ply(sfen, "0")
 
     def to_text(self) -> str:
         """定跡 DB を評価値降順の安定ソートで文字列化する。"""
@@ -317,6 +335,23 @@ def backup_path(path: pathlib.Path, index: int) -> pathlib.Path:
     return path.with_name(f"{path.name}.{index:03d}.bak")
 
 
+def strip_sfen_ply(sfen: str) -> str:
+    """SFEN 文字列から手数だけを取り除く。"""
+    tokens = sfen.split()
+    if len(tokens) >= 4 and tokens[-1].lstrip("-").isdigit():
+        return " ".join(tokens[:-1])
+    return sfen
+
+
+def replace_sfen_ply(sfen: str, ply: str) -> str:
+    """SFEN 文字列の手数を指定値に置き換える。"""
+    tokens = sfen.split()
+    if len(tokens) >= 4 and tokens[-1].lstrip("-").isdigit():
+        tokens[-1] = ply
+        return " ".join(tokens)
+    return f"{sfen} {ply}"
+
+
 def score_to_winrate(eval_cp: int, eval_scale: float) -> float:
     """評価値をシグモイド関数で勝率へ変換する。"""
     if eval_scale <= 0:
@@ -388,7 +423,7 @@ def select_leaf_path(
 ) -> LeafPath:
     """登録済み定跡手だけを UCB でたどり、leaf 局面を返す。"""
     steps: List[PathStep] = []
-    sfen = root_sfen
+    sfen = book.position_key(root_sfen)
     visited: Set[str] = set()
     while True:
         if max_ply is not None and len(steps) >= max_ply:
@@ -421,7 +456,7 @@ def select_leaf_path(
                 c_puct=c_puct,
                 eval_scale=eval_scale,
             )
-            candidates.append((ucb, entry, child_sfen))
+            candidates.append((ucb, entry, book.position_key(child_sfen)))
         if not candidates:
             return LeafPath(steps=steps, leaf_sfen=sfen)
 
@@ -561,7 +596,7 @@ def sfen_turn(sfen: str) -> str:
 
 def root_best_eval(book: OpeningBook, root_sfen: str) -> Optional[int]:
     """root 局面の bestmove 評価値を返す。"""
-    position = book.positions.get(root_sfen)
+    position = book.positions.get(book.position_key(root_sfen))
     if position is None or not position.entries:
         return None
     return max(entry.eval_cp for entry in position.entries)
@@ -740,16 +775,17 @@ def worker_loop(
                 root_best_eval=root_eval,
                 eval_diff=eval_diff,
             )
-            leaf_sfen = path.leaf_sfen
-            if leaf_sfen in inflight:
+            leaf_key = path.leaf_sfen
+            leaf_sfen = book.output_sfen(leaf_key)
+            if leaf_key in inflight:
                 continue
-            inflight.add(leaf_sfen)
+            inflight.add(leaf_key)
             stats.searches += 1
             stats.total_nodes += nodes
         try:
             results = engine.search(leaf_sfen, nodes)
             with book_lock:
-                added_position = leaf_sfen not in book.positions
+                added_position = leaf_key not in book.positions
                 position = book.ensure_position(leaf_sfen)
                 for result in results:
                     if position.find_entry(result.move) is None:
@@ -757,7 +793,7 @@ def worker_loop(
                     else:
                         merge_search_results(position, [result], selected_move=None)
                 increment_path_visits(path)
-                propagate_minimax(book, path, leaf_sfen=leaf_sfen)
+                propagate_minimax(book, path, leaf_sfen=leaf_key)
                 if added_position:
                     stats.added_positions += 1
                 if stop_limits.should_stop(stats):
@@ -766,12 +802,12 @@ def worker_loop(
                 progress.maybe_progress(stats)
         finally:
             with book_lock:
-                inflight.discard(leaf_sfen)
+                inflight.discard(leaf_key)
 
 
 def run_extend_loop(args: argparse.Namespace, progress_stream: TextIO = sys.stderr) -> None:
     """CLI 引数に従ってエンジンを起動し、Ctrl+C まで定跡拡張を続ける。"""
-    book = OpeningBook.load(args.input)
+    book = OpeningBook.load(args.input, ignore_ply=args.ignore_ply)
     root_eval = root_best_eval(book, args.root_sfen)
     book_lock = threading.Lock()
     inflight: Set[str] = set()
@@ -876,6 +912,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--progress-interval-sec", type=float, default=10.0)
     parser.add_argument("--backup-count", type=int, default=3)
     parser.add_argument("--root-sfen", default=initial_sfen())
+    parser.add_argument("--ignore-ply", action="store_true")
     parser.add_argument("--max-added-positions", type=int, default=None)
     parser.add_argument("--max-searches", type=int, default=None)
     parser.add_argument("--max-total-nodes", type=int, default=None)

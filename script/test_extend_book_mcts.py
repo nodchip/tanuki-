@@ -71,6 +71,32 @@ class ExtendBookMctsTest(unittest.TestCase):
             ),
         )
 
+    def test_ignore_ply_merges_same_position_and_outputs_zero_ply(self) -> None:
+        text = textwrap.dedent(
+            """\
+            #YANEURAOU-DB2016 1.00
+            sfen board b - 1
+            7g7f none 10 1 1
+            sfen board b - 9
+            2g2f none 20 1 1
+            """
+        )
+
+        book = OpeningBook.from_text(text, ignore_ply=True)
+
+        self.assertEqual(list(book.positions.keys()), ["board b -"])
+        self.assertEqual(
+            book.to_text(),
+            textwrap.dedent(
+                """\
+                #YANEURAOU-DB2016 1.00
+                sfen board b - 0
+                2g2f none 20 1 1
+                7g7f none 10 1 1
+                """
+            ),
+        )
+
     def test_ucb_accepts_zero_initial_visits_without_special_priority(self) -> None:
         first = calculate_ucb(eval_cp=0, child_visits=0, parent_visits=0, c_puct=1.4, eval_scale=600.0)
         second = calculate_ucb(eval_cp=600, child_visits=0, parent_visits=0, c_puct=1.4, eval_scale=600.0)
