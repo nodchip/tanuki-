@@ -386,15 +386,15 @@ class ExtendBookMctsTest(unittest.TestCase):
         stats = RunStats(start_time=100.0, searches=7, total_nodes=7000)
         reporter = ProgressReporter(stream, interval_sec=10.0)
 
-        reporter.search_start(worker_id=3, leaf_sfen="root", nodes=1000, stats=stats)
-        reporter.search_finish(worker_id=3, entries=2, leaf_sfen="root", stats=stats)
+        reporter.search_start(worker_id=3, leaf_sfen="root", depth=5, nodes=1000, stats=stats)
+        reporter.search_finish(worker_id=3, entries=2, leaf_sfen="root", depth=5, stats=stats)
 
         self.assertEqual(
             stream.getvalue(),
             textwrap.dedent(
                 """\
-                [search-start] worker=3 searches=7 total_nodes=7000 nodes=1000 sfen=root
-                [search-finish] worker=3 entries=2 searches=7 added_positions=0 total_nodes=7000 sfen=root
+                [search-start] worker=3 depth=5 searches=7 total_nodes=7000 nodes=1000 sfen=root
+                [search-finish] worker=3 depth=5 entries=2 searches=7 added_positions=0 total_nodes=7000 sfen=root
                 """
             ),
         )

@@ -138,19 +138,35 @@ class ProgressReporter:
         self._last_progress_time = current_time
         self._emit("[progress]", stats, now=current_time)
 
-    def search_start(self, *, worker_id: int, leaf_sfen: str, nodes: int, stats: RunStats) -> None:
+    def search_start(
+        self,
+        *,
+        worker_id: int,
+        leaf_sfen: str,
+        depth: int,
+        nodes: int,
+        stats: RunStats,
+    ) -> None:
         """1 回の leaf 探索開始を出力する。"""
         self.stream.write(
-            f"[search-start] worker={worker_id} searches={stats.searches} "
+            f"[search-start] worker={worker_id} depth={depth} searches={stats.searches} "
             f"total_nodes={stats.total_nodes} nodes={nodes} "
             f"sfen={leaf_sfen}\n"
         )
         self.stream.flush()
 
-    def search_finish(self, *, worker_id: int, entries: int, leaf_sfen: str, stats: RunStats) -> None:
+    def search_finish(
+        self,
+        *,
+        worker_id: int,
+        entries: int,
+        leaf_sfen: str,
+        depth: int,
+        stats: RunStats,
+    ) -> None:
         """1 回の leaf 探索完了を出力する。"""
         self.stream.write(
-            f"[search-finish] worker={worker_id} entries={entries} searches={stats.searches} "
+            f"[search-finish] worker={worker_id} depth={depth} entries={entries} searches={stats.searches} "
             f"added_positions={stats.added_positions} total_nodes={stats.total_nodes} "
             f"sfen={leaf_sfen}\n"
         )
@@ -946,6 +962,7 @@ def worker_loop(
                 progress.search_start(
                     worker_id=worker_id,
                     leaf_sfen=leaf_sfen,
+                    depth=len(path.steps),
                     nodes=nodes,
                     stats=stats,
                 )
@@ -974,6 +991,7 @@ def worker_loop(
                     worker_id=worker_id,
                     entries=len(results),
                     leaf_sfen=leaf_sfen,
+                    depth=len(path.steps),
                     stats=stats,
                 )
                 progress.maybe_progress(stats)
