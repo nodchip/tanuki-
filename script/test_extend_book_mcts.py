@@ -15,6 +15,7 @@ from extend_book_mcts import (
     LeafPath,
     OpeningBook,
     PathStep,
+    ProgressReporter,
     RunStats,
     SearchResult,
     StopLimits,
@@ -271,6 +272,27 @@ class ExtendBookMctsTest(unittest.TestCase):
         self.assertFalse(limits.can_start_search(RunStats(start_time=100.0, searches=1), nodes=1))
         self.assertFalse(limits.can_start_search(RunStats(start_time=100.0, total_nodes=100), nodes=1))
         self.assertFalse(limits.can_start_search(RunStats(start_time=100.0, total_nodes=50), nodes=51))
+
+    def test_stop_limits_reports_stop_reason(self) -> None:
+        limits = StopLimits(max_searches=2, max_total_nodes=100)
+
+        self.assertEqual(limits.stop_reason(RunStats(start_time=100.0, searches=2), now=101.0), "max-searches")
+        self.assertEqual(limits.stop_reason(RunStats(start_time=100.0, total_nodes=100), now=101.0), "max-total-nodes")
+        self.assertIsNone(limits.stop_reason(RunStats(start_time=100.0), now=101.0))
+
+    def test_progress_reporter_emits_progress_save_and_stop_lines(self) -> None:
+        stream = io.StringIO()
+        stats = RunStats(start_time=100.0, added_positions=3, searches=5, total_nodes=5000)
+        reporter = ProgressReporter(stream, interval_sec=10.0)
+
+        reporter.maybe_progress(stats, now=111.0)
+        reporter.save(pathlib.Path("out.db"), stats, now=112.0)
+        reporter.stop("max-searches", stats, now=113.0)
+
+        text = stream.getvalue()
+        self.assertIn("[progress] elapsed=00:00:11 searches=5 added_positions=3 total_nodes=5000 nps_est=454.5", text)
+        self.assertIn("[save] elapsed=00:00:12 output=out.db searches=5 added_positions=3 total_nodes=5000", text)
+        self.assertIn("[stop] elapsed=00:00:13 reason=max-searches searches=5 added_positions=3 total_nodes=5000", text)
 
     def test_usi_engine_initializes_hash_option_with_hash_when_usi_hash_is_unavailable(self) -> None:
         engine = UsiEngine(

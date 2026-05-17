@@ -97,16 +97,20 @@ class StopLimits:
 
     def should_stop(self, stats: RunStats, *, now: Optional[float] = None) -> bool:
         """いずれかの停止条件に達していれば True を返す。"""
+        return self.stop_reason(stats, now=now) is not None
+
+    def stop_reason(self, stats: RunStats, *, now: Optional[float] = None) -> Optional[str]:
+        """到達済みの停止理由を返す。未到達なら None を返す。"""
         current_time = time.monotonic() if now is None else now
         if self.max_added_positions is not None and stats.added_positions >= self.max_added_positions:
-            return True
+            return "max-added-positions"
         if self.max_searches is not None and stats.searches >= self.max_searches:
-            return True
+            return "max-searches"
         if self.max_total_nodes is not None and stats.total_nodes >= self.max_total_nodes:
-            return True
+            return "max-total-nodes"
         if self.max_runtime_sec is not None and current_time - stats.start_time >= self.max_runtime_sec:
-            return True
-        return False
+            return "max-runtime-sec"
+        return None
 
     def can_start_search(self, stats: RunStats, *, nodes: int) -> bool:
         """次の探索を開始しても思考回数・総ノード数の上限を超えないかを返す。"""
@@ -115,6 +119,80 @@ class StopLimits:
         if self.max_total_nodes is not None and stats.total_nodes + nodes > self.max_total_nodes:
             return False
         return True
+
+
+class ProgressReporter:
+    """進捗、保存、停止理由を stderr などへ一定間隔で出力する。"""
+
+    def __init__(self, stream: TextIO, *, interval_sec: float) -> None:
+        self.stream = stream
+        self.interval_sec = max(0.0, interval_sec)
+        self._last_progress_time: Optional[float] = None
+
+    def maybe_progress(self, stats: RunStats, *, now: Optional[float] = None) -> None:
+        """interval_sec 経過時に集計進捗を出力する。"""
+        current_time = time.monotonic() if now is None else now
+        if self._last_progress_time is not None:
+            if self.interval_sec <= 0.0 or current_time - self._last_progress_time < self.interval_sec:
+                return
+        self._last_progress_time = current_time
+        self._emit("[progress]", stats, now=current_time)
+
+    def searched(self, *, entries: int, leaf_sfen: str, stats: RunStats) -> None:
+        """1 回の leaf 探索完了を出力する。"""
+        self.stream.write(
+            f"searched leaf entries={entries} searches={stats.searches} "
+            f"added_positions={stats.added_positions} total_nodes={stats.total_nodes} "
+            f"sfen={leaf_sfen}\n"
+        )
+        self.stream.flush()
+
+    def save(self, path: pathlib.Path, stats: RunStats, *, now: Optional[float] = None) -> None:
+        """保存完了を出力する。"""
+        current_time = time.monotonic() if now is None else now
+        self._emit("[save]", stats, now=current_time, extra=f"output={path}")
+
+    def stop(self, reason: str, stats: RunStats, *, now: Optional[float] = None) -> None:
+        """停止理由を出力する。"""
+        current_time = time.monotonic() if now is None else now
+        self._emit("[stop]", stats, now=current_time, extra=f"reason={reason}")
+
+    def _emit(
+        self,
+        prefix: str,
+        stats: RunStats,
+        *,
+        now: float,
+        extra: str = "",
+    ) -> None:
+        elapsed_sec = max(0.0, now - stats.start_time)
+        nps = stats.total_nodes / elapsed_sec if elapsed_sec > 0 else 0.0
+        parts = [
+            prefix,
+            f"elapsed={format_elapsed(elapsed_sec)}",
+        ]
+        if extra:
+            parts.append(extra)
+        parts.extend(
+            [
+                f"searches={stats.searches}",
+                f"added_positions={stats.added_positions}",
+                f"total_nodes={stats.total_nodes}",
+            ]
+        )
+        if prefix == "[progress]":
+            parts.append(f"nps_est={nps:.1f}")
+        self.stream.write(" ".join(parts) + "\n")
+        self.stream.flush()
+
+
+def format_elapsed(elapsed_sec: float) -> str:
+    """秒数を HH:MM:SS 形式に整形する。"""
+    total = int(elapsed_sec)
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    seconds = total % 60
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
 class OpeningBook:
@@ -640,7 +718,7 @@ def worker_loop(
     stats: RunStats,
     stop_limits: StopLimits,
     stop_event: threading.Event,
-    progress_stream: TextIO,
+    progress: ProgressReporter,
 ) -> None:
     """1 エンジン専有スレッドで leaf 選択と探索を繰り返す。"""
     while not stop_event.is_set():
@@ -684,12 +762,8 @@ def worker_loop(
                     stats.added_positions += 1
                 if stop_limits.should_stop(stats):
                     stop_event.set()
-                progress_stream.write(
-                    f"searched leaf entries={len(results)} searches={stats.searches} "
-                    f"added_positions={stats.added_positions} total_nodes={stats.total_nodes} "
-                    f"sfen={leaf_sfen}\n"
-                )
-                progress_stream.flush()
+                progress.searched(entries=len(results), leaf_sfen=leaf_sfen, stats=stats)
+                progress.maybe_progress(stats)
         finally:
             with book_lock:
                 inflight.discard(leaf_sfen)
@@ -703,6 +777,7 @@ def run_extend_loop(args: argparse.Namespace, progress_stream: TextIO = sys.stde
     inflight: Set[str] = set()
     stop_event = threading.Event()
     stats = RunStats(start_time=time.monotonic())
+    progress = ProgressReporter(progress_stream, interval_sec=args.progress_interval_sec)
     stop_limits = StopLimits(
         max_added_positions=args.max_added_positions,
         max_searches=args.max_searches,
@@ -743,7 +818,7 @@ def run_extend_loop(args: argparse.Namespace, progress_stream: TextIO = sys.stde
                     "stats": stats,
                     "stop_limits": stop_limits,
                     "stop_event": stop_event,
-                    "progress_stream": progress_stream,
+                    "progress": progress,
                 },
                 daemon=True,
             )
@@ -754,21 +829,28 @@ def run_extend_loop(args: argparse.Namespace, progress_stream: TextIO = sys.stde
         while not stop_event.is_set():
             time.sleep(0.2)
             with book_lock:
-                if stop_limits.should_stop(stats):
+                reason = stop_limits.stop_reason(stats)
+                if reason is not None:
                     stop_event.set()
                     break
+                progress.maybe_progress(stats)
             if time.monotonic() >= next_save:
                 with book_lock:
                     book.write_atomic(args.output, args.backup_count)
+                    progress.save(args.output, stats)
                 next_save = time.monotonic() + args.save_interval_sec
     except KeyboardInterrupt:
-        progress_stream.write("Ctrl+C を受け取ったため保存して終了します。\n")
+        with book_lock:
+            progress.stop("keyboard-interrupt", stats)
     finally:
         stop_event.set()
         for thread in threads:
             thread.join(timeout=1)
         with book_lock:
             book.write_atomic(args.output, args.backup_count)
+            final_reason = stop_limits.stop_reason(stats) or "finished"
+            progress.save(args.output, stats)
+            progress.stop(final_reason, stats)
         for engine in engines:
             engine.close()
 
@@ -791,6 +873,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--book-side", choices=["black", "white"], default="black")
     parser.add_argument("--max-ply", type=int, default=200)
     parser.add_argument("--save-interval-sec", type=float, default=300.0)
+    parser.add_argument("--progress-interval-sec", type=float, default=10.0)
     parser.add_argument("--backup-count", type=int, default=3)
     parser.add_argument("--root-sfen", default=initial_sfen())
     parser.add_argument("--max-added-positions", type=int, default=None)
@@ -829,6 +912,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         parser.error("--max-total-nodes は 1 以上を指定してください")
     if args.max_runtime_sec is not None and args.max_runtime_sec <= 0:
         parser.error("--max-runtime-sec は正の値を指定してください")
+    if args.progress_interval_sec < 0:
+        parser.error("--progress-interval-sec は 0 以上を指定してください")
     run_extend_loop(args)
     return 0
 

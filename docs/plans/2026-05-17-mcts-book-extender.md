@@ -134,6 +134,28 @@ Run: `python -m unittest script.test_extend_book_mcts -v`
 
 Run: `python -m unittest script.test_extend_book_mcts -v`
 
+### Task 4.6: Progress Reporting
+
+**Files:**
+- Modify: `script/test_extend_book_mcts.py`
+- Modify: `script/extend_book_mcts.py`
+
+**Step 1: Write failing tests**
+
+一定間隔の `[progress]`、保存時の `[save]`、停止時の `[stop]` が、経過時間・総思考回数・追加局面数・総ノード数を含んで出力されることを検証する。
+
+**Step 2: Run test to verify it fails**
+
+Run: `python -m unittest script.test_extend_book_mcts -v`
+
+**Step 3: Implement progress reporter**
+
+`ProgressReporter` と `--progress-interval-sec` を追加し、探索完了、定期保存、終了処理へ接続する。
+
+**Step 4: Run test to verify it passes**
+
+Run: `python -m unittest script.test_extend_book_mcts -v`
+
 **Step 3: Implement stop limits**
 
 `RunStats` と `StopLimits` を追加し、`--max-added-positions`, `--max-searches`, `--max-total-nodes`, `--max-runtime-sec` を CLI に接続する。
