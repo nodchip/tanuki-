@@ -16,6 +16,7 @@ from extend_book_mcts import (
     OpeningBook,
     PathStep,
     ProgressReporter,
+    RandomChoice,
     RunStats,
     SearchResult,
     StopLimits,
@@ -190,6 +191,38 @@ class ExtendBookMctsTest(unittest.TestCase):
 
         self.assertEqual(path.steps[0].entry.move, "best")
         self.assertEqual(path.leaf_sfen, "good")
+
+    def test_select_leaf_path_randomly_chooses_among_tied_bestmoves_on_book_side(self) -> None:
+        book = OpeningBook()
+        book.positions["root"] = BookPosition(
+            "root",
+            [
+                BookEntry("first", "none", 100, 1, 1, 0),
+                BookEntry("second", "none", 100, 1, 1, 1),
+                BookEntry("third", "none", 90, 1, 1, 2),
+            ],
+            0,
+        )
+        navigator = {"root:first": "first-child", "root:second": "second-child"}
+        chooser = RandomChoice(seed=0)
+
+        path = select_leaf_path(
+            book,
+            "root",
+            navigator=lambda sfen, move: navigator[f"{sfen}:{move}"],
+            multipv=2,
+            c_puct=1.4,
+            eval_scale=600.0,
+            inflight=set(),
+            book_side="black",
+            turn_provider=lambda sfen: "black",
+            root_best_eval=100,
+            eval_diff=50,
+            random_choice=chooser,
+        )
+
+        self.assertIn(path.steps[0].entry.move, {"first", "second"})
+        self.assertNotEqual(path.steps[0].entry.move, "third")
 
     def test_select_leaf_path_keeps_non_book_side_moves_above_root_threshold(self) -> None:
         book = OpeningBook()

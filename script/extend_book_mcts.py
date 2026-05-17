@@ -5,6 +5,7 @@ import dataclasses
 import math
 import os
 import pathlib
+import random
 import shutil
 import subprocess
 import sys
@@ -218,6 +219,19 @@ def format_elapsed(elapsed_sec: float) -> str:
     minutes = (total % 3600) // 60
     seconds = total % 60
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+class RandomChoice:
+    """同点候補のランダム選択を管理する。"""
+
+    def __init__(self, seed: Optional[int] = None) -> None:
+        self._random = random.Random(seed)
+
+    def choose(self, entries: Sequence[BookEntry]) -> BookEntry:
+        """候補から 1 つをランダムに選ぶ。"""
+        if not entries:
+            raise ValueError("entries must not be empty")
+        return self._random.choice(list(entries))
 
 
 class OpeningBook:
@@ -445,6 +459,7 @@ def select_leaf_path(
     turn_provider: Optional[Callable[[str], str]] = None,
     root_best_eval: Optional[int] = None,
     eval_diff: Optional[int] = None,
+    random_choice: Optional[RandomChoice] = None,
 ) -> LeafPath:
     """登録済み定跡手だけを UCB でたどり、leaf 局面を返す。"""
     steps: List[PathStep] = []
@@ -469,6 +484,7 @@ def select_leaf_path(
             turn_provider=turn_provider,
             root_best_eval=root_best_eval,
             eval_diff=eval_diff,
+            random_choice=random_choice,
         )
         for entry in filtered_entries:
             child_sfen = navigator(sfen, entry.move)
@@ -504,6 +520,7 @@ def reserve_leaf_path(
     turn_provider: Optional[Callable[[str], str]] = None,
     root_best_eval: Optional[int] = None,
     eval_diff: Optional[int] = None,
+    random_choice: Optional[RandomChoice] = None,
 ) -> Optional[LeafPath]:
     """leaf を選択して inflight に予約する。予約済み leaf なら None を返す。"""
     path = select_available_leaf_path(
@@ -519,6 +536,7 @@ def reserve_leaf_path(
         turn_provider=turn_provider,
         root_best_eval=root_best_eval,
         eval_diff=eval_diff,
+        random_choice=random_choice,
     )
     if path is None:
         return None
@@ -543,6 +561,7 @@ def select_available_leaf_path(
     turn_provider: Optional[Callable[[str], str]],
     root_best_eval: Optional[int],
     eval_diff: Optional[int],
+    random_choice: Optional[RandomChoice],
 ) -> Optional[LeafPath]:
     """予約済み leaf を避け、次善候補へバックトラックして leaf を選ぶ。"""
     return _select_available_leaf_path(
@@ -558,6 +577,7 @@ def select_available_leaf_path(
         turn_provider=turn_provider,
         root_best_eval=root_best_eval,
         eval_diff=eval_diff,
+        random_choice=random_choice,
         depth=0,
         visited=set(),
     )
@@ -577,6 +597,7 @@ def _select_available_leaf_path(
     turn_provider: Optional[Callable[[str], str]],
     root_best_eval: Optional[int],
     eval_diff: Optional[int],
+    random_choice: Optional[RandomChoice],
     depth: int,
     visited: Set[str],
 ) -> Optional[LeafPath]:
@@ -598,6 +619,7 @@ def _select_available_leaf_path(
         turn_provider=turn_provider,
         root_best_eval=root_best_eval,
         eval_diff=eval_diff,
+        random_choice=random_choice,
     )
     candidates: List[Tuple[float, BookEntry, str]] = []
     for entry in filtered_entries:
@@ -628,6 +650,7 @@ def _select_available_leaf_path(
             turn_provider=turn_provider,
             root_best_eval=root_best_eval,
             eval_diff=eval_diff,
+            random_choice=random_choice,
             depth=depth + 1,
             visited=next_visited,
         )
@@ -647,6 +670,7 @@ def filter_entries_for_peta_rule(
     turn_provider: Optional[Callable[[str], str]],
     root_best_eval: Optional[int],
     eval_diff: Optional[int],
+    random_choice: Optional[RandomChoice] = None,
 ) -> List[BookEntry]:
     """PetaNext 由来の root 評価値基準で UCB 候補を絞る。"""
     if eval_diff is None:
@@ -660,7 +684,8 @@ def filter_entries_for_peta_rule(
     if turn == book_side:
         best_eval = max(entry.eval_cp for entry in entries)
         best_entries = [entry for entry in entries if entry.eval_cp == best_eval]
-        return [min(best_entries, key=lambda entry: entry.order_index)]
+        chooser = random_choice or RandomChoice()
+        return [chooser.choose(best_entries)]
 
     threshold = root_best_eval - eval_diff
     return [entry for entry in entries if entry.eval_cp >= threshold]
@@ -923,6 +948,7 @@ def worker_loop(
     book_side: Optional[str],
     root_eval: Optional[int],
     eval_diff: Optional[int],
+    random_choice: RandomChoice,
     book_lock: threading.Lock,
     inflight: Set[str],
     stats: RunStats,
@@ -950,6 +976,7 @@ def worker_loop(
                 turn_provider=sfen_turn,
                 root_best_eval=root_eval,
                 eval_diff=eval_diff,
+                random_choice=random_choice,
             )
             if path is None:
                 leaf_key = None
@@ -1009,6 +1036,7 @@ def run_extend_loop(args: argparse.Namespace, progress_stream: TextIO = sys.stde
     stop_event = threading.Event()
     stats = RunStats(start_time=time.monotonic())
     progress = ProgressReporter(progress_stream, interval_sec=args.progress_interval_sec)
+    random_choice = RandomChoice(args.random_seed)
     stop_limits = StopLimits(
         max_added_positions=args.max_added_positions,
         max_searches=args.max_searches,
@@ -1047,6 +1075,7 @@ def run_extend_loop(args: argparse.Namespace, progress_stream: TextIO = sys.stde
                     "book_side": args.book_side if args.eval_diff is not None else None,
                     "root_eval": root_eval,
                     "eval_diff": args.eval_diff,
+                    "random_choice": random_choice,
                     "book_lock": book_lock,
                     "inflight": inflight,
                     "stats": stats,
@@ -1111,6 +1140,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--backup-count", type=int, default=3)
     parser.add_argument("--root-sfen", default=initial_sfen())
     parser.add_argument("--ignore-ply", action="store_true")
+    parser.add_argument("--random-seed", type=int, default=None)
     parser.add_argument("--max-added-positions", type=int, default=None)
     parser.add_argument("--max-searches", type=int, default=None)
     parser.add_argument("--max-total-nodes", type=int, default=None)
