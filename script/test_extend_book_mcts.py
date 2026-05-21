@@ -4,10 +4,14 @@ import io
 import pathlib
 import sys
 import tempfile
+import threading
 import textwrap
+import time
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+import extend_book_mcts
 
 from extend_book_mcts import (
     BookEntry,
@@ -22,12 +26,13 @@ from extend_book_mcts import (
     StopLimits,
     UsiEngine,
     calculate_ucb,
-    reserve_leaf_path,
     merge_search_results,
     parse_info_line,
     propagate_minimax,
+    reserve_leaf_path,
     score_to_winrate,
     select_leaf_path,
+    worker_loop,
 )
 
 
@@ -362,6 +367,64 @@ class ExtendBookMctsTest(unittest.TestCase):
         propagate_minimax(book, path, leaf_sfen="child")
 
         self.assertEqual(book.positions["root"].entries[0].eval_cp, -40)
+
+    def test_worker_recalculates_root_eval_before_each_leaf_reservation(self) -> None:
+        book = OpeningBook()
+        book.positions["root"] = BookPosition(
+            "root",
+            [
+                BookEntry("a", "none", 100, 1, 0, 0),
+                BookEntry("b", "none", 80, 1, 0, 1),
+            ],
+            0,
+        )
+        navigator = {
+            "root:a": "child-a",
+            "root:b": "child-b",
+        }
+
+        class FakeEngine:
+            def __init__(self) -> None:
+                self.searched: list[str] = []
+
+            def search(self, sfen: str, nodes: int) -> list[SearchResult]:
+                self.searched.append(sfen)
+                if sfen == "child-a":
+                    return [SearchResult("reply-a", "none", -50, 1)]
+                return [SearchResult("reply-b", "none", 0, 1)]
+
+        original_after_move = extend_book_mcts.sfen_after_move
+        original_turn = extend_book_mcts.sfen_turn
+        try:
+            extend_book_mcts.sfen_after_move = lambda sfen, move: navigator[f"{sfen}:{move}"]  # type: ignore[assignment]
+            extend_book_mcts.sfen_turn = lambda sfen: "white"  # type: ignore[assignment]
+            engine = FakeEngine()
+
+            worker_loop(
+                worker_id=0,
+                engine=engine,  # type: ignore[arg-type]
+                book=book,
+                root_sfen="root",
+                nodes=1,
+                multipv=1,
+                c_puct=1.4,
+                eval_scale=600.0,
+                max_ply=1,
+                book_side="black",
+                eval_diff=10,
+                random_choice=RandomChoice(seed=0),
+                book_lock=threading.Lock(),
+                inflight=set(),
+                stats=RunStats(start_time=time.monotonic()),
+                stop_limits=StopLimits(max_searches=2, max_runtime_sec=0.2),
+                stop_event=threading.Event(),
+                progress=ProgressReporter(io.StringIO(), interval_sec=10.0),
+            )
+        finally:
+            extend_book_mcts.sfen_after_move = original_after_move  # type: ignore[assignment]
+            extend_book_mcts.sfen_turn = original_turn  # type: ignore[assignment]
+
+        self.assertEqual(engine.searched, ["child-a", "child-b"])
 
     def test_parse_info_line_extracts_multipv_result(self) -> None:
         parsed = parse_info_line("info depth 12 score cp -99 multipv 2 pv 2g2f 8c8d 2f2e")

@@ -946,7 +946,6 @@ def worker_loop(
     eval_scale: float,
     max_ply: int,
     book_side: Optional[str],
-    root_eval: Optional[int],
     eval_diff: Optional[int],
     random_choice: RandomChoice,
     book_lock: threading.Lock,
@@ -963,6 +962,7 @@ def worker_loop(
             if stop_limits.should_stop(stats) or not stop_limits.can_start_search(stats, nodes=nodes):
                 stop_event.set()
                 return
+            current_root_eval = root_best_eval(book, root_sfen)
             path = reserve_leaf_path(
                 book,
                 root_sfen,
@@ -974,7 +974,7 @@ def worker_loop(
                 max_ply=max_ply,
                 book_side=book_side,
                 turn_provider=sfen_turn,
-                root_best_eval=root_eval,
+                root_best_eval=current_root_eval,
                 eval_diff=eval_diff,
                 random_choice=random_choice,
             )
@@ -1030,7 +1030,6 @@ def worker_loop(
 def run_extend_loop(args: argparse.Namespace, progress_stream: TextIO = sys.stderr) -> None:
     """CLI 引数に従ってエンジンを起動し、Ctrl+C まで定跡拡張を続ける。"""
     book = OpeningBook.load(args.input, ignore_ply=args.ignore_ply)
-    root_eval = root_best_eval(book, args.root_sfen)
     book_lock = threading.Lock()
     inflight: Set[str] = set()
     stop_event = threading.Event()
@@ -1073,7 +1072,6 @@ def run_extend_loop(args: argparse.Namespace, progress_stream: TextIO = sys.stde
                     "eval_scale": args.eval_scale,
                     "max_ply": args.max_ply,
                     "book_side": args.book_side if args.eval_diff is not None else None,
-                    "root_eval": root_eval,
                     "eval_diff": args.eval_diff,
                     "random_choice": random_choice,
                     "book_lock": book_lock,
