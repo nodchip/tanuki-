@@ -284,6 +284,32 @@ class ExtendBookMctsTest(unittest.TestCase):
         self.assertEqual(path.steps, [])
         self.assertEqual(path.leaf_sfen, "root")
 
+    def test_select_leaf_path_continues_when_entries_reach_legal_move_count_below_multipv(self) -> None:
+        book = OpeningBook()
+        book.positions["root"] = BookPosition(
+            "root",
+            [
+                BookEntry("a", "none", 100, 1, 1, 0),
+                BookEntry("b", "none", 90, 1, 1, 1),
+            ],
+            0,
+        )
+        navigator = {"root:a": "child", "root:b": "other"}
+
+        path = select_leaf_path(
+            book,
+            "root",
+            navigator=lambda sfen, move: navigator[f"{sfen}:{move}"],
+            multipv=4,
+            c_puct=1.4,
+            eval_scale=600.0,
+            inflight=set(),
+            legal_move_count_provider=lambda sfen: 2,
+        )
+
+        self.assertEqual([(step.sfen, step.entry.move) for step in path.steps], [("root", "a")])
+        self.assertEqual(path.leaf_sfen, "child")
+
     def test_reserve_leaf_path_returns_none_when_leaf_is_already_inflight(self) -> None:
         book = OpeningBook()
         book.positions["root"] = BookPosition(
@@ -395,9 +421,11 @@ class ExtendBookMctsTest(unittest.TestCase):
 
         original_after_move = extend_book_mcts.sfen_after_move
         original_turn = extend_book_mcts.sfen_turn
+        original_count_legal_moves = extend_book_mcts.count_legal_moves
         try:
             extend_book_mcts.sfen_after_move = lambda sfen, move: navigator[f"{sfen}:{move}"]  # type: ignore[assignment]
             extend_book_mcts.sfen_turn = lambda sfen: "white"  # type: ignore[assignment]
+            extend_book_mcts.count_legal_moves = lambda sfen: 2  # type: ignore[assignment]
             engine = FakeEngine()
 
             worker_loop(
@@ -423,6 +451,7 @@ class ExtendBookMctsTest(unittest.TestCase):
         finally:
             extend_book_mcts.sfen_after_move = original_after_move  # type: ignore[assignment]
             extend_book_mcts.sfen_turn = original_turn  # type: ignore[assignment]
+            extend_book_mcts.count_legal_moves = original_count_legal_moves  # type: ignore[assignment]
 
         self.assertEqual(engine.searched, ["child-a", "child-b"])
 

@@ -460,6 +460,7 @@ def select_leaf_path(
     root_best_eval: Optional[int] = None,
     eval_diff: Optional[int] = None,
     random_choice: Optional[RandomChoice] = None,
+    legal_move_count_provider: Optional[Callable[[str], int]] = None,
 ) -> LeafPath:
     """登録済み定跡手だけを UCB でたどり、leaf 局面を返す。"""
     steps: List[PathStep] = []
@@ -469,7 +470,13 @@ def select_leaf_path(
         if max_ply is not None and len(steps) >= max_ply:
             return LeafPath(steps=steps, leaf_sfen=sfen)
         position = book.positions.get(sfen)
-        if position is None or len(position.entries) < multipv or not position.entries:
+        if position is None or not position.entries:
+            return LeafPath(steps=steps, leaf_sfen=sfen)
+        if len(position.entries) < required_book_entry_count(
+            sfen,
+            multipv,
+            legal_move_count_provider=legal_move_count_provider,
+        ):
             return LeafPath(steps=steps, leaf_sfen=sfen)
         if sfen in visited:
             return LeafPath(steps=steps, leaf_sfen=sfen)
@@ -521,6 +528,7 @@ def reserve_leaf_path(
     root_best_eval: Optional[int] = None,
     eval_diff: Optional[int] = None,
     random_choice: Optional[RandomChoice] = None,
+    legal_move_count_provider: Optional[Callable[[str], int]] = None,
 ) -> Optional[LeafPath]:
     """leaf を選択して inflight に予約する。予約済み leaf なら None を返す。"""
     path = select_available_leaf_path(
@@ -537,6 +545,7 @@ def reserve_leaf_path(
         root_best_eval=root_best_eval,
         eval_diff=eval_diff,
         random_choice=random_choice,
+        legal_move_count_provider=legal_move_count_provider,
     )
     if path is None:
         return None
@@ -562,6 +571,7 @@ def select_available_leaf_path(
     root_best_eval: Optional[int],
     eval_diff: Optional[int],
     random_choice: Optional[RandomChoice],
+    legal_move_count_provider: Optional[Callable[[str], int]],
 ) -> Optional[LeafPath]:
     """予約済み leaf を避け、次善候補へバックトラックして leaf を選ぶ。"""
     return _select_available_leaf_path(
@@ -578,6 +588,7 @@ def select_available_leaf_path(
         root_best_eval=root_best_eval,
         eval_diff=eval_diff,
         random_choice=random_choice,
+        legal_move_count_provider=legal_move_count_provider,
         depth=0,
         visited=set(),
     )
@@ -598,6 +609,7 @@ def _select_available_leaf_path(
     root_best_eval: Optional[int],
     eval_diff: Optional[int],
     random_choice: Optional[RandomChoice],
+    legal_move_count_provider: Optional[Callable[[str], int]],
     depth: int,
     visited: Set[str],
 ) -> Optional[LeafPath]:
@@ -606,7 +618,13 @@ def _select_available_leaf_path(
         return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
 
     position = book.positions.get(sfen)
-    if position is None or len(position.entries) < multipv or not position.entries:
+    if position is None or not position.entries:
+        return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
+    if len(position.entries) < required_book_entry_count(
+        sfen,
+        multipv,
+        legal_move_count_provider=legal_move_count_provider,
+    ):
         return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
     if sfen in visited:
         return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
@@ -651,6 +669,7 @@ def _select_available_leaf_path(
             root_best_eval=root_best_eval,
             eval_diff=eval_diff,
             random_choice=random_choice,
+            legal_move_count_provider=legal_move_count_provider,
             depth=depth + 1,
             visited=next_visited,
         )
@@ -660,6 +679,21 @@ def _select_available_leaf_path(
                 leaf_sfen=child_path.leaf_sfen,
             )
     return None
+
+
+def required_book_entry_count(
+    sfen: str,
+    multipv: int,
+    *,
+    legal_move_count_provider: Optional[Callable[[str], int]],
+) -> int:
+    """leaf 判定で必要な登録手数を合法手数で頭打ちする。"""
+    if legal_move_count_provider is None:
+        return multipv
+    legal_move_count = legal_move_count_provider(sfen)
+    if legal_move_count < 0:
+        raise ValueError(f"合法手数が負です: {legal_move_count}")
+    return min(multipv, legal_move_count)
 
 
 def filter_entries_for_peta_rule(
@@ -777,6 +811,16 @@ def sfen_after_move(sfen: str, move: str) -> str:
         board.set_sfen(sfen)
     board.push_usi(move)
     return board.sfen()
+
+
+def count_legal_moves(sfen: str) -> int:
+    """cshogi を使って局面の合法手数を返す。"""
+    if cshogi is None:
+        raise RuntimeError("cshogi がインストールされていません")
+    board = cshogi.Board()
+    if sfen != "startpos":
+        board.set_sfen(sfen)
+    return len(list(board.legal_moves))
 
 
 def sfen_turn(sfen: str) -> str:
@@ -977,6 +1021,7 @@ def worker_loop(
                 root_best_eval=current_root_eval,
                 eval_diff=eval_diff,
                 random_choice=random_choice,
+                legal_move_count_provider=count_legal_moves,
             )
             if path is None:
                 leaf_key = None
