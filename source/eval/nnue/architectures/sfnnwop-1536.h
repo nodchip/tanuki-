@@ -30,7 +30,7 @@ constexpr int LayerStacks = 8;
 
 // 各層の次元数
 constexpr IndexType kInputDims   = kTransformedFeatureDimensions;
-constexpr IndexType kHidden1Dims = 15;
+constexpr IndexType kHidden1Dims = 7;
 constexpr IndexType kHidden2Dims = 32;
 
 struct Network {
