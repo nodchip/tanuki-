@@ -16,6 +16,7 @@ import extend_book_mcts
 from extend_book_mcts import (
     BookEntry,
     BookPosition,
+    DiskOpeningBook,
     LeafPath,
     OpeningBook,
     PathStep,
@@ -25,13 +26,18 @@ from extend_book_mcts import (
     SearchResult,
     StopLimits,
     UsiEngine,
+    VulnerabilityTarget,
+    VulnerabilityWorkerTarget,
+    build_vulnerability_worker_targets,
     calculate_ucb,
     merge_search_results,
     parse_info_line,
+    parse_vulnerability_target,
     propagate_minimax,
     reserve_leaf_path,
     score_to_winrate,
     select_leaf_path,
+    select_vulnerability_leaf_path,
     worker_loop,
 )
 
@@ -103,6 +109,66 @@ class ExtendBookMctsTest(unittest.TestCase):
                 """
             ),
         )
+
+    def test_disk_opening_book_finds_position_by_binary_search(self) -> None:
+        text = textwrap.dedent(
+            """\
+            #YANEURAOU-DB2016 1.00
+            sfen aaa b - 0
+            first none 1 2 3
+            sfen target w P 0
+            good none 100 4 5
+            bad none 20 6 7
+            sfen zzz b - 0
+            last none -1 0 0
+            """
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = pathlib.Path(tmpdir) / "target.db"
+            path.write_text(text, encoding="utf-8")
+
+            entries = DiskOpeningBook(path).lookup("target w P 0")
+
+        self.assertEqual(
+            entries,
+            [
+                BookEntry("good", "none", 100, 4, 5, 0),
+                BookEntry("bad", "none", 20, 6, 7, 1),
+            ],
+        )
+
+    def test_disk_opening_book_returns_empty_for_missing_position(self) -> None:
+        text = textwrap.dedent(
+            """\
+            #YANEURAOU-DB2016 1.00
+            sfen aaa b - 0
+            first none 1 2 3
+            sfen zzz b - 0
+            last none -1 0 0
+            """
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = pathlib.Path(tmpdir) / "target.db"
+            path.write_text(text, encoding="utf-8")
+
+            entries = DiskOpeningBook(path).lookup("target w P 0")
+
+        self.assertEqual(entries, [])
+
+    def test_parse_vulnerability_target_accepts_windows_path_with_side_suffix(self) -> None:
+        target = parse_vulnerability_target(r"D:\book\target.db:white")
+
+        self.assertEqual(target.path, pathlib.Path(r"D:\book\target.db"))
+        self.assertEqual(target.side, "white")
+
+    def test_build_vulnerability_worker_targets_preserves_order(self) -> None:
+        targets = build_vulnerability_worker_targets(
+            [r"D:\book\a.db:black", r"D:\book\b.db:white"],
+            ignore_ply=True,
+        )
+
+        self.assertEqual([target.target.side for target in targets], ["black", "white"])
+        self.assertTrue(all(target.book.ignore_ply for target in targets))
 
     def test_ucb_accepts_zero_initial_visits_without_special_priority(self) -> None:
         first = calculate_ucb(eval_cp=0, child_visits=0, parent_visits=0, c_puct=1.4, eval_scale=600.0)
@@ -310,6 +376,118 @@ class ExtendBookMctsTest(unittest.TestCase):
         self.assertEqual([(step.sfen, step.entry.move) for step in path.steps], [("root", "a")])
         self.assertEqual(path.leaf_sfen, "child")
 
+    def test_select_vulnerability_leaf_path_forces_target_book_bestmove(self) -> None:
+        book = OpeningBook()
+        target_entries = [
+            BookEntry("low", "none", 10, 1, 8, 0),
+            BookEntry("best", "reply", 100, 7, 9, 1),
+        ]
+
+        class TargetBook:
+            def lookup(self, sfen: str) -> list[BookEntry]:
+                return target_entries if sfen == "root" else []
+
+        path = select_vulnerability_leaf_path(
+            book,
+            "root",
+            navigator=lambda sfen, move: {"root:best": "child"}[f"{sfen}:{move}"],
+            multipv=4,
+            c_puct=1.4,
+            eval_scale=600.0,
+            inflight=set(),
+            max_ply=10,
+            target_book=TargetBook(),  # type: ignore[arg-type]
+            target_side="black",
+            turn_provider=lambda sfen: "black",
+            root_best_eval=None,
+            eval_diff=None,
+            random_choice=RandomChoice(seed=0),
+            legal_move_count_provider=lambda sfen: 30,
+        )
+
+        self.assertEqual([(step.sfen, step.entry.move) for step in path.steps], [("root", "best")])
+        self.assertEqual(path.leaf_sfen, "child")
+        self.assertEqual(
+            book.positions["root"].entries,
+            [BookEntry("best", "reply", 100, 7, 0, 0)],
+        )
+
+    def test_select_vulnerability_leaf_path_falls_back_to_local_bestmove_on_target_side(self) -> None:
+        book = OpeningBook()
+        book.positions["root"] = BookPosition(
+            "root",
+            [
+                BookEntry("low-high-ucb", "none", 10, 1, 0, 0),
+                BookEntry("best", "none", 100, 1, 100, 1),
+            ],
+            0,
+        )
+
+        class EmptyTargetBook:
+            def lookup(self, sfen: str) -> list[BookEntry]:
+                return []
+
+        path = select_vulnerability_leaf_path(
+            book,
+            "root",
+            navigator=lambda sfen, move: {"root:low-high-ucb": "bad", "root:best": "good"}[f"{sfen}:{move}"],
+            multipv=2,
+            c_puct=1.4,
+            eval_scale=600.0,
+            inflight=set(),
+            max_ply=10,
+            target_book=EmptyTargetBook(),  # type: ignore[arg-type]
+            target_side="black",
+            turn_provider=lambda sfen: "black",
+            root_best_eval=None,
+            eval_diff=None,
+            random_choice=RandomChoice(seed=0),
+            legal_move_count_provider=lambda sfen: 2,
+        )
+
+        self.assertIsNotNone(path)
+        assert path is not None
+        self.assertEqual([(step.sfen, step.entry.move) for step in path.steps], [("root", "best")])
+        self.assertEqual(path.leaf_sfen, "good")
+
+    def test_select_vulnerability_leaf_path_filters_attack_side_by_root_threshold(self) -> None:
+        book = OpeningBook()
+        book.positions["root"] = BookPosition(
+            "root",
+            [
+                BookEntry("low", "none", 40, 1, 0, 0),
+                BookEntry("kept", "none", 70, 1, 100, 1),
+            ],
+            0,
+        )
+
+        class EmptyTargetBook:
+            def lookup(self, sfen: str) -> list[BookEntry]:
+                return []
+
+        path = select_vulnerability_leaf_path(
+            book,
+            "root",
+            navigator=lambda sfen, move: {"root:low": "low-child", "root:kept": "kept-child"}[f"{sfen}:{move}"],
+            multipv=2,
+            c_puct=1.4,
+            eval_scale=600.0,
+            inflight=set(),
+            max_ply=10,
+            target_book=EmptyTargetBook(),  # type: ignore[arg-type]
+            target_side="black",
+            turn_provider=lambda sfen: "white",
+            root_best_eval=100,
+            eval_diff=50,
+            random_choice=RandomChoice(seed=0),
+            legal_move_count_provider=lambda sfen: 2,
+        )
+
+        self.assertIsNotNone(path)
+        assert path is not None
+        self.assertEqual([(step.sfen, step.entry.move) for step in path.steps], [("root", "kept")])
+        self.assertEqual(path.leaf_sfen, "kept-child")
+
     def test_reserve_leaf_path_returns_none_when_leaf_is_already_inflight(self) -> None:
         book = OpeningBook()
         book.positions["root"] = BookPosition(
@@ -454,6 +632,64 @@ class ExtendBookMctsTest(unittest.TestCase):
             extend_book_mcts.count_legal_moves = original_count_legal_moves  # type: ignore[assignment]
 
         self.assertEqual(engine.searched, ["child-a", "child-b"])
+
+    def test_worker_uses_vulnerability_target_when_assigned(self) -> None:
+        book = OpeningBook()
+
+        class TargetBook:
+            def lookup(self, sfen: str) -> list[BookEntry]:
+                if sfen == "root":
+                    return [BookEntry("target-best", "none", 100, 1, 0, 0)]
+                return []
+
+        class FakeEngine:
+            def __init__(self) -> None:
+                self.searched: list[str] = []
+
+            def search(self, sfen: str, nodes: int) -> list[SearchResult]:
+                self.searched.append(sfen)
+                return [SearchResult("leaf-move", "none", 0, 1)]
+
+        original_after_move = extend_book_mcts.sfen_after_move
+        original_turn = extend_book_mcts.sfen_turn
+        original_count_legal_moves = extend_book_mcts.count_legal_moves
+        try:
+            extend_book_mcts.sfen_after_move = lambda sfen, move: {"root:target-best": "child"}[f"{sfen}:{move}"]  # type: ignore[assignment]
+            extend_book_mcts.sfen_turn = lambda sfen: "black"  # type: ignore[assignment]
+            extend_book_mcts.count_legal_moves = lambda sfen: 30  # type: ignore[assignment]
+            engine = FakeEngine()
+
+            worker_loop(
+                worker_id=0,
+                engine=engine,  # type: ignore[arg-type]
+                book=book,
+                root_sfen="root",
+                nodes=1,
+                multipv=4,
+                c_puct=1.4,
+                eval_scale=600.0,
+                max_ply=10,
+                book_side="black",
+                eval_diff=None,
+                random_choice=RandomChoice(seed=0),
+                book_lock=threading.Lock(),
+                inflight=set(),
+                stats=RunStats(start_time=time.monotonic()),
+                stop_limits=StopLimits(max_searches=1),
+                stop_event=threading.Event(),
+                progress=ProgressReporter(io.StringIO(), interval_sec=10.0),
+                vulnerability_target=VulnerabilityWorkerTarget(
+                    VulnerabilityTarget(pathlib.Path("target.db"), "black"),
+                    TargetBook(),  # type: ignore[arg-type]
+                ),
+            )
+        finally:
+            extend_book_mcts.sfen_after_move = original_after_move  # type: ignore[assignment]
+            extend_book_mcts.sfen_turn = original_turn  # type: ignore[assignment]
+            extend_book_mcts.count_legal_moves = original_count_legal_moves  # type: ignore[assignment]
+
+        self.assertEqual(engine.searched, ["child"])
+        self.assertEqual(book.positions["root"].entries[0].move, "target-best")
 
     def test_parse_info_line_extracts_multipv_result(self) -> None:
         parsed = parse_info_line("info depth 12 score cp -99 multipv 2 pv 2g2f 8c8d 2f2e")

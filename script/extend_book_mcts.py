@@ -122,6 +122,22 @@ class StopLimits:
         return True
 
 
+@dataclasses.dataclass(frozen=True)
+class VulnerabilityTarget:
+    """脆弱性探索対象の定跡 DB と対象側手番を表す。"""
+
+    path: pathlib.Path
+    side: str
+
+
+@dataclasses.dataclass(frozen=True)
+class VulnerabilityWorkerTarget:
+    """worker に割り当てる脆弱性探索対象を保持する。"""
+
+    target: VulnerabilityTarget
+    book: DiskOpeningBook
+
+
 class ProgressReporter:
     """進捗、保存、停止理由を stderr などへ一定間隔で出力する。"""
 
@@ -325,15 +341,7 @@ class OpeningBook:
 
     def _parse_entry_line(self, line: str) -> BookEntry:
         """指し手行を解析し、省略された depth / visits を 0 で補う。"""
-        tokens = line.split()
-        if len(tokens) < 3:
-            raise ValueError(f"指し手行の列数が足りません: {line}")
-        move = tokens[0]
-        response = tokens[1]
-        eval_cp = int(tokens[2])
-        depth = int(tokens[3]) if len(tokens) >= 4 else 0
-        visits = int(tokens[4]) if len(tokens) >= 5 else 0
-        entry = BookEntry(move, response, eval_cp, depth, visits, self._next_entry_order)
+        entry = parse_book_entry_line(line, self._next_entry_order)
         self._next_entry_order += 1
         return entry
 
@@ -350,6 +358,115 @@ class OpeningBook:
         self._next_entry_order += 1
         position.entries.append(entry)
         return entry
+
+    def append_book_entry(self, position: BookPosition, source: BookEntry, *, visits: int = 0) -> BookEntry:
+        """別 DB の指し手エントリを新規エントリとして追加する。"""
+        entry = BookEntry(
+            source.move,
+            source.response,
+            source.eval_cp,
+            source.depth,
+            visits,
+            self._next_entry_order,
+        )
+        self._next_entry_order += 1
+        position.entries.append(entry)
+        return entry
+
+
+class DiskOpeningBook:
+    """ソート済みやねうら王形式 DB を必要局面だけディスクから読む。"""
+
+    def __init__(self, path: pathlib.Path, *, ignore_ply: bool = False) -> None:
+        self.path = pathlib.Path(path)
+        self.ignore_ply = ignore_ply
+
+    def lookup(self, sfen: str) -> List[BookEntry]:
+        """SFEN に一致する指し手一覧を二分探索で返す。"""
+        key = self.position_key(sfen)
+        with self.path.open("rb") as file:
+            offset = self._find_sfen_offset(file, key)
+            if offset is None:
+                return []
+            file.seek(offset)
+            line = self._read_text_line(file)
+            if line is None or not line.startswith("sfen "):
+                return []
+            if self.position_key(line[5:].strip()) != key:
+                return []
+            return self._read_entries(file)
+
+    def position_key(self, sfen: str) -> str:
+        """局面検索に使うキーを返す。"""
+        if not self.ignore_ply:
+            return sfen
+        return strip_sfen_ply(sfen)
+
+    def _find_sfen_offset(self, file: object, key: str) -> Optional[int]:
+        """key 以上の最初の sfen 行の offset を返す。"""
+        file.seek(0, os.SEEK_END)  # type: ignore[attr-defined]
+        low = 0
+        high = file.tell()  # type: ignore[attr-defined]
+        candidate: Optional[int] = None
+        while low < high:
+            mid = (low + high) // 2
+            found = self._seek_next_sfen(file, mid)
+            if found is None:
+                high = mid
+                continue
+            offset, line = found
+            current_key = self.position_key(line[5:].strip())
+            if current_key < key:
+                low = file.tell()  # type: ignore[attr-defined]
+            else:
+                candidate = offset
+                high = mid
+        return candidate
+
+    def _seek_next_sfen(self, file: object, offset: int) -> Optional[Tuple[int, str]]:
+        """offset 以降にある次の sfen 行を読む。"""
+        file.seek(offset)  # type: ignore[attr-defined]
+        if offset > 0:
+            file.readline()  # type: ignore[attr-defined]
+        while True:
+            line_offset = file.tell()  # type: ignore[attr-defined]
+            line = self._read_text_line(file)
+            if line is None:
+                return None
+            if line.startswith("sfen "):
+                return line_offset, line
+
+    def _read_entries(self, file: object) -> List[BookEntry]:
+        """現在位置から次の sfen 行までの指し手行を読む。"""
+        entries: List[BookEntry] = []
+        while True:
+            line = self._read_text_line(file)
+            if line is None or line.startswith("sfen "):
+                return entries
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or stripped.startswith("//"):
+                continue
+            entries.append(parse_book_entry_line(stripped, len(entries)))
+
+    def _read_text_line(self, file: object) -> Optional[str]:
+        """1 行を UTF-8 として読み、改行を取り除く。"""
+        raw = file.readline()  # type: ignore[attr-defined]
+        if raw == b"":
+            return None
+        return raw.decode("utf-8-sig", errors="replace").rstrip("\r\n")
+
+
+def parse_book_entry_line(line: str, order_index: int) -> BookEntry:
+    """指し手行を解析し、省略された depth / visits を 0 で補う。"""
+    tokens = line.split()
+    if len(tokens) < 3:
+        raise ValueError(f"指し手行の列数が足りません: {line}")
+    move = tokens[0]
+    response = tokens[1]
+    eval_cp = int(tokens[2])
+    depth = int(tokens[3]) if len(tokens) >= 4 else 0
+    visits = int(tokens[4]) if len(tokens) >= 5 else 0
+    return BookEntry(move, response, eval_cp, depth, visits, order_index)
 
 
 def rotate_backups(path: pathlib.Path, backup_count: int) -> None:
@@ -681,6 +798,240 @@ def _select_available_leaf_path(
     return None
 
 
+def select_vulnerability_leaf_path(
+    book: OpeningBook,
+    root_sfen: str,
+    *,
+    navigator: Callable[[str, str], str],
+    multipv: int,
+    c_puct: float,
+    eval_scale: float,
+    inflight: Set[str],
+    max_ply: Optional[int],
+    target_book: object,
+    target_side: str,
+    turn_provider: Callable[[str], str],
+    root_best_eval: Optional[int],
+    eval_diff: Optional[int],
+    random_choice: RandomChoice,
+    legal_move_count_provider: Optional[Callable[[str], int]],
+) -> Optional[LeafPath]:
+    """対象 book 側は bestmove 固定、攻撃側は UCB で leaf を選ぶ。"""
+    return _select_vulnerability_leaf_path(
+        book,
+        book.position_key(root_sfen),
+        navigator=navigator,
+        multipv=multipv,
+        c_puct=c_puct,
+        eval_scale=eval_scale,
+        inflight=inflight,
+        max_ply=max_ply,
+        target_book=target_book,
+        target_side=target_side,
+        turn_provider=turn_provider,
+        root_best_eval=root_best_eval,
+        eval_diff=eval_diff,
+        random_choice=random_choice,
+        legal_move_count_provider=legal_move_count_provider,
+        depth=0,
+        visited=set(),
+    )
+
+
+def reserve_vulnerability_leaf_path(
+    book: OpeningBook,
+    root_sfen: str,
+    *,
+    navigator: Callable[[str, str], str],
+    multipv: int,
+    c_puct: float,
+    eval_scale: float,
+    inflight: Set[str],
+    max_ply: Optional[int],
+    target_book: object,
+    target_side: str,
+    turn_provider: Callable[[str], str],
+    root_best_eval: Optional[int],
+    eval_diff: Optional[int],
+    random_choice: RandomChoice,
+    legal_move_count_provider: Optional[Callable[[str], int]],
+) -> Optional[LeafPath]:
+    """脆弱性探索用 leaf を選択して inflight に予約する。"""
+    path = select_vulnerability_leaf_path(
+        book,
+        root_sfen,
+        navigator=navigator,
+        multipv=multipv,
+        c_puct=c_puct,
+        eval_scale=eval_scale,
+        inflight=inflight,
+        max_ply=max_ply,
+        target_book=target_book,
+        target_side=target_side,
+        turn_provider=turn_provider,
+        root_best_eval=root_best_eval,
+        eval_diff=eval_diff,
+        random_choice=random_choice,
+        legal_move_count_provider=legal_move_count_provider,
+    )
+    if path is None:
+        return None
+    leaf_key = path.leaf_sfen
+    if leaf_key in inflight:
+        return None
+    inflight.add(leaf_key)
+    return path
+
+
+def _select_vulnerability_leaf_path(
+    book: OpeningBook,
+    sfen: str,
+    *,
+    navigator: Callable[[str, str], str],
+    multipv: int,
+    c_puct: float,
+    eval_scale: float,
+    inflight: Set[str],
+    max_ply: Optional[int],
+    target_book: object,
+    target_side: str,
+    turn_provider: Callable[[str], str],
+    root_best_eval: Optional[int],
+    eval_diff: Optional[int],
+    random_choice: RandomChoice,
+    legal_move_count_provider: Optional[Callable[[str], int]],
+    depth: int,
+    visited: Set[str],
+) -> Optional[LeafPath]:
+    """select_vulnerability_leaf_path の再帰本体。"""
+    if max_ply is not None and depth >= max_ply:
+        return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
+    if sfen in visited:
+        return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
+
+    turn = turn_provider(sfen)
+    if turn == target_side:
+        target_entries = target_book.lookup(sfen)  # type: ignore[attr-defined]
+        if target_entries:
+            position = book.ensure_position(sfen)
+            selected = ensure_target_entry(book, position, best_book_entry(target_entries, random_choice))
+            child_sfen = book.position_key(navigator(sfen, selected.move))
+            if child_sfen in inflight:
+                return None
+            next_visited = set(visited)
+            next_visited.add(sfen)
+            child_path = _select_vulnerability_leaf_path(
+                book,
+                child_sfen,
+                navigator=navigator,
+                multipv=multipv,
+                c_puct=c_puct,
+                eval_scale=eval_scale,
+                inflight=inflight,
+                max_ply=max_ply,
+                target_book=target_book,
+                target_side=target_side,
+                turn_provider=turn_provider,
+                root_best_eval=root_best_eval,
+                eval_diff=eval_diff,
+                random_choice=random_choice,
+                legal_move_count_provider=legal_move_count_provider,
+                depth=depth + 1,
+                visited=next_visited,
+            )
+            if child_path is None:
+                return None
+            return LeafPath(
+                steps=[PathStep(sfen=sfen, entry=selected)] + child_path.steps,
+                leaf_sfen=child_path.leaf_sfen,
+            )
+
+    position = book.positions.get(sfen)
+    if position is None or not position.entries:
+        return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
+    if len(position.entries) < required_book_entry_count(
+        sfen,
+        multipv,
+        legal_move_count_provider=legal_move_count_provider,
+    ):
+        return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
+
+    if turn == target_side:
+        selected = best_book_entry(position.entries, random_choice)
+        candidates = [(0.0, selected, book.position_key(navigator(sfen, selected.move)))]
+    else:
+        parent_visits = sum(entry.visits for entry in position.entries)
+        filtered_entries = filter_entries_for_peta_rule(
+            position.entries,
+            sfen=sfen,
+            book_side=target_side,
+            turn_provider=turn_provider,
+            root_best_eval=root_best_eval,
+            eval_diff=eval_diff,
+            random_choice=random_choice,
+        )
+        candidates = []
+        for entry in filtered_entries:
+            child_sfen = book.position_key(navigator(sfen, entry.move))
+            ucb = calculate_ucb(
+                eval_cp=entry.eval_cp,
+                child_visits=entry.visits,
+                parent_visits=parent_visits,
+                c_puct=c_puct,
+                eval_scale=eval_scale,
+            )
+            candidates.append((ucb, entry, child_sfen))
+        candidates.sort(key=lambda item: (item[0], -item[1].order_index), reverse=True)
+
+    next_visited = set(visited)
+    next_visited.add(sfen)
+    for _, entry, child_sfen in candidates:
+        child_path = _select_vulnerability_leaf_path(
+            book,
+            child_sfen,
+            navigator=navigator,
+            multipv=multipv,
+            c_puct=c_puct,
+            eval_scale=eval_scale,
+            inflight=inflight,
+            max_ply=max_ply,
+            target_book=target_book,
+            target_side=target_side,
+            turn_provider=turn_provider,
+            root_best_eval=root_best_eval,
+            eval_diff=eval_diff,
+            random_choice=random_choice,
+            legal_move_count_provider=legal_move_count_provider,
+            depth=depth + 1,
+            visited=next_visited,
+        )
+        if child_path is not None:
+            return LeafPath(
+                steps=[PathStep(sfen=sfen, entry=entry)] + child_path.steps,
+                leaf_sfen=child_path.leaf_sfen,
+            )
+    return None
+
+
+def best_book_entry(entries: Sequence[BookEntry], random_choice: RandomChoice) -> BookEntry:
+    """評価値最大の指し手を返す。同値ならランダムに選ぶ。"""
+    if not entries:
+        raise ValueError("entries must not be empty")
+    best_eval = max(entry.eval_cp for entry in entries)
+    best_entries = [entry for entry in entries if entry.eval_cp == best_eval]
+    return random_choice.choose(best_entries)
+
+
+def ensure_target_entry(book: OpeningBook, position: BookPosition, source: BookEntry) -> BookEntry:
+    """対象 book の bestmove を延長中 DB に存在させる。"""
+    existing = position.find_entry(source.move)
+    if existing is not None:
+        if is_no_response(existing.response) and not is_no_response(source.response):
+            existing.response = source.response
+        return existing
+    return book.append_book_entry(position, source, visits=0)
+
+
 def required_book_entry_count(
     sfen: str,
     multipv: int,
@@ -978,6 +1329,32 @@ def parse_setoption(option: str) -> Tuple[str, Optional[str]]:
     return name, value
 
 
+def parse_vulnerability_target(value: str) -> VulnerabilityTarget:
+    """--vulnerability-target の path:side 指定を解析する。"""
+    path_text, separator, side = value.rpartition(":")
+    if not separator or side not in {"black", "white"} or not path_text:
+        raise ValueError("--vulnerability-target は <path>:black または <path>:white で指定してください")
+    return VulnerabilityTarget(pathlib.Path(path_text), side)
+
+
+def build_vulnerability_worker_targets(
+    values: Sequence[str],
+    *,
+    ignore_ply: bool,
+) -> List[VulnerabilityWorkerTarget]:
+    """CLI 指定から worker 用の脆弱性探索対象を構築する。"""
+    targets: List[VulnerabilityWorkerTarget] = []
+    for value in values:
+        target = parse_vulnerability_target(value)
+        targets.append(
+            VulnerabilityWorkerTarget(
+                target=target,
+                book=DiskOpeningBook(target.path, ignore_ply=ignore_ply),
+            )
+        )
+    return targets
+
+
 def worker_loop(
     *,
     worker_id: int,
@@ -998,6 +1375,7 @@ def worker_loop(
     stop_limits: StopLimits,
     stop_event: threading.Event,
     progress: ProgressReporter,
+    vulnerability_target: Optional[VulnerabilityWorkerTarget] = None,
 ) -> None:
     """1 エンジン専有スレッドで leaf 選択と探索を繰り返す。"""
     idle_sleep_sec = 0.05
@@ -1007,22 +1385,41 @@ def worker_loop(
                 stop_event.set()
                 return
             current_root_eval = root_best_eval(book, root_sfen)
-            path = reserve_leaf_path(
-                book,
-                root_sfen,
-                navigator=sfen_after_move,
-                multipv=multipv,
-                c_puct=c_puct,
-                eval_scale=eval_scale,
-                inflight=inflight,
-                max_ply=max_ply,
-                book_side=book_side,
-                turn_provider=sfen_turn,
-                root_best_eval=current_root_eval,
-                eval_diff=eval_diff,
-                random_choice=random_choice,
-                legal_move_count_provider=count_legal_moves,
-            )
+            if vulnerability_target is None:
+                path = reserve_leaf_path(
+                    book,
+                    root_sfen,
+                    navigator=sfen_after_move,
+                    multipv=multipv,
+                    c_puct=c_puct,
+                    eval_scale=eval_scale,
+                    inflight=inflight,
+                    max_ply=max_ply,
+                    book_side=book_side,
+                    turn_provider=sfen_turn,
+                    root_best_eval=current_root_eval,
+                    eval_diff=eval_diff,
+                    random_choice=random_choice,
+                    legal_move_count_provider=count_legal_moves,
+                )
+            else:
+                path = reserve_vulnerability_leaf_path(
+                    book,
+                    root_sfen,
+                    navigator=sfen_after_move,
+                    multipv=multipv,
+                    c_puct=c_puct,
+                    eval_scale=eval_scale,
+                    inflight=inflight,
+                    max_ply=max_ply,
+                    target_book=vulnerability_target.book,
+                    target_side=vulnerability_target.target.side,
+                    turn_provider=sfen_turn,
+                    root_best_eval=current_root_eval,
+                    eval_diff=eval_diff,
+                    random_choice=random_choice,
+                    legal_move_count_provider=count_legal_moves,
+                )
             if path is None:
                 leaf_key = None
                 leaf_sfen = None
@@ -1081,6 +1478,10 @@ def run_extend_loop(args: argparse.Namespace, progress_stream: TextIO = sys.stde
     stats = RunStats(start_time=time.monotonic())
     progress = ProgressReporter(progress_stream, interval_sec=args.progress_interval_sec)
     random_choice = RandomChoice(args.random_seed)
+    vulnerability_targets = build_vulnerability_worker_targets(
+        args.vulnerability_target,
+        ignore_ply=args.ignore_ply,
+    )
     stop_limits = StopLimits(
         max_added_positions=args.max_added_positions,
         max_searches=args.max_searches,
@@ -1125,6 +1526,11 @@ def run_extend_loop(args: argparse.Namespace, progress_stream: TextIO = sys.stde
                     "stop_limits": stop_limits,
                     "stop_event": stop_event,
                     "progress": progress,
+                    "vulnerability_target": (
+                        vulnerability_targets[worker_id]
+                        if worker_id < len(vulnerability_targets)
+                        else None
+                    ),
                 },
                 daemon=True,
             )
@@ -1184,6 +1590,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--root-sfen", default=initial_sfen())
     parser.add_argument("--ignore-ply", action="store_true")
     parser.add_argument("--random-seed", type=int, default=None)
+    parser.add_argument("--vulnerability-target", action="append", default=[])
     parser.add_argument("--max-added-positions", type=int, default=None)
     parser.add_argument("--max-searches", type=int, default=None)
     parser.add_argument("--max-total-nodes", type=int, default=None)
@@ -1222,6 +1629,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         parser.error("--max-runtime-sec は正の値を指定してください")
     if args.progress_interval_sec < 0:
         parser.error("--progress-interval-sec は 0 以上を指定してください")
+    if len(args.vulnerability_target) > args.engine_count:
+        parser.error("--vulnerability-target の数は --engine-count 以下にしてください")
+    for target in args.vulnerability_target:
+        try:
+            parse_vulnerability_target(target)
+        except ValueError as error:
+            parser.error(str(error))
     run_extend_loop(args)
     return 0
 
