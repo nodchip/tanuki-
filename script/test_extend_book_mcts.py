@@ -376,6 +376,40 @@ class ExtendBookMctsTest(unittest.TestCase):
         self.assertEqual([(step.sfen, step.entry.move) for step in path.steps], [("root", "a")])
         self.assertEqual(path.leaf_sfen, "child")
 
+    def test_select_leaf_path_skips_cycle_and_uses_alternative(self) -> None:
+        book = OpeningBook()
+        book.positions["root"] = BookPosition(
+            "root",
+            [
+                BookEntry("cycle", "none", 100, 1, 1, 0),
+                BookEntry("leaf", "none", 10, 1, 1, 1),
+            ],
+            0,
+        )
+        book.positions["middle"] = BookPosition(
+            "middle",
+            [BookEntry("back", "none", 100, 1, 1, 0)],
+            1,
+        )
+        navigator = {
+            "root:cycle": "middle",
+            "middle:back": "root",
+            "root:leaf": "leaf",
+        }
+
+        path = select_leaf_path(
+            book,
+            "root",
+            navigator=lambda sfen, move: navigator[f"{sfen}:{move}"],
+            multipv=1,
+            c_puct=1.4,
+            eval_scale=600.0,
+            inflight=set(),
+        )
+
+        self.assertEqual([(step.sfen, step.entry.move) for step in path.steps], [("root", "leaf")])
+        self.assertEqual(path.leaf_sfen, "leaf")
+
     def test_select_vulnerability_leaf_path_forces_target_book_bestmove(self) -> None:
         book = OpeningBook()
         target_entries = [
@@ -488,6 +522,54 @@ class ExtendBookMctsTest(unittest.TestCase):
         self.assertEqual([(step.sfen, step.entry.move) for step in path.steps], [("root", "kept")])
         self.assertEqual(path.leaf_sfen, "kept-child")
 
+    def test_select_vulnerability_leaf_path_backtracks_from_attack_side_cycle(self) -> None:
+        book = OpeningBook()
+        book.positions["root"] = BookPosition(
+            "root",
+            [
+                BookEntry("cycle", "none", 100, 1, 1, 0),
+                BookEntry("leaf", "none", 10, 1, 1, 1),
+            ],
+            0,
+        )
+        book.positions["middle"] = BookPosition(
+            "middle",
+            [BookEntry("back", "none", 100, 1, 1, 0)],
+            1,
+        )
+        navigator = {
+            "root:cycle": "middle",
+            "middle:back": "root",
+            "root:leaf": "leaf",
+        }
+
+        class EmptyTargetBook:
+            def lookup(self, sfen: str) -> list[BookEntry]:
+                return []
+
+        path = select_vulnerability_leaf_path(
+            book,
+            "root",
+            navigator=lambda sfen, move: navigator[f"{sfen}:{move}"],
+            multipv=1,
+            c_puct=1.4,
+            eval_scale=600.0,
+            inflight=set(),
+            max_ply=10,
+            target_book=EmptyTargetBook(),  # type: ignore[arg-type]
+            target_side="black",
+            turn_provider=lambda sfen: "white",
+            root_best_eval=None,
+            eval_diff=None,
+            random_choice=RandomChoice(seed=0),
+            legal_move_count_provider=lambda sfen: 30,
+        )
+
+        self.assertIsNotNone(path)
+        assert path is not None
+        self.assertEqual([(step.sfen, step.entry.move) for step in path.steps], [("root", "leaf")])
+        self.assertEqual(path.leaf_sfen, "leaf")
+
     def test_reserve_leaf_path_returns_none_when_leaf_is_already_inflight(self) -> None:
         book = OpeningBook()
         book.positions["root"] = BookPosition(
@@ -547,6 +629,42 @@ class ExtendBookMctsTest(unittest.TestCase):
         self.assertEqual([(step.sfen, step.entry.move) for step in reserved.steps], [("root", "second")])
         self.assertEqual(reserved.leaf_sfen, "second-leaf")
         self.assertEqual(inflight, {"best-leaf", "second-leaf"})
+
+    def test_reserve_leaf_path_backtracks_from_cycle(self) -> None:
+        book = OpeningBook()
+        book.positions["root"] = BookPosition(
+            "root",
+            [
+                BookEntry("cycle", "none", 100, 1, 1, 0),
+                BookEntry("leaf", "none", 10, 1, 1, 1),
+            ],
+            0,
+        )
+        book.positions["middle"] = BookPosition(
+            "middle",
+            [BookEntry("back", "none", 100, 1, 1, 0)],
+            1,
+        )
+        navigator = {
+            "root:cycle": "middle",
+            "middle:back": "root",
+            "root:leaf": "leaf",
+        }
+
+        reserved = reserve_leaf_path(
+            book,
+            "root",
+            navigator=lambda sfen, move: navigator[f"{sfen}:{move}"],
+            multipv=1,
+            c_puct=1.4,
+            eval_scale=600.0,
+            inflight=set(),
+        )
+
+        self.assertIsNotNone(reserved)
+        assert reserved is not None
+        self.assertEqual([(step.sfen, step.entry.move) for step in reserved.steps], [("root", "leaf")])
+        self.assertEqual(reserved.leaf_sfen, "leaf")
 
     def test_propagate_minimax_updates_selected_path_entries(self) -> None:
         book = OpeningBook()

@@ -580,54 +580,25 @@ def select_leaf_path(
     legal_move_count_provider: Optional[Callable[[str], int]] = None,
 ) -> LeafPath:
     """登録済み定跡手だけを UCB でたどり、leaf 局面を返す。"""
-    steps: List[PathStep] = []
-    sfen = book.position_key(root_sfen)
-    visited: Set[str] = set()
-    while True:
-        if max_ply is not None and len(steps) >= max_ply:
-            return LeafPath(steps=steps, leaf_sfen=sfen)
-        position = book.positions.get(sfen)
-        if position is None or not position.entries:
-            return LeafPath(steps=steps, leaf_sfen=sfen)
-        if len(position.entries) < required_book_entry_count(
-            sfen,
-            multipv,
-            legal_move_count_provider=legal_move_count_provider,
-        ):
-            return LeafPath(steps=steps, leaf_sfen=sfen)
-        if sfen in visited:
-            return LeafPath(steps=steps, leaf_sfen=sfen)
-        visited.add(sfen)
-
-        parent_visits = sum(entry.visits for entry in position.entries)
-        candidates: List[Tuple[float, BookEntry, str]] = []
-        filtered_entries = filter_entries_for_peta_rule(
-            position.entries,
-            sfen=sfen,
-            book_side=book_side,
-            turn_provider=turn_provider,
-            root_best_eval=root_best_eval,
-            eval_diff=eval_diff,
-            random_choice=random_choice,
-        )
-        for entry in filtered_entries:
-            child_sfen = navigator(sfen, entry.move)
-            if child_sfen in inflight:
-                continue
-            ucb = calculate_ucb(
-                eval_cp=entry.eval_cp,
-                child_visits=entry.visits,
-                parent_visits=parent_visits,
-                c_puct=c_puct,
-                eval_scale=eval_scale,
-            )
-            candidates.append((ucb, entry, book.position_key(child_sfen)))
-        if not candidates:
-            return LeafPath(steps=steps, leaf_sfen=sfen)
-
-        _, selected, next_sfen = max(candidates, key=lambda item: (item[0], -item[1].order_index))
-        steps.append(PathStep(sfen=sfen, entry=selected))
-        sfen = next_sfen
+    path = select_available_leaf_path(
+        book,
+        book.position_key(root_sfen),
+        navigator=navigator,
+        multipv=multipv,
+        c_puct=c_puct,
+        eval_scale=eval_scale,
+        inflight=inflight,
+        max_ply=max_ply,
+        book_side=book_side,
+        turn_provider=turn_provider,
+        root_best_eval=root_best_eval,
+        eval_diff=eval_diff,
+        random_choice=random_choice,
+        legal_move_count_provider=legal_move_count_provider,
+    )
+    if path is not None:
+        return path
+    return LeafPath(steps=[], leaf_sfen=book.position_key(root_sfen))
 
 
 def reserve_leaf_path(
@@ -744,7 +715,7 @@ def _select_available_leaf_path(
     ):
         return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
     if sfen in visited:
-        return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
+        return None
 
     parent_visits = sum(entry.visits for entry in position.entries)
     filtered_entries = filter_entries_for_peta_rule(
@@ -907,7 +878,7 @@ def _select_vulnerability_leaf_path(
     if max_ply is not None and depth >= max_ply:
         return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
     if sfen in visited:
-        return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
+        return None
 
     turn = turn_provider(sfen)
     if turn == target_side:
