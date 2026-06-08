@@ -678,7 +678,8 @@ def select_available_leaf_path(
         random_choice=random_choice,
         legal_move_count_provider=legal_move_count_provider,
         depth=0,
-        visited=set(),
+        visiting=set(),
+        dead=set(),
     )
 
 
@@ -699,11 +700,16 @@ def _select_available_leaf_path(
     random_choice: Optional[RandomChoice],
     legal_move_count_provider: Optional[Callable[[str], int]],
     depth: int,
-    visited: Set[str],
+    visiting: Set[str],
+    dead: Set[str],
 ) -> Optional[LeafPath]:
     """select_available_leaf_path の再帰本体。"""
     if max_ply is not None and depth >= max_ply:
         return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
+    if sfen in visiting:
+        return None
+    if sfen in dead:
+        return None
 
     position = book.positions.get(sfen)
     if position is None or not position.entries:
@@ -714,8 +720,6 @@ def _select_available_leaf_path(
         legal_move_count_provider=legal_move_count_provider,
     ):
         return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
-    if sfen in visited:
-        return None
 
     parent_visits = sum(entry.visits for entry in position.entries)
     filtered_entries = filter_entries_for_peta_rule(
@@ -738,10 +742,13 @@ def _select_available_leaf_path(
             eval_scale=eval_scale,
         )
         candidates.append((ucb, entry, child_sfen))
+    if not candidates:
+        dead.add(sfen)
+        return None
 
     candidates.sort(key=lambda item: (item[0], -item[1].order_index), reverse=True)
-    next_visited = set(visited)
-    next_visited.add(sfen)
+    next_visiting = set(visiting)
+    next_visiting.add(sfen)
     for _, entry, child_sfen in candidates:
         child_path = _select_available_leaf_path(
             book,
@@ -759,13 +766,15 @@ def _select_available_leaf_path(
             random_choice=random_choice,
             legal_move_count_provider=legal_move_count_provider,
             depth=depth + 1,
-            visited=next_visited,
+            visiting=next_visiting,
+            dead=dead,
         )
         if child_path is not None:
             return LeafPath(
                 steps=[PathStep(sfen=sfen, entry=entry)] + child_path.steps,
                 leaf_sfen=child_path.leaf_sfen,
             )
+    dead.add(sfen)
     return None
 
 
@@ -805,7 +814,8 @@ def select_vulnerability_leaf_path(
         random_choice=random_choice,
         legal_move_count_provider=legal_move_count_provider,
         depth=0,
-        visited=set(),
+        visiting=set(),
+        dead=set(),
     )
 
 
@@ -872,12 +882,15 @@ def _select_vulnerability_leaf_path(
     random_choice: RandomChoice,
     legal_move_count_provider: Optional[Callable[[str], int]],
     depth: int,
-    visited: Set[str],
+    visiting: Set[str],
+    dead: Set[str],
 ) -> Optional[LeafPath]:
     """select_vulnerability_leaf_path の再帰本体。"""
     if max_ply is not None and depth >= max_ply:
         return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
-    if sfen in visited:
+    if sfen in visiting:
+        return None
+    if sfen in dead:
         return None
 
     turn = turn_provider(sfen)
@@ -888,9 +901,10 @@ def _select_vulnerability_leaf_path(
             selected = ensure_target_entry(book, position, best_book_entry(target_entries, random_choice))
             child_sfen = book.position_key(navigator(sfen, selected.move))
             if child_sfen in inflight:
+                dead.add(sfen)
                 return None
-            next_visited = set(visited)
-            next_visited.add(sfen)
+            next_visiting = set(visiting)
+            next_visiting.add(sfen)
             child_path = _select_vulnerability_leaf_path(
                 book,
                 child_sfen,
@@ -908,9 +922,11 @@ def _select_vulnerability_leaf_path(
                 random_choice=random_choice,
                 legal_move_count_provider=legal_move_count_provider,
                 depth=depth + 1,
-                visited=next_visited,
+                visiting=next_visiting,
+                dead=dead,
             )
             if child_path is None:
+                dead.add(sfen)
                 return None
             return LeafPath(
                 steps=[PathStep(sfen=sfen, entry=selected)] + child_path.steps,
@@ -953,9 +969,12 @@ def _select_vulnerability_leaf_path(
             )
             candidates.append((ucb, entry, child_sfen))
         candidates.sort(key=lambda item: (item[0], -item[1].order_index), reverse=True)
+    if not candidates:
+        dead.add(sfen)
+        return None
 
-    next_visited = set(visited)
-    next_visited.add(sfen)
+    next_visiting = set(visiting)
+    next_visiting.add(sfen)
     for _, entry, child_sfen in candidates:
         child_path = _select_vulnerability_leaf_path(
             book,
@@ -974,13 +993,15 @@ def _select_vulnerability_leaf_path(
             random_choice=random_choice,
             legal_move_count_provider=legal_move_count_provider,
             depth=depth + 1,
-            visited=next_visited,
+            visiting=next_visiting,
+            dead=dead,
         )
         if child_path is not None:
             return LeafPath(
                 steps=[PathStep(sfen=sfen, entry=entry)] + child_path.steps,
                 leaf_sfen=child_path.leaf_sfen,
             )
+    dead.add(sfen)
     return None
 
 

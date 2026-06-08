@@ -666,6 +666,91 @@ class ExtendBookMctsTest(unittest.TestCase):
         self.assertEqual([(step.sfen, step.entry.move) for step in reserved.steps], [("root", "leaf")])
         self.assertEqual(reserved.leaf_sfen, "leaf")
 
+    def test_reserve_leaf_path_memoizes_dead_transposition(self) -> None:
+        book = OpeningBook()
+        book.positions["root"] = BookPosition(
+            "root",
+            [
+                BookEntry("a", "none", 100, 1, 1, 0),
+                BookEntry("b", "none", 90, 1, 1, 1),
+            ],
+            0,
+        )
+        book.positions["shared"] = BookPosition(
+            "shared",
+            [BookEntry("below-threshold", "none", 0, 1, 1, 0)],
+            1,
+        )
+        legal_move_calls: dict[str, int] = {}
+
+        def count_legal_moves_for_test(sfen: str) -> int:
+            legal_move_calls[sfen] = legal_move_calls.get(sfen, 0) + 1
+            return 30
+
+        reserved = reserve_leaf_path(
+            book,
+            "root",
+            navigator=lambda sfen, move: "shared" if sfen == "root" else "dead-child",
+            multipv=1,
+            c_puct=1.4,
+            eval_scale=600.0,
+            inflight=set(),
+            book_side="black",
+            turn_provider=lambda sfen: "white",
+            root_best_eval=100,
+            eval_diff=10,
+            legal_move_count_provider=count_legal_moves_for_test,
+        )
+
+        self.assertIsNone(reserved)
+        self.assertEqual(legal_move_calls["shared"], 1)
+
+    def test_select_vulnerability_leaf_path_memoizes_dead_transposition(self) -> None:
+        book = OpeningBook()
+        book.positions["root"] = BookPosition(
+            "root",
+            [
+                BookEntry("a", "none", 100, 1, 1, 0),
+                BookEntry("b", "none", 90, 1, 1, 1),
+            ],
+            0,
+        )
+        book.positions["shared"] = BookPosition(
+            "shared",
+            [BookEntry("below-threshold", "none", 0, 1, 1, 0)],
+            1,
+        )
+        legal_move_calls: dict[str, int] = {}
+
+        class EmptyTargetBook:
+            def lookup(self, sfen: str) -> list[BookEntry]:
+                return []
+
+        def count_legal_moves_for_test(sfen: str) -> int:
+            legal_move_calls[sfen] = legal_move_calls.get(sfen, 0) + 1
+            return 30
+
+        path = select_vulnerability_leaf_path(
+            book,
+            "root",
+            navigator=lambda sfen, move: "shared" if sfen == "root" else "dead-child",
+            multipv=1,
+            c_puct=1.4,
+            eval_scale=600.0,
+            inflight=set(),
+            max_ply=10,
+            target_book=EmptyTargetBook(),  # type: ignore[arg-type]
+            target_side="black",
+            turn_provider=lambda sfen: "white",
+            root_best_eval=100,
+            eval_diff=10,
+            random_choice=RandomChoice(seed=0),
+            legal_move_count_provider=count_legal_moves_for_test,
+        )
+
+        self.assertIsNone(path)
+        self.assertEqual(legal_move_calls["shared"], 1)
+
     def test_propagate_minimax_updates_selected_path_entries(self) -> None:
         book = OpeningBook()
         book.positions["root"] = BookPosition(
