@@ -29,6 +29,9 @@
 #include "../../movepick.h"
 #include "../../usi.h"
 #include "../../mate/mate.h"
+#if defined(EVAL_NNUE)
+#include "../../tanuki_progress.h"
+#endif
 #include "../../tune.h"
 
 namespace YaneuraOu {
@@ -157,6 +160,9 @@ void YaneuraOuEngine::add_options() {
 	// 📌 SearchOptionsが用いるオプションの追加
 
 	manager.search_options.add_options(options);
+#if defined(EVAL_NNUE)
+	Tanuki::Progress::add_options(options);
+#endif
 
 	// 📌 TimeManagementが用いるオプションの追加
 
@@ -263,6 +269,9 @@ void YaneuraOuEngine::isready() {
 
 	// 定跡の読み込み
     book.read_book();
+#if defined(EVAL_NNUE)
+	Tanuki::Progress::Load();
+#endif
 
 	// 🌈 tune.pyによってここ以下に自動的にエンジンオプションが追加される。
     //                      %%TUNE_ISREADY%%

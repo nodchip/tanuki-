@@ -15,6 +15,7 @@
 #include "../../evaluate.h"
 #include "../../position.h"
 #include "../../memory.h"
+#include "../../tanuki_progress.h"
 #include "../../usi.h"
 
 #if defined(USE_EVAL_HASH)
@@ -78,7 +79,7 @@ void add_options_(OptionsMap& options, ThreadPool& threads) {
                 }));
 
     // NNUEのFV_SCALEの値
-    Options.add("FV_SCALE", Option(16, 1, 128, [&](const Option& o) {
+    Options.add("FV_SCALE", Option(24, 1, 128, [&](const Option& o) {
                     YaneuraOu::Eval::NNUE::FV_SCALE = int(o);
                     return std::nullopt;
                 }));
@@ -146,7 +147,7 @@ namespace YaneuraOu {
 namespace Eval {
 namespace NNUE {
 
-	int FV_SCALE = 16; // 水匠5では24がベストらしいのでエンジンオプション"FV_SCALE"で変更可能にした。
+	int FV_SCALE = 24; // 水匠5では24がベストらしいのでエンジンオプション"FV_SCALE"で変更可能にした。
 
     // NNUE評価関数パラメーター（共有メモリまたはローカルメモリ上に配置）
     SystemWideSharedConstant<NnueNetworks> shared_networks;
@@ -282,6 +283,11 @@ namespace {
     }
 
 #if defined(SFNNwoPSQT)
+#if defined(NNUE_PROGRESS_LAYER_STACKS)
+    static int stack_index_for_nnue(const Position& pos) {
+        return Tanuki::Progress::LayerStackIndex(pos);
+    }
+#else
     // レイヤースタックの選択。双方の玉の段に応じて9通りに分岐させる。
     static int stack_index_for_nnue(const Position& pos) {
         constexpr int kFToIndex[] = { 0, 0, 0, 3, 3, 3, 6, 6, 6 };
@@ -296,6 +302,7 @@ namespace {
         if (idx >= kLayerStacks) idx = kLayerStacks - 1;
         return idx;
     }
+#endif
 #endif
 
     // 評価値を計算する

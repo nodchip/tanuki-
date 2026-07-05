@@ -71,15 +71,18 @@ layer_stack_name = ""
 if arches[0].startswith("SFNN"):
     SFNN = True
     if len(arches) < 6:
-        print("Error! : SFNN architecture name must be like SFNN_halfkahm2_1536-15-32-k3k3")
+        print("Error! : SFNN architecture name must be like SFNN_halfkahm2_1536-15-32-k3k3 or SFNN_halfka2_768_7_32_p")
         raise SystemExit(1)
 
     layer_stack_spec = "_".join(arches[5:])
     if layer_stack_spec == "K3K3" or layer_stack_spec == "KING3_BY_KING3":
         layer_stack_name = "K3K3"
         layer_stack_count = "9"
+    elif layer_stack_spec == "P" or layer_stack_spec == "PROGRESS":
+        layer_stack_name = "PROGRESS"
+        layer_stack_count = "8"
     else:
-        print("Error! : SFNN layer stack must be k3k3 or king3_by_king3")
+        print("Error! : SFNN layer stack must be k3k3, king3_by_king3, or p")
         raise SystemExit(1)
 
     arches = [arches[1], arches[2], arches[3], arches[4], layer_stack_count]
@@ -95,6 +98,11 @@ if SFNN:
     #ifndef CLASSIC_NNUE_SFNN_{arch}_H_INCLUDED
     #define CLASSIC_NNUE_SFNN_{arch}_H_INCLUDED
     """
+
+    if layer_stack_name == "PROGRESS":
+        header += """
+        #define NNUE_PROGRESS_LAYER_STACKS
+        """
 else:
     header = f"""
     // Definition of input features and network structure used in NNUE evaluation function
@@ -207,12 +215,12 @@ elif input_feature == "halfkahm1":
 elif input_feature == "halfka2":
 
     header += f"""
-    #include "../features/half_ka2.h"
+    #include "../features/half_ka_hm2.h"
     """
 
     raw_features = f"""
         using RawFeatures = Features::FeatureSet<
-            Features::HalfKA2<Features::Side::kFriend>>;
+            Features::HalfKA_hm2<Features::Side::kFriend>>;
     """
 
 elif input_feature == "halfkahm2":

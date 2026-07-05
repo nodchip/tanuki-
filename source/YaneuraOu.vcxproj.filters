@@ -356,6 +356,9 @@
     <ClInclude Include="eval\nnue\features\half_ka2.h">
       <Filter>リソース ファイル\eval\nnue\features</Filter>
     </ClInclude>
+    <ClInclude Include="tanuki_progress.h">
+      <Filter>リソース ファイル</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="movegen.cpp">
@@ -524,6 +527,9 @@
       <Filter>リソース ファイル</Filter>
     </ClCompile>
     <ClCompile Include="search.cpp">
+      <Filter>リソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="tanuki_progress.cpp">
       <Filter>リソース ファイル</Filter>
     </ClCompile>
     <ClCompile Include="score.cpp">
