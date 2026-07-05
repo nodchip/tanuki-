@@ -553,8 +553,8 @@ namespace {
 		// →　デフォルト1024にしておかないと置換表あふれるな。
 		string ttSize = (is >> token) ? token : "1024";
 
-		//options["USI_Hash"] = ttSize;
-		options.set_option_if_exists("USI_Hash", ttSize);
+		//options["Hash"] = ttSize;
+		options.set_option_if_exists("Hash", ttSize);
 
 		// 探索制限
 		Search::LimitsType limits;

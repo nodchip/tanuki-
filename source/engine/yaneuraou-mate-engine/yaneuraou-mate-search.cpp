@@ -142,7 +142,7 @@ class YaneuraOuMateEngine: public Engine {
         else
             solver.ChangeSolverType(Mate::Dfpn::DfpnSolverType::None);
 
-        u64 mem = options["USI_Hash"];
+        u64 mem = options["Hash"];
         sync_cout << "info string DfPn memory allocation , USI_Hash = " << mem << " [MB]"
                   << sync_endl;
         solver.alloc(mem);
@@ -158,7 +158,7 @@ class YaneuraOuMateEngine: public Engine {
 
         // 置換表のサイズ。[MB]で指定。
         options.add(  //
-          "USI_Hash", Option(1024, 1, MaxHashMB, [this](const Option& o) {
+          "Hash", Option(1024, 1, MaxHashMB, [this](const Option& o) {
               // set_tt_size();
               // ⇨  どうせisready()で確保するので、handlerを呼び出して反映させる必要はない。
               return std::nullopt;
