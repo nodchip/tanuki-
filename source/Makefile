@@ -30,7 +30,8 @@
 #                                  ビルドを確認したDocker image → nvcr.io/nvidia/tensorrt:22.12-py3
 
 
-YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE
+YANEURAOU_EDITION = YANEURAOU_ENGINE_SFNN_halfka2_768_7_32_p
+#YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_KP256
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_HALFKPE9
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_HALFKP_512X2_16_32
@@ -66,11 +67,14 @@ YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE
 # 1. IntelMacでSSE4.2までしか対応していないなら、APPLESSE42 を指定。AVX2に対応しているなら APPLEAVX2を指定する。
 # 2. M1以降のCPUであれば、APPLEM1を指定する。(M2でもM3でもAPPLEM1を指定する。)
 
+# ビルドするマシン向けに最適化する
+TARGET_CPU = NATIVE
+
 # --- Intel/AMD系 (x86/x64 Platform)
 #TARGET_CPU = AVX512VNNI
 #TARGET_CPU = AVX512
 #TARGET_CPU = AVXVNNI
-TARGET_CPU = AVX2
+#TARGET_CPU = AVX2
 #TARGET_CPU = SSE42
 #TARGET_CPU = SSE41
 #TARGET_CPU = SSSE3
@@ -134,7 +138,7 @@ endif
 
 
 # 標準的なコンパイルオプション (standard compile options)
-CPPFLAGS      = -std=c++17 -fno-exceptions -fno-rtti -Wextra -MMD -MP -fpermissive
+CPPFLAGS      = -std=c++17 -fno-exceptions -fno-rtti -Wextra -MMD -MP -fpermissive -DEVALFILE=\"$(EVALFILE)\"
 NVCC_CPPFLAGS = -std=c++17 -x cu -maxrregcount=0 --machine 64 --compile -cudart static -DNDEBUG -Xcompiler "-Ofast"
 WCPPFLAGS     =
 LDFLAGS       = 
@@ -156,8 +160,8 @@ COMPILER_MACHINE := $(shell $(COMPILER) -dumpmachine 2>/dev/null)
 MATERIAL_LEVEL = 1
 
 # NNUE評価関数を実行ファイルに内蔵する。 ビルドするときにsourceフォルダ直下に"nn.bin"を配置する。
-EVAL_EMBEDDING = OFF
-# EVAL_EMBEDDING = ON
+# EVAL_EMBEDDING = OFF
+EVAL_EMBEDDING = ON
 
 # === implementations ===
 
@@ -249,7 +253,7 @@ endif
 
 TARGETDIR = .
 ifneq (,$(findstring em++,$(COMPILER)))
-	TARGET = $(TARGETDIR)/yaneuraou.js
+	EXE = $(TARGETDIR)/yaneuraou.js
 else
 	ifeq ($(OS),Windows_NT)
 		CPPFLAGS += $(WCPPFLAGS)
@@ -260,10 +264,10 @@ else
 		ifneq (,$(findstring i686,$(COMPILER_MACHINE) $(COMPILER)))
 			LDFLAGS += -Wl,--large-address-aware
 		endif
-		TARGET = $(TARGETDIR)/YaneuraOu-by-gcc.exe
+		EXE = $(TARGETDIR)/YaneuraOu-by-gcc.exe
 	else
 		CPPFLAGS += -D_LINUX
-		TARGET = $(TARGETDIR)/YaneuraOu-by-gcc
+		EXE = $(TARGETDIR)/YaneuraOu-by-gcc
 	endif
 endif
 
@@ -614,6 +618,38 @@ else ifeq ($(TARGET_CPU),WASM)
 else ifeq ($(TARGET_CPU),OTHER)
 	CPPFLAGS += -DNO_SSE
 
+else ifeq ($(TARGET_CPU),NATIVE)
+	CPPFLAGS += -march=native -mtune=native
+
+	ARCH_DEFINES = $(shell echo | $(CXX) -march=native -E -dM -)
+
+	ifneq ($(findstring __znver1__, $(ARCH_DEFINES)),)
+		CPPFLAGS += -DUSE_AVX2 -mno-bmi2
+	else ifneq ($(findstring __znver2__, $(ARCH_DEFINES)),)
+		CPPFLAGS += -DUSE_AVX2 -mno-bmi2
+	else ifneq ($(findstring __znver3__, $(ARCH_DEFINES)),)
+		CPPFLAGS += -DUSE_AVX2 -DUSE_BMI2
+	else ifneq ($(findstring __AVX512F__, $(ARCH_DEFINES)),)
+		ifneq ($(findstring __AVX512VNNI__, $(ARCH_DEFINES)),)
+			CPPFLAGS += -DUSE_AVX512 -DUSE_BMI2 -DUSE_VNNI
+		else
+			CPPFLAGS += -DUSE_AVX512 -DUSE_BMI2
+		endif
+	else ifneq ($(findstring __AVX2__, $(ARCH_DEFINES)),)
+		ifneq ($(findstring __VNNI__, $(ARCH_DEFINES)),)
+			CPPFLAGS += -DUSE_AVX2 -DUSE_BMI2 -DUSE_VNNI -DUSE_AVXVNNI
+		else
+			CPPFLAGS += -DUSE_AVX2 -DUSE_BMI2
+		endif
+	else ifneq ($(findstring __SSE4_2__, $(ARCH_DEFINES)),)
+		CPPFLAGS += -DUSE_SSE42
+	else ifneq ($(findstring __SSE4_1__, $(ARCH_DEFINES)),)
+		CPPFLAGS += -DUSE_SSE41
+	else ifneq ($(findstring __SSSE3__, $(ARCH_DEFINES)),)
+		CPPFLAGS += -DUSE_SSSE3
+	else ifneq ($(findstring __SSE2__, $(ARCH_DEFINES)),)
+		CPPFLAGS += -DUSE_SSE2
+	endif
 endif
 
 # YANEURAOU_EDITION , CPUターゲット名 などのシンボルをコンパイル時に定義してやる。
@@ -625,10 +661,10 @@ CUDA_OBJECTS = $(addprefix $(OBJDIR)/, $(CUDA_SOURCES:.cu=.o))
 OBJC_OBJECTS = $(addprefix $(OBJDIR)/, $(OBJC_SOURCES:.mm=.o))
 DEPENDS  = $(OBJECTS:.o=.d)
 
-all: clean $(TARGET)
-.PHONY : all normal tournament prof profgen profuse pgo clean
+all: clean run_python_script $(EXE)
+.PHONY : all normal evallearn tournament prof profgen profuse pgo clean
 
-$(TARGET): $(OBJECTS) $(CUDA_OBJECTS) $(OBJC_OBJECTS)
+$(EXE): $(OBJECTS) $(CUDA_OBJECTS) $(OBJC_OBJECTS)
 	$(COMPILER) -o $@ $^ $(LDFLAGS) $(CPPFLAGS) $(LIBS)
 
 $(OBJDIR)/%.o: %.cpp
@@ -655,11 +691,15 @@ endif
 
 # 通常使用。
 normal: run_python_script
-	$(MAKE) CPPFLAGS='$(CPPFLAGS) $(LTOFLAGS)' LDFLAGS='$(LDFLAGS) $(LTOFLAGS)' $(TARGET)
+	$(MAKE) CPPFLAGS='$(CPPFLAGS) $(LTOFLAGS)' LDFLAGS='$(LDFLAGS) $(LTOFLAGS)' $(EXE)
+
+# 学習用。openmp , openblasなどを有効にする。
+evallearn: run_python_script
+	$(MAKE) CPPFLAGS='$(CPPFLAGS) $(LTOFLAGS) $(OPENMP) $(BLAS_CPPFLAGS) -DEVAL_LEARN' LDFLAGS='$(LDFLAGS) $(OPENMP_LDFLAGS) $(BLAS_LDFLAGS) $(LTOFLAGS)' $(EXE)
 
 # トーナメント用
 tournament: run_python_script
-	$(MAKE) CPPFLAGS='$(CPPFLAGS) $(LTOFLAGS) -DFOR_TOURNAMENT' LDFLAGS='$(LDFLAGS) $(LTOFLAGS)' $(TARGET)
+	$(MAKE) CPPFLAGS='$(CPPFLAGS) $(LTOFLAGS) -DFOR_TOURNAMENT' LDFLAGS='$(LDFLAGS) $(LTOFLAGS)' $(EXE)
 
 #　とりあえずPGOはAVX2とSSE4.2専用
 prof:
@@ -673,11 +713,11 @@ profuse:
 
 pgo:
 	$(MAKE) profgen
-	@./$(TARGET) EvalDir ../build/eval , bench , quit
+	@./$(EXE) EvalDir ../build/eval , bench , quit
 	@touch $(SOURCES)
 	$(MAKE) profuse
 
 clean:
-	rm -f $(OBJECTS) $(CUDA_OBJECTS) $(OBJC_OBJECTS) $(DEPENDS) $(TARGET) ${OBJECTS:.o=.gcda}
+	rm -f $(OBJECTS) $(CUDA_OBJECTS) $(OBJC_OBJECTS) $(DEPENDS) $(EXE) ${OBJECTS:.o=.gcda}
 
 -include $(DEPENDS)

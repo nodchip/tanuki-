@@ -157,11 +157,10 @@ void Engine::add_options() {
     //     複数スレッドを用いて行うことができなくなるため。
     // ⚠ ここで、派生class側のresize_threads()ではなく、
     //	   このclassのresize_threads()を呼び出すことに注意。
-    //     派生class側のresize_threads()は、"USI_Hash"を参照して
+    //     派生class側のresize_threads()は、"Hash"を参照して
     //     置換表を初期化するコードが書かれているかもしれないが、
-    //     いま時点では、"USI_Hash"のoptionをaddしていないのでエラーとなる。
-    // Engine::resize_threads();
-	// → thread数が0のときは初期化をskipするようにしたからこれはなくてもいいと思う。
+    //     いま時点では、"Hash"のoptionをaddしていないのでエラーとなる。
+    Engine::resize_threads();
 }
 
 // NumaConfig(numaContextのこと)を Options["NumaPolicy"]の値 から設定する。

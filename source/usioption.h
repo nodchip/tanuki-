@@ -190,7 +190,7 @@ class OptionsMap {
     // Optionオブジェクトを構築して、それを *this に突っ込む。
     // "engine_options.txt"というファイルの各行からOptionオブジェクト構築して
     // Optionの値を上書きするためにこの関数が必要。
-    // "option name USI_Hash type spin default 256"
+    // "option name Hash type spin default 256"
     // のような文字列が引数として渡される。
     // このとき、Optionのhandlerとidxは書き換えない。
     void build_option(const std::string& line);

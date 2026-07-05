@@ -36,15 +36,15 @@ void TimeManagement::add_options(OptionsMap& options) {
     // ネットワークの平均遅延時間[ms]
     // この時間だけ早めに指せばだいたい間に合う。
     // 切れ負けの瞬間は、NetworkDelayのほうなので大丈夫。
-    options.add("NetworkDelay", Option(time_margin, 0, 10000));
+    options.add("NetworkDelay", Option(0, 0, 10000));
 
     // ネットワークの最大遅延時間[ms]
     // 切れ負けの瞬間だけはこの時間だけ早めに指す。
     // 1.2秒ほど早く指さないとfloodgateで切れ負けしかねない。
-    options.add("NetworkDelay2", Option(time_margin + 1000, 0, 10000));
+    options.add("NetworkDelay2", Option(500, 0, 10000));
 
     // 最小思考時間[ms]
-    options.add("MinimumThinkingTime", Option(2000, 1, 100000));
+    options.add("MinimumThinkingTime", Option(0, 0, 100000));
 
     // 切れ負けのときの思考時間を調整する。序盤重視率。百分率になっている。
     // 例えば200を指定すると本来の最適時間の200%(2倍)思考するようになる。
@@ -153,10 +153,6 @@ void TimeManagement::init_(const Search::LimitsType& limits,
     remain_time =
       limits.time[us] + limits.byoyomi[us] + limits.inc[us] - (TimePoint) options["NetworkDelay2"];
 
-	// remain_timeを0にすると時間切れのあと自爆するのでとりあえず100はあることにしておく。
-	// round_up_to_fullsecond == falseのときは秒未満での戦いなので、1にしておく。
-	remain_time = std::max(remain_time, (TimePoint) (round_up_to_fullsecond ? 100 : 1) );
-
 	// 最小思考時間
     minimum_thinking_time = (TimePoint) options["MinimumThinkingTime"];
 
@@ -228,10 +224,7 @@ void TimeManagement::init_(const Search::LimitsType& limits,
 	// minimumとoptimumな時間を適当に計算する。
 
 	{
-		// 最小思考時間(これが1000より短く設定されることはないはず..)
-		// round_up_to_fullsecond == falseのときは秒未満での戦いなので、1にしておく。
-		minimumTime = std::max(minimum_thinking_time - network_delay,
-							   (TimePoint)(round_up_to_fullsecond ? 1000 : 1));
+		minimumTime = std::max(minimum_thinking_time - network_delay, (TimePoint)0);
 
 		// 最適思考時間と、最大思考時間には、まずは上限値を設定しておく。
 		optimumTime = maximumTime = remain_time;
@@ -300,9 +293,9 @@ void TimeManagement::init_(const Search::LimitsType& limits,
 	}
 
 	// 残り時間 - network_delay2よりは短くしないと切れ負けになる可能性が出てくる。
-	minimumTime = std::min(round_up(minimumTime), remain_time);
+	minimumTime = std::min(         minimumTime , remain_time);
 	optimumTime = std::min(         optimumTime , remain_time);
-	maximumTime = std::min(round_up(maximumTime), remain_time);
+	maximumTime = std::min(         maximumTime , remain_time);
 }
 
 // 1秒単位で繰り上げてdelayを引く。
