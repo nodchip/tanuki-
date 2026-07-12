@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import hashlib
 import math
 import os
 import pathlib
@@ -12,6 +13,25 @@ import sys
 import threading
 import time
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set, TextIO, Tuple
+
+try:
+    from script.book_validation import registered_legal_move_count, validate_book
+except ImportError:
+    from book_validation import registered_legal_move_count, validate_book
+
+try:
+    from script.corpus_priority import SiteNodeBudget
+except ImportError:
+    from corpus_priority import SiteNodeBudget
+
+try:
+    from script.book_corpus import CorpusStore
+except ImportError:
+    from book_corpus import CorpusStore
+try:
+    from script.book_extension_runtime import HeartbeatMonitor, WindowsFileLock, drain_workers
+except ImportError:
+    from book_extension_runtime import HeartbeatMonitor, WindowsFileLock, drain_workers
 
 try:
     import cshogi
@@ -374,6 +394,42 @@ class OpeningBook:
         return entry
 
 
+def sha256_file(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with pathlib.Path(path).open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def save_book_and_checkpoint(
+    book: OpeningBook,
+    path: pathlib.Path,
+    backup_count: int,
+    store: Optional[CorpusStore],
+) -> None:
+    validate_book(book, mode="strict")
+    book.write_atomic(path, backup_count)
+    if store is not None:
+        store.record_checkpoint(sha256_file(path))
+
+def replay_unpersisted_results(
+    book: OpeningBook, store: CorpusStore, *, book_hash: Optional[str] = None
+) -> int:
+    """Reapply evaluated SQLite results that were not included in a saved checkpoint."""
+    added = 0
+    results = store.unpersisted_results() if book_hash is None else store.results_requiring_replay(book_hash)
+    for stored in results:
+        position = book.ensure_position(stored.position_key)
+        if position.find_entry(stored.move) is not None:
+            continue
+        book.append_entry(
+            position,
+            SearchResult(stored.move, stored.response, stored.eval_cp, stored.depth),
+        )
+        added += 1
+    return added
+
 class DiskOpeningBook:
     """ソート済みやねうら王形式 DB を必要局面だけディスクから読む。"""
 
@@ -714,7 +770,7 @@ def _select_available_leaf_path(
     position = book.positions.get(sfen)
     if position is None or not position.entries:
         return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
-    if len(position.entries) < required_book_entry_count(
+    if registered_entry_count(sfen, position.entries) < required_book_entry_count(
         sfen,
         multipv,
         legal_move_count_provider=legal_move_count_provider,
@@ -936,7 +992,7 @@ def _select_vulnerability_leaf_path(
     position = book.positions.get(sfen)
     if position is None or not position.entries:
         return LeafPath(steps=[], leaf_sfen=sfen) if sfen not in inflight else None
-    if len(position.entries) < required_book_entry_count(
+    if registered_entry_count(sfen, position.entries) < required_book_entry_count(
         sfen,
         multipv,
         legal_move_count_provider=legal_move_count_provider,
@@ -1024,6 +1080,23 @@ def ensure_target_entry(book: OpeningBook, position: BookPosition, source: BookE
     return book.append_book_entry(position, source, visits=0)
 
 
+def registered_entry_count(sfen: str, entries: Sequence[BookEntry]) -> int:
+    """Count distinct legal entries, retaining synthetic-SFEN test compatibility."""
+    if cshogi is None:
+        return len({entry.move for entry in entries})
+    if sfen == "startpos":
+        validation_sfen = cshogi.Board().sfen()
+    elif len(sfen.split()) == 3:
+        validation_sfen = f"{sfen} 1"
+    else:
+        validation_sfen = sfen
+    try:
+        cshogi.Board(validation_sfen)
+    except (TypeError, ValueError, RuntimeError):
+        return len({entry.move for entry in entries})
+    return registered_legal_move_count(validation_sfen, entries)
+
+
 def required_book_entry_count(
     sfen: str,
     multipv: int,
@@ -1090,12 +1163,14 @@ def increment_path_visits(path: LeafPath) -> None:
         step.entry.visits += 1
 
 
-def parse_info_line(line: str) -> Optional[Tuple[int, SearchResult]]:
+def parse_info_line(
+    line: str, *, allow_bound: bool = False
+) -> Optional[Tuple[int, SearchResult]]:
     """USI info 行から MultiPV の探索結果を抽出する。"""
     tokens = line.strip().split()
     if not tokens or tokens[0] != "info":
         return None
-    if "lowerbound" in tokens or "upperbound" in tokens:
+    if not allow_bound and ("lowerbound" in tokens or "upperbound" in tokens):
         return None
     depth = 0
     multipv = 1
@@ -1151,7 +1226,7 @@ def sfen_after_move(sfen: str, move: str) -> str:
         raise RuntimeError("cshogi がインストールされていません")
     board = cshogi.Board()
     if sfen != "startpos":
-        board.set_sfen(sfen)
+        board.set_sfen(f"{sfen} 1" if len(sfen.split()) == 3 else sfen)
     board.push_usi(move)
     return board.sfen()
 
@@ -1162,7 +1237,7 @@ def count_legal_moves(sfen: str) -> int:
         raise RuntimeError("cshogi がインストールされていません")
     board = cshogi.Board()
     if sfen != "startpos":
-        board.set_sfen(sfen)
+        board.set_sfen(f"{sfen} 1" if len(sfen.split()) == 3 else sfen)
     return len(list(board.legal_moves))
 
 
@@ -1209,6 +1284,8 @@ class UsiEngine:
         self.stderr = stderr
         self.process: Optional[subprocess.Popen[str]] = None
         self.option_names: Set[str] = set()
+        self._searching = threading.Event()
+        self._send_lock = threading.Lock()
 
     def start(self) -> None:
         """エンジンを起動し、初期化コマンドを 1 回だけ送る。"""
@@ -1256,20 +1333,89 @@ class UsiEngine:
         finally:
             self.process = None
 
-    def search(self, sfen: str, nodes: int) -> List[SearchResult]:
-        """指定局面を go nodes で探索し、最終 MultiPV 結果を返す。"""
-        self.send(f"position sfen {sfen}")
-        self.send(f"go nodes {nodes}")
-        latest: Dict[int, SearchResult] = {}
-        while True:
-            line = self.readline()
-            if line.startswith("bestmove "):
-                break
-            parsed = parse_info_line(line)
-            if parsed is not None:
-                multipv, result = parsed
-                latest[multipv] = result
-        return [latest[index] for index in sorted(latest)]
+    def search(
+        self,
+        sfen: str,
+        nodes: int,
+        *,
+        root_sfen: Optional[str] = None,
+        moves: Sequence[str] = (),
+    ) -> List[SearchResult]:
+        """指定局面を履歴付き go nodes で探索し、最終 MultiPV 結果を返す。"""
+        self._searching.set()
+        try:
+            if root_sfen is None:
+                position_command = f"position sfen {sfen}"
+            else:
+                root = (
+                    "startpos"
+                    if root_sfen in {"startpos", initial_sfen()}
+                    else f"sfen {root_sfen}"
+                )
+                suffix = f" moves {' '.join(moves)}" if moves else ""
+                position_command = f"position {root}{suffix}"
+            self.send(position_command)
+            self.send(f"go nodes {nodes}")
+            latest: Dict[int, SearchResult] = {}
+            while True:
+                line = self.readline()
+                if line.startswith("bestmove "):
+                    break
+                parsed = parse_info_line(line)
+                if parsed is not None:
+                    multipv, result = parsed
+                    latest[multipv] = result
+            return [latest[index] for index in sorted(latest)]
+        finally:
+            self._searching.clear()
+
+    def searchmove(
+        self,
+        sfen: str,
+        nodes: int,
+        *,
+        move: str,
+        root_sfen: Optional[str] = None,
+        moves: Sequence[str] = (),
+    ) -> SearchResult:
+        """Explore one corpus move with USI searchmoves and return only a real score."""
+        self._searching.set()
+        try:
+            if root_sfen is None:
+                position_command = f"position sfen {sfen}"
+            else:
+                root = (
+                    "startpos"
+                    if root_sfen in {"startpos", initial_sfen()}
+                    else f"sfen {root_sfen}"
+                )
+                suffix = f" moves {' '.join(moves)}" if moves else ""
+                position_command = f"position {root}{suffix}"
+            self.send(position_command)
+            self.send(f"go nodes {nodes} searchmoves {move}")
+            latest: Optional[SearchResult] = None
+            while True:
+                line = self.readline()
+                if line.startswith("bestmove "):
+                    best_tokens = line.split()
+                    if latest is not None and latest.response == "none" and "ponder" in best_tokens:
+                        ponder_index = best_tokens.index("ponder")
+                        if ponder_index + 1 < len(best_tokens):
+                            latest = dataclasses.replace(latest, response=best_tokens[ponder_index + 1])
+                    break
+                parsed = parse_info_line(line, allow_bound=True)
+                if parsed is not None and parsed[1].move == move:
+                    latest = parsed[1]
+            if latest is None:
+                raise RuntimeError(f"engine returned no evaluated PV for searchmove {move}")
+            return latest
+        finally:
+            self._searching.clear()
+
+    def stop_search(self) -> None:
+        """探索中のエンジンへ USI stop を送る。"""
+        if self._searching.is_set():
+            self.send("stop")
 
     def setoption(self, name: str, value: Optional[str]) -> None:
         """USI setoption コマンドを送る。"""
@@ -1280,10 +1426,11 @@ class UsiEngine:
 
     def send(self, command: str) -> None:
         """USI エンジンへ 1 行送る。"""
-        if self.process is None or self.process.stdin is None:
-            raise RuntimeError("エンジンが起動していません")
-        self.process.stdin.write(command + "\n")
-        self.process.stdin.flush()
+        with self._send_lock:
+            if self.process is None or self.process.stdin is None:
+                raise RuntimeError("エンジンが起動していません")
+            self.process.stdin.write(command + "\n")
+            self.process.stdin.flush()
 
     def readline(self) -> str:
         """USI エンジンから 1 行読む。"""
@@ -1368,6 +1515,12 @@ def worker_loop(
     stop_event: threading.Event,
     progress: ProgressReporter,
     vulnerability_target: Optional[VulnerabilityWorkerTarget] = None,
+    corpus_store: Optional[CorpusStore] = None,
+    corpus_snapshot_id: str = "",
+    corpus_nodes: int = 0,
+    corpus_semaphore: Optional[threading.Semaphore] = None,
+    corpus_site_budget: Optional[SiteNodeBudget] = None,
+    corpus_saturation_window: int = 100,
 ) -> None:
     """1 エンジン専有スレッドで leaf 選択と探索を繰り返す。"""
     idle_sleep_sec = 0.05
@@ -1433,7 +1586,14 @@ def worker_loop(
         assert leaf_key is not None
         assert leaf_sfen is not None
         try:
-            results = engine.search(leaf_sfen, nodes)
+            results = engine.search(
+                leaf_sfen,
+                nodes,
+                root_sfen=root_sfen,
+                moves=[step.entry.move for step in path.steps],
+            )
+            if stop_event.is_set() or not results:
+                continue
             with book_lock:
                 added_position = leaf_key not in book.positions
                 position = book.ensure_position(leaf_sfen)
@@ -1456,107 +1616,278 @@ def worker_loop(
                     stats=stats,
                 )
                 progress.maybe_progress(stats)
+
+            corpus_task = None
+            corpus_sfen = ""
+            corpus_history: List[str] = []
+            corpus_path: Optional[LeafPath] = None
+            semaphore_acquired = False
+            if (
+                corpus_store is not None
+                and corpus_semaphore is not None
+                and corpus_nodes > 0
+                and not stop_event.is_set()
+                and stop_limits.can_start_search(stats, nodes=corpus_nodes)
+            ):
+                semaphore_acquired = corpus_semaphore.acquire(blocking=False)
+            if semaphore_acquired:
+                with book_lock:
+                    traversed_moves = [step.entry.move for step in path.steps]
+                    visited = [
+                        (step.sfen, traversed_moves[:index])
+                        for index, step in enumerate(path.steps)
+                    ]
+                    visited.append((leaf_key, traversed_moves))
+                    site_order: Sequence[Optional[str]] = (
+                        corpus_site_budget.order() if corpus_site_budget is not None else (None,)
+                    )
+                    for site in site_order:
+                        for visited_sfen, history in reversed(visited):
+                            existing = book.positions.get(book.position_key(visited_sfen))
+                            excluded = {entry.move for entry in existing.entries} if existing else set()
+                            corpus_task = corpus_store.reserve_for_position(
+                                corpus_snapshot_id,
+                                book.position_key(visited_sfen),
+                                excluded_moves=excluded,
+                                width=corpus_store.progressive_width(),
+                                lease_sec=300.0,
+                                site=site,
+                            )
+                            if corpus_task is not None:
+                                corpus_sfen = book.output_sfen(book.position_key(visited_sfen))
+                                corpus_history = list(history)
+                                corpus_path = LeafPath(
+                                    steps=list(path.steps[:len(history)]),
+                                    leaf_sfen=book.position_key(visited_sfen),
+                                )
+                                stats.searches += 1
+                                stats.total_nodes += corpus_nodes
+                                if corpus_site_budget is not None and site is not None:
+                                    corpus_site_budget.record(site, corpus_nodes)
+                                    corpus_store.add_metric(f"corpus_nodes:{site}", corpus_nodes)
+                                break
+                        if corpus_task is not None:
+                            break
+                if corpus_task is None:
+                    with book_lock:
+                        corpus_store.record_corpus_rollout(
+                            added=False, saturation_window=corpus_saturation_window
+                        )
+                    corpus_semaphore.release()
+                    semaphore_acquired = False
+            if corpus_task is not None:
+                try:
+                    corpus_result = engine.searchmove(
+                        corpus_sfen,
+                        corpus_nodes,
+                        move=corpus_task.move,
+                        root_sfen=root_sfen,
+                        moves=corpus_history,
+                    )
+                    with book_lock:
+                        if stop_event.is_set():
+                            corpus_store.fail_search(corpus_task.id, "interrupted", max_attempts=3)
+                        else:
+                            corpus_position = book.ensure_position(corpus_sfen)
+                            corpus_added = corpus_position.find_entry(corpus_result.move) is None
+                            if corpus_added:
+                                book.append_entry(corpus_position, corpus_result)
+                            assert corpus_path is not None
+                            increment_path_visits(corpus_path)
+                            propagate_minimax(
+                                book, corpus_path, leaf_sfen=corpus_path.leaf_sfen
+                            )
+                            corpus_store.complete_search(
+                                corpus_task.id,
+                                eval_cp=corpus_result.eval_cp,
+                                response=corpus_result.response,
+                                depth=corpus_result.depth,
+                                nodes=corpus_nodes,
+                                engine_config_id="usi-current",
+                            )
+                            corpus_store.record_corpus_rollout(
+                                added=corpus_added, saturation_window=corpus_saturation_window
+                            )
+                except Exception as error:
+                    with book_lock:
+                        corpus_store.fail_search(corpus_task.id, str(error), max_attempts=3)
+                        corpus_store.record_corpus_rollout(
+                            added=False, saturation_window=corpus_saturation_window
+                        )
+                finally:
+                    assert corpus_semaphore is not None
+                    corpus_semaphore.release()
         finally:
             with book_lock:
                 inflight.discard(leaf_key)
 
 
 def run_extend_loop(args: argparse.Namespace, progress_stream: TextIO = sys.stderr) -> None:
-    """CLI 引数に従ってエンジンを起動し、Ctrl+C まで定跡拡張を続ける。"""
-    book = OpeningBook.load(args.input, ignore_ply=args.ignore_ply)
-    book_lock = threading.Lock()
-    inflight: Set[str] = set()
-    stop_event = threading.Event()
-    stats = RunStats(start_time=time.monotonic())
-    progress = ProgressReporter(progress_stream, interval_sec=args.progress_interval_sec)
-    random_choice = RandomChoice(args.random_seed)
-    vulnerability_targets = build_vulnerability_worker_targets(
-        args.vulnerability_target,
-        ignore_ply=args.ignore_ply,
+    """CLI 引数に従って、安全な停止と保存を伴う定跡拡張を続ける。"""
+    lock_path = args.lock_path or args.output.with_name(f"{args.output.name}.lock")
+    process_lock = WindowsFileLock(lock_path)
+    process_lock.acquire(
+        {
+            "run_id": os.environ.get("BUILD_TAG", f"pid-{os.getpid()}"),
+            "build_number": os.environ.get("BUILD_NUMBER"),
+            "book_path": str(args.output.resolve()),
+        }
     )
-    stop_limits = StopLimits(
-        max_added_positions=args.max_added_positions,
-        max_searches=args.max_searches,
-        max_total_nodes=args.max_total_nodes,
-        max_runtime_sec=args.max_runtime_sec,
-    )
-    options = [parse_setoption(option) for option in args.setoption]
-    engines = [
-        UsiEngine(
-            args.engine,
-            usi_hash=args.usi_hash,
-            threads=args.threads,
-            multipv=args.multipv,
-            extra_options=options,
-        )
-        for _ in range(args.engine_count)
-    ]
-    threads: List[threading.Thread] = []
+    corpus_store: Optional[CorpusStore] = None
     try:
-        for engine in engines:
-            engine.start()
-
-        for worker_id, engine in enumerate(engines):
-            thread = threading.Thread(
-                target=worker_loop,
-                kwargs={
-                    "worker_id": worker_id,
-                    "engine": engine,
-                    "book": book,
-                    "root_sfen": args.root_sfen,
-                    "nodes": args.nodes,
-                    "multipv": args.multipv,
-                    "c_puct": args.c_puct,
-                    "eval_scale": args.eval_scale,
-                    "max_ply": args.max_ply,
-                    "book_side": args.book_side if args.eval_diff is not None else None,
-                    "eval_diff": args.eval_diff,
-                    "random_choice": random_choice,
-                    "book_lock": book_lock,
-                    "inflight": inflight,
-                    "stats": stats,
-                    "stop_limits": stop_limits,
-                    "stop_event": stop_event,
-                    "progress": progress,
-                    "vulnerability_target": (
-                        vulnerability_targets[worker_id]
-                        if worker_id < len(vulnerability_targets)
-                        else None
-                    ),
-                },
-                daemon=True,
+        book = OpeningBook.load(args.input, ignore_ply=args.ignore_ply)
+        input_hash = sha256_file(args.input)
+        validation_required = True
+        if args.corpus_db is not None:
+            corpus_store = CorpusStore(args.corpus_db)
+            corpus_store.reset_interrupted_tasks()
+            validation_required = not corpus_store.has_checkpoint(input_hash)
+            replayed = replay_unpersisted_results(book, corpus_store, book_hash=input_hash)
+            validation_required = validation_required or replayed > 0
+        if validation_required:
+            validate_book(book, mode="strict")
+        corpus_semaphore = threading.Semaphore(args.corpus_max_concurrent)
+        corpus_site_budget = SiteNodeBudget({
+            "wcsc": args.site_weight_wcsc,
+            "denryu": args.site_weight_denryu,
+            "floodgate": args.site_weight_floodgate,
+        })
+        book_lock = threading.Lock()
+        inflight: Set[str] = set()
+        stop_event = threading.Event()
+        stats = RunStats(start_time=time.monotonic())
+        progress = ProgressReporter(progress_stream, interval_sec=args.progress_interval_sec)
+        random_choice = RandomChoice(args.random_seed)
+        vulnerability_targets = build_vulnerability_worker_targets(
+            args.vulnerability_target,
+            ignore_ply=args.ignore_ply,
+        )
+        stop_limits = StopLimits(
+            max_added_positions=args.max_added_positions,
+            max_searches=args.max_searches,
+            max_total_nodes=args.max_total_nodes,
+            max_runtime_sec=args.max_runtime_sec,
+        )
+        monitor = None
+        if args.heartbeat_path is not None:
+            monitor = HeartbeatMonitor(
+                args.heartbeat_path,
+                timeout_sec=args.heartbeat_timeout_sec,
+                stop_request_path=args.stop_request_path,
             )
-            thread.start()
-            threads.append(thread)
+        elif args.stop_request_path is not None:
+            monitor = HeartbeatMonitor(
+                args.stop_request_path.with_name("unused-heartbeat"),
+                timeout_sec=float("inf"),
+                stop_request_path=args.stop_request_path,
+            )
 
-        next_save = time.monotonic() + args.save_interval_sec
-        while not stop_event.is_set():
-            time.sleep(0.2)
-            with book_lock:
-                reason = stop_limits.stop_reason(stats)
-                if reason is not None:
-                    stop_event.set()
-                    break
-                progress.maybe_progress(stats)
-            if time.monotonic() >= next_save:
+        options = [parse_setoption(option) for option in args.setoption]
+        engines = [
+            UsiEngine(
+                args.engine,
+                usi_hash=args.usi_hash,
+                threads=args.threads,
+                multipv=args.multipv,
+                extra_options=options,
+            )
+            for _ in range(args.engine_count)
+        ]
+        threads: List[threading.Thread] = []
+        stop_reason = "finished"
+        try:
+            for engine in engines:
+                engine.start()
+
+            for worker_id, engine in enumerate(engines):
+                thread = threading.Thread(
+                    target=worker_loop,
+                    kwargs={
+                        "worker_id": worker_id,
+                        "engine": engine,
+                        "book": book,
+                        "root_sfen": args.root_sfen,
+                        "nodes": args.nodes,
+                        "multipv": args.multipv,
+                        "c_puct": args.c_puct,
+                        "eval_scale": args.eval_scale,
+                        "max_ply": args.max_ply,
+                        "book_side": args.book_side if args.eval_diff is not None else None,
+                        "eval_diff": args.eval_diff,
+                        "random_choice": random_choice,
+                        "book_lock": book_lock,
+                        "inflight": inflight,
+                        "stats": stats,
+                        "stop_limits": stop_limits,
+                        "stop_event": stop_event,
+                        "progress": progress,
+                        "corpus_store": (
+                            corpus_store if worker_id >= len(vulnerability_targets) else None
+                        ),
+                        "corpus_snapshot_id": args.book_snapshot_id,
+                        "corpus_nodes": args.corpus_nodes,
+                        "corpus_semaphore": corpus_semaphore,
+                        "corpus_site_budget": corpus_site_budget,
+                        "corpus_saturation_window": args.corpus_saturation_window,
+                        "vulnerability_target": (
+                            vulnerability_targets[worker_id]
+                            if worker_id < len(vulnerability_targets)
+                            else None
+                        ),
+                    },
+                    daemon=True,
+                )
+                thread.start()
+                threads.append(thread)
+
+            next_save = time.monotonic() + args.save_interval_sec
+            while not stop_event.is_set():
+                stop_event.wait(0.2)
+                if monitor is not None:
+                    external_reason = monitor.stop_reason()
+                    if external_reason is not None:
+                        stop_reason = external_reason
+                        stop_event.set()
+                        break
                 with book_lock:
-                    book.write_atomic(args.output, args.backup_count)
-                    progress.save(args.output, stats)
-                next_save = time.monotonic() + args.save_interval_sec
-    except KeyboardInterrupt:
-        with book_lock:
-            progress.stop("keyboard-interrupt", stats)
+                    limit_reason = stop_limits.stop_reason(stats)
+                    if limit_reason is not None:
+                        stop_reason = limit_reason
+                        stop_event.set()
+                        break
+                    progress.maybe_progress(stats)
+                if time.monotonic() >= next_save:
+                    with book_lock:
+                        save_book_and_checkpoint(book, args.output, args.backup_count, corpus_store)
+                        progress.save(args.output, stats)
+                    next_save = time.monotonic() + args.save_interval_sec
+        except KeyboardInterrupt:
+            stop_reason = "keyboard-interrupt"
+            stop_event.set()
+        finally:
+            drained = drain_workers(
+                engines,
+                threads,
+                stop_event,
+                timeout_sec=args.usi_stop_timeout_sec,
+            )
+            if not drained:
+                for engine in engines:
+                    engine.close()
+                for thread in threads:
+                    thread.join(timeout=5.0)
+            if any(thread.is_alive() for thread in threads):
+                raise RuntimeError("worker did not stop; refusing to save a concurrently mutating book")
+            with book_lock:
+                save_book_and_checkpoint(book, args.output, args.backup_count, corpus_store)
+                progress.save(args.output, stats)
+                progress.stop(stop_reason, stats)
+            for engine in engines:
+                engine.close()
     finally:
-        stop_event.set()
-        for thread in threads:
-            thread.join(timeout=1)
-        with book_lock:
-            book.write_atomic(args.output, args.backup_count)
-            final_reason = stop_limits.stop_reason(stats) or "finished"
-            progress.save(args.output, stats)
-            progress.stop(final_reason, stats)
-        for engine in engines:
-            engine.close()
+        if corpus_store is not None:
+            corpus_store.close()
+        process_lock.close()
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -1576,7 +1907,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--eval-diff", type=int, default=None)
     parser.add_argument("--book-side", choices=["black", "white"], default="black")
     parser.add_argument("--max-ply", type=int, default=200)
-    parser.add_argument("--save-interval-sec", type=float, default=300.0)
+    parser.add_argument("--save-interval-sec", type=float, default=3600.0)
     parser.add_argument("--progress-interval-sec", type=float, default=10.0)
     parser.add_argument("--backup-count", type=int, default=3)
     parser.add_argument("--root-sfen", default=initial_sfen())
@@ -1587,6 +1918,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-searches", type=int, default=None)
     parser.add_argument("--max-total-nodes", type=int, default=None)
     parser.add_argument("--max-runtime-sec", type=float, default=None)
+    parser.add_argument("--heartbeat-path", type=pathlib.Path, default=None)
+    parser.add_argument("--stop-request-path", type=pathlib.Path, default=None)
+    parser.add_argument("--lock-path", type=pathlib.Path, default=None)
+    parser.add_argument("--heartbeat-timeout-sec", type=float, default=10.0)
+    parser.add_argument("--usi-stop-timeout-sec", type=float, default=60.0)
+    parser.add_argument("--corpus-db", type=pathlib.Path, default=None)
+    parser.add_argument("--book-snapshot-id", default="current")
+    parser.add_argument("--corpus-nodes", type=int, default=0)
+    parser.add_argument("--corpus-max-concurrent", type=int, default=1)
+    parser.add_argument("--corpus-saturation-window", type=int, default=100)
+    parser.add_argument("--site-weight-wcsc", type=int, default=40)
+    parser.add_argument("--site-weight-denryu", type=int, default=40)
+    parser.add_argument("--site-weight-floodgate", type=int, default=20)
     return parser
 
 
@@ -1621,6 +1965,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         parser.error("--max-runtime-sec は正の値を指定してください")
     if args.progress_interval_sec < 0:
         parser.error("--progress-interval-sec は 0 以上を指定してください")
+    if args.save_interval_sec <= 0:
+        parser.error("--save-interval-sec は正の値を指定してください")
+    if args.backup_count < 0:
+        parser.error("--backup-count は 0 以上を指定してください")
+    if args.heartbeat_timeout_sec <= 0 or args.usi_stop_timeout_sec <= 0:
+        parser.error("heartbeat/USI stop timeout は正の値を指定してください")
+    if args.corpus_nodes < 0:
+        parser.error("--corpus-nodes は 0 以上を指定してください")
+    if args.corpus_max_concurrent <= 0:
+        parser.error("--corpus-max-concurrent は 1 以上を指定してください")
+    if args.corpus_saturation_window <= 0:
+        parser.error("--corpus-saturation-window は正の値を指定してください")
+    if min(args.site_weight_wcsc, args.site_weight_denryu, args.site_weight_floodgate) < 0:
+        parser.error("site weight は 0 以上を指定してください")
+    if args.site_weight_wcsc + args.site_weight_denryu + args.site_weight_floodgate <= 0:
+        parser.error("site weight は少なくとも1つ正にしてください")
+    if args.corpus_db is not None and args.corpus_nodes <= 0:
+        parser.error("--corpus-db 使用時は --corpus-nodes を指定してください")
     if len(args.vulnerability_target) > args.engine_count:
         parser.error("--vulnerability-target の数は --engine-count 以下にしてください")
     for target in args.vulnerability_target:

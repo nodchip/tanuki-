@@ -1,0 +1,26 @@
+[workers]
+engine_count = 24
+threads_per_engine = 1
+vulnerability_black = 8
+vulnerability_white = 8
+general = 8
+
+[corpus]
+enabled = true
+max_concurrent_searches = 2
+general_pool_node_share = 0.25
+saturation_window = 100
+wcsc_weight = 40
+denryu_weight = 40
+floodgate_weight = 20
+rating_medium_games = 15
+rating_high_games = 50
+rating_min_component_size = 10
+
+[runtime]
+# Keep mutable state outside the Git workspace.
+state_dir = "C:/book-extension-state/production"
+save_interval_sec = 3600
+backup_count = 3
+heartbeat_timeout_sec = 10
+usi_stop_timeout_sec = 60

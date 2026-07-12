@@ -248,3 +248,13 @@ FakesAssemblies/
 GeneratedArtifacts/
 _Pvt_Extensions/
 ModelManifest.xml
+
+# Local shaping and spike documents
+docs/shaping/
+docs/spikes/
+# Book-extension runtime state and downloaded corpus archives
+book-extension-state/
+corpus-data/
+*.sqlite-wal
+*.sqlite-shm
+*.7z

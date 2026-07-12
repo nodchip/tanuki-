@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import cshogi
+
 import io
 import pathlib
 import sys
@@ -12,6 +14,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import extend_book_mcts
+from book_corpus import CorpusStore
 
 from extend_book_mcts import (
     BookEntry,
@@ -29,11 +32,13 @@ from extend_book_mcts import (
     VulnerabilityTarget,
     VulnerabilityWorkerTarget,
     build_vulnerability_worker_targets,
+    build_arg_parser,
     calculate_ucb,
     merge_search_results,
     parse_info_line,
     parse_vulnerability_target,
     propagate_minimax,
+    replay_unpersisted_results,
     reserve_leaf_path,
     score_to_winrate,
     select_leaf_path,
@@ -84,6 +89,20 @@ class ExtendBookMctsTest(unittest.TestCase):
             ),
         )
 
+    def test_atomic_save_retains_exactly_three_previous_generations(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output = pathlib.Path(temporary_directory) / "book.db"
+            book = OpeningBook()
+            for index in range(5):
+                position = book.ensure_position(cshogi.Board().sfen())
+                position.entries = [BookEntry("7g7f", "none", index, 1, 0, index)]
+                book.write_atomic(output, backup_count=3)
+            self.assertTrue(output.exists())
+            self.assertTrue(output.with_name("book.db.001.bak").exists())
+            self.assertTrue(output.with_name("book.db.002.bak").exists())
+            self.assertTrue(output.with_name("book.db.003.bak").exists())
+            self.assertFalse(output.with_name("book.db.004.bak").exists())
+            self.assertFalse(output.with_name("book.db.tmp").exists())
     def test_ignore_ply_merges_same_position_and_outputs_zero_ply(self) -> None:
         text = textwrap.dedent(
             """\
@@ -154,6 +173,28 @@ class ExtendBookMctsTest(unittest.TestCase):
             entries = DiskOpeningBook(path).lookup("target w P 0")
 
         self.assertEqual(entries, [])
+
+    def test_parser_accepts_graceful_shutdown_paths_and_hourly_save_default(self) -> None:
+        args = build_arg_parser().parse_args([
+            "--input", "in.db",
+            "--output", "out.db",
+            "--engine", "engine.exe",
+            "--engine-count", "1",
+            "--nodes", "10",
+            "--multipv", "1",
+            "--heartbeat-path", "heartbeat.json",
+            "--stop-request-path", "stop.request",
+            "--lock-path", "working.lock",
+            "--heartbeat-timeout-sec", "12",
+            "--usi-stop-timeout-sec", "34",
+        ])
+
+        self.assertEqual(args.heartbeat_path, pathlib.Path("heartbeat.json"))
+        self.assertEqual(args.stop_request_path, pathlib.Path("stop.request"))
+        self.assertEqual(args.lock_path, pathlib.Path("working.lock"))
+        self.assertEqual(args.heartbeat_timeout_sec, 12.0)
+        self.assertEqual(args.usi_stop_timeout_sec, 34.0)
+        self.assertEqual(args.save_interval_sec, 3600.0)
 
     def test_parse_vulnerability_target_accepts_windows_path_with_side_suffix(self) -> None:
         target = parse_vulnerability_target(r"D:\book\target.db:white")
@@ -375,6 +416,32 @@ class ExtendBookMctsTest(unittest.TestCase):
 
         self.assertEqual([(step.sfen, step.entry.move) for step in path.steps], [("root", "a")])
         self.assertEqual(path.leaf_sfen, "child")
+
+    def test_select_leaf_path_counts_only_distinct_legal_entries(self) -> None:
+        root = cshogi.Board().sfen()
+        book = OpeningBook()
+        book.positions[root] = BookPosition(
+            root,
+            [
+                BookEntry("7g7f", "none", 10, 1, 0, 0),
+                BookEntry("7g7f", "none", 20, 2, 0, 1),
+            ],
+            0,
+        )
+
+        path = select_leaf_path(
+            book,
+            root,
+            navigator=lambda sfen, move: "child",
+            multipv=2,
+            c_puct=1.4,
+            eval_scale=600.0,
+            inflight=set(),
+            legal_move_count_provider=lambda sfen: 2,
+        )
+
+        self.assertEqual(path.leaf_sfen, root)
+        self.assertEqual(path.steps, [])
 
     def test_select_leaf_path_skips_cycle_and_uses_alternative(self) -> None:
         book = OpeningBook()
@@ -794,7 +861,7 @@ class ExtendBookMctsTest(unittest.TestCase):
             def __init__(self) -> None:
                 self.searched: list[str] = []
 
-            def search(self, sfen: str, nodes: int) -> list[SearchResult]:
+            def search(self, sfen: str, nodes: int, **kwargs: object) -> list[SearchResult]:
                 self.searched.append(sfen)
                 if sfen == "child-a":
                     return [SearchResult("reply-a", "none", -50, 1)]
@@ -836,6 +903,106 @@ class ExtendBookMctsTest(unittest.TestCase):
 
         self.assertEqual(engine.searched, ["child-a", "child-b"])
 
+    def test_replays_unpersisted_sqlite_results_into_memory_book(self) -> None:
+        book = OpeningBook()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with CorpusStore(pathlib.Path(temporary_directory) / "corpus.sqlite") as store:
+                store.upsert_candidate("root", "7g7f", [], "wcsc", "9")
+                task = store.reserve_for_position(
+                    "book-a", "root", excluded_moves=set(), width=1, lease_sec=10
+                )
+                assert task is not None
+                store.complete_search(
+                    task.id, eval_cp=42, response="3c3d", depth=12,
+                    nodes=1000, engine_config_id="engine-a",
+                )
+
+                self.assertEqual(replay_unpersisted_results(book, store), 1)
+                self.assertEqual(book.positions["root"].entries[0].eval_cp, 42)
+                self.assertEqual(replay_unpersisted_results(book, store), 0)
+    def test_worker_fills_multipv_before_searching_unregistered_corpus_move(self) -> None:
+        book = OpeningBook()
+        calls: list[str] = []
+
+        class FakeEngine:
+            def search(self, sfen: str, nodes: int, **kwargs: object) -> list[SearchResult]:
+                calls.append("normal")
+                return [SearchResult("7g7f", "3c3d", 20, 8)]
+
+            def searchmove(self, sfen: str, nodes: int, **kwargs: object) -> SearchResult:
+                calls.append(f"corpus:{kwargs['move']}")
+                return SearchResult("2g2f", "8c8d", 10, 9)
+
+        original_count = extend_book_mcts.count_legal_moves
+        try:
+            extend_book_mcts.count_legal_moves = lambda sfen: 30  # type: ignore[assignment]
+            with tempfile.TemporaryDirectory() as temporary_directory:
+                with CorpusStore(pathlib.Path(temporary_directory) / "corpus.sqlite") as store:
+                    store.upsert_candidate("root", "2g2f", [], "wcsc", "9")
+                    worker_loop(
+                        worker_id=0, engine=FakeEngine(), book=book, root_sfen="root",
+                        nodes=100, multipv=1, c_puct=1.4, eval_scale=600.0,
+                        max_ply=1, book_side=None, eval_diff=None,
+                        random_choice=RandomChoice(seed=0), book_lock=threading.Lock(),
+                        inflight=set(), stats=RunStats(start_time=time.monotonic()),
+                        stop_limits=StopLimits(max_searches=2), stop_event=threading.Event(),
+                        progress=ProgressReporter(io.StringIO(), interval_sec=10.0),
+                        corpus_store=store, corpus_snapshot_id="book-a",
+                        corpus_nodes=25, corpus_semaphore=threading.Semaphore(1),
+                    )
+        finally:
+            extend_book_mcts.count_legal_moves = original_count  # type: ignore[assignment]
+
+        self.assertEqual(calls, ["normal", "corpus:2g2f"])
+        self.assertEqual({entry.move for entry in book.positions["root"].entries}, {"7g7f", "2g2f"})
+    def test_worker_does_not_create_empty_position_when_engine_returns_no_pv(self) -> None:
+        class FakeEngine:
+            def search(self, sfen: str, nodes: int, **kwargs: object) -> list[SearchResult]:
+                return []
+
+        book = OpeningBook()
+        worker_loop(
+            worker_id=0, engine=FakeEngine(), book=book, root_sfen="root",
+            nodes=1, multipv=1, c_puct=1.4, eval_scale=600.0, max_ply=1,
+            book_side=None, eval_diff=None, random_choice=RandomChoice(seed=0),
+            book_lock=threading.Lock(), inflight=set(),
+            stats=RunStats(start_time=time.monotonic()),
+            stop_limits=StopLimits(max_searches=1), stop_event=threading.Event(),
+            progress=ProgressReporter(io.StringIO(), interval_sec=10.0),
+        )
+        self.assertEqual(book.positions, {})
+    def test_worker_discards_results_when_stop_is_requested_during_search(self) -> None:
+        book = OpeningBook()
+        stop_event = threading.Event()
+
+        class FakeEngine:
+            def search(self, sfen: str, nodes: int, **kwargs: object) -> list[SearchResult]:
+                stop_event.set()
+                return [SearchResult("7g7f", "none", 100, 10)]
+
+        worker_loop(
+            worker_id=0,
+            engine=FakeEngine(),  # type: ignore[arg-type]
+            book=book,
+            root_sfen="root",
+            nodes=1,
+            multipv=1,
+            c_puct=1.4,
+            eval_scale=600.0,
+            max_ply=1,
+            book_side=None,
+            eval_diff=None,
+            random_choice=RandomChoice(seed=0),
+            book_lock=threading.Lock(),
+            inflight=set(),
+            stats=RunStats(start_time=time.monotonic()),
+            stop_limits=StopLimits(),
+            stop_event=stop_event,
+            progress=ProgressReporter(io.StringIO(), interval_sec=10.0),
+        )
+
+        self.assertEqual(book.positions, {})
+
     def test_worker_uses_vulnerability_target_when_assigned(self) -> None:
         book = OpeningBook()
 
@@ -849,7 +1016,7 @@ class ExtendBookMctsTest(unittest.TestCase):
             def __init__(self) -> None:
                 self.searched: list[str] = []
 
-            def search(self, sfen: str, nodes: int) -> list[SearchResult]:
+            def search(self, sfen: str, nodes: int, **kwargs: object) -> list[SearchResult]:
                 self.searched.append(sfen)
                 return [SearchResult("leaf-move", "none", 0, 1)]
 
@@ -962,6 +1129,85 @@ class ExtendBookMctsTest(unittest.TestCase):
                 """
             ),
         )
+
+    def test_usi_engine_searchmove_accepts_forced_move_bound_score(self) -> None:
+        engine = UsiEngine(
+            pathlib.Path("dummy.exe"), usi_hash=16, threads=1, multipv=1, extra_options=[]
+        )
+        engine.send = lambda command: None  # type: ignore[method-assign]
+        replies = iter([
+            "info depth 15 multipv 1 score cp 135 lowerbound nodes 100 pv 7g7f",
+            "bestmove 7g7f ponder 4a3b",
+        ])
+        engine.readline = lambda: next(replies)  # type: ignore[method-assign]
+        result = engine.searchmove(cshogi.Board().sfen(), 100, move="7g7f")
+        self.assertEqual(result.eval_cp, 135)
+        self.assertEqual(result.response, "4a3b")
+    def test_usi_engine_searchmove_uses_history_and_searchmoves(self) -> None:
+        engine = UsiEngine(
+            pathlib.Path("dummy.exe"), usi_hash=16, threads=1, multipv=4, extra_options=[]
+        )
+        commands: list[str] = []
+        replies = iter([
+            "info depth 12 score cp -15 pv 2g2f 8c8d",
+            "bestmove 2g2f ponder 8c8d",
+        ])
+        engine.send = commands.append  # type: ignore[method-assign]
+        engine.readline = lambda: next(replies)  # type: ignore[method-assign]
+
+        result = engine.searchmove(
+            cshogi.Board().sfen(),
+            200,
+            move="2g2f",
+            root_sfen="startpos",
+            moves=[],
+        )
+
+        self.assertEqual(commands, ["position startpos", "go nodes 200 searchmoves 2g2f"])
+        self.assertEqual(result, SearchResult("2g2f", "8c8d", -15, 12))
+    def test_usi_engine_stop_search_sends_stop_only_while_searching(self) -> None:
+        engine = UsiEngine(
+            pathlib.Path("dummy.exe"),
+            usi_hash=16,
+            threads=1,
+            multipv=1,
+            extra_options=[],
+        )
+        commands: list[str] = []
+        engine.send = commands.append  # type: ignore[method-assign]
+
+        engine.stop_search()
+        self.assertEqual(commands, [])
+
+        engine._searching.set()
+        engine.stop_search()
+        self.assertEqual(commands, ["stop"])
+
+    def test_usi_engine_search_sends_root_and_full_move_history(self) -> None:
+        engine = UsiEngine(
+            pathlib.Path("dummy.exe"),
+            usi_hash=16,
+            threads=1,
+            multipv=1,
+            extra_options=[],
+        )
+        commands: list[str] = []
+        replies = iter([
+            "info depth 10 multipv 1 score cp 25 pv 2b3c 8h2b+",
+            "bestmove 2b3c ponder 8h2b+",
+        ])
+        engine.send = commands.append  # type: ignore[method-assign]
+        engine.readline = lambda: next(replies)  # type: ignore[method-assign]
+
+        engine.search(
+            cshogi.Board().sfen(),
+            100,
+            root_sfen="startpos",
+            moves=["7g7f", "3c3d"],
+        )
+
+        self.assertEqual(commands[0], "position startpos moves 7g7f 3c3d")
+        self.assertEqual(commands[1], "go nodes 100")
 
     def test_usi_engine_initializes_hash_option_with_hash_when_usi_hash_is_unavailable(self) -> None:
         engine = UsiEngine(
