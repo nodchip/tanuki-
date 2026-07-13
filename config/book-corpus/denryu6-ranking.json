@@ -1,0 +1,220 @@
+{
+  "site": "denryu",
+  "event": "denryu6",
+  "source_url": "https://denryu-sen.jp/denryusen/dr6_production/match_live.php?gamename=dr6prdf1",
+  "source_sha256": "f191a1a1b14b4b500b4787cd1fac7757a40616110ee7a5b461624ddb70a1323c",
+  "retrieved_at": 1783848290,
+  "provisional": false,
+  "results": [
+    {
+      "official_name": "氷彗",
+      "stage": "final",
+      "stage_tier": 3,
+      "rank": 1,
+      "participants": 10
+    },
+    {
+      "official_name": "水匠Concerto",
+      "stage": "final",
+      "stage_tier": 3,
+      "rank": 2,
+      "participants": 10
+    },
+    {
+      "official_name": "お袖狸",
+      "stage": "final",
+      "stage_tier": 3,
+      "rank": 3,
+      "participants": 10
+    },
+    {
+      "official_name": "dlshogi",
+      "stage": "final",
+      "stage_tier": 3,
+      "rank": 4,
+      "participants": 10
+    },
+    {
+      "official_name": "奏乗",
+      "stage": "final",
+      "stage_tier": 3,
+      "rank": 5,
+      "participants": 10
+    },
+    {
+      "official_name": "AobaNNUE",
+      "stage": "final",
+      "stage_tier": 3,
+      "rank": 6,
+      "participants": 10
+    },
+    {
+      "official_name": "W@nderER",
+      "stage": "final",
+      "stage_tier": 3,
+      "rank": 7,
+      "participants": 10
+    },
+    {
+      "official_name": "Qhapaqキャンセル界隈",
+      "stage": "final",
+      "stage_tier": 3,
+      "rank": 8,
+      "participants": 10
+    },
+    {
+      "official_name": "二番絞り（ビール工房HFT支店）",
+      "stage": "final",
+      "stage_tier": 3,
+      "rank": 9,
+      "participants": 10
+    },
+    {
+      "official_name": "鯤鱶",
+      "stage": "final",
+      "stage_tier": 3,
+      "rank": 10,
+      "participants": 10
+    },
+    {
+      "official_name": "Ari Shogi and フレンズ",
+      "stage": "b",
+      "stage_tier": 2,
+      "rank": 1,
+      "participants": 18
+    },
+    {
+      "official_name": "三番絞り",
+      "stage": "b",
+      "stage_tier": 2,
+      "rank": 2,
+      "participants": 18
+    },
+    {
+      "official_name": "Daigorilla",
+      "stage": "b",
+      "stage_tier": 2,
+      "rank": 3,
+      "participants": 18
+    },
+    {
+      "official_name": "十六式いろは幽（ほのか）",
+      "stage": "b",
+      "stage_tier": 2,
+      "rank": 4,
+      "participants": 18
+    },
+    {
+      "official_name": "Gokaku",
+      "stage": "b",
+      "stage_tier": 2,
+      "rank": 5,
+      "participants": 18
+    },
+    {
+      "official_name": "KKO",
+      "stage": "b",
+      "stage_tier": 2,
+      "rank": 6,
+      "participants": 18
+    },
+    {
+      "official_name": "shotgun",
+      "stage": "b",
+      "stage_tier": 2,
+      "rank": 7,
+      "participants": 18
+    },
+    {
+      "official_name": "UBeKo",
+      "stage": "b",
+      "stage_tier": 2,
+      "rank": 8,
+      "participants": 18
+    },
+    {
+      "official_name": "きのあ将棋",
+      "stage": "b",
+      "stage_tier": 2,
+      "rank": 9,
+      "participants": 18
+    },
+    {
+      "official_name": "芝浦将棋Softmax",
+      "stage": "b",
+      "stage_tier": 2,
+      "rank": 10,
+      "participants": 18
+    },
+    {
+      "official_name": "爆裂駒拾太郎",
+      "stage": "b",
+      "stage_tier": 2,
+      "rank": 11,
+      "participants": 18
+    },
+    {
+      "official_name": "きのあ将棋2号(読み優先+やね定跡)",
+      "stage": "b",
+      "stage_tier": 2,
+      "rank": 12,
+      "participants": 18
+    },
+    {
+      "official_name": "手抜き",
+      "stage": "b",
+      "stage_tier": 2,
+      "rank": 13,
+      "participants": 18
+    },
+    {
+      "official_name": "ナナ将棋",
+      "stage": "b",
+      "stage_tier": 2,
+      "rank": 14,
+      "participants": 18
+    },
+    {
+      "official_name": "元気もりもりニンニクパワー",
+      "stage": "b",
+      "stage_tier": 2,
+      "rank": 15,
+      "participants": 18
+    },
+    {
+      "official_name": "ハルシネ将棋",
+      "stage": "b",
+      "stage_tier": 2,
+      "rank": 16,
+      "participants": 18
+    },
+    {
+      "official_name": "TMOQ（特大もっきゅ）",
+      "stage": "b",
+      "stage_tier": 2,
+      "rank": 17,
+      "participants": 18
+    },
+    {
+      "official_name": "65537",
+      "stage": "b",
+      "stage_tier": 2,
+      "rank": 18,
+      "participants": 18
+    },
+    {
+      "official_name": "ぐうき",
+      "stage": "preliminary",
+      "stage_tier": 1,
+      "rank": 15,
+      "participants": 30
+    },
+    {
+      "official_name": "タンゴ",
+      "stage": "preliminary",
+      "stage_tier": 1,
+      "rank": 19,
+      "participants": 30
+    }
+  ]
+}

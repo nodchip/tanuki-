@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "name": "pilot",
+  "manifest": "book-corpus/pilot-manifest.json",
+  "ingests": [
+    {
+      "site": "floodgate",
+      "event": "floodgate-2026-07",
+      "year": 2026,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wdoor2026.7z"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc36",
+      "year": 2026,
+      "retrieved_at": 1783848290,
+      "inputs": [
+        "wcsc36_kifu.zip"
+      ]
+    },
+    {
+      "site": "denryu",
+      "event": "denryu6",
+      "year": 2025,
+      "retrieved_at": 1783848290,
+      "inputs": [
+        "kifu_dr6production.zip"
+      ]
+    }
+  ],
+  "ranking_files": [
+    "book-corpus/wcsc36-ranking.json",
+    "book-corpus/denryu6-ranking.json"
+  ],
+  "rating_file": null,
+  "rating_config": null,
+  "input_book": null,
+  "coverage_snapshot_id": "pilot-initial"
+}

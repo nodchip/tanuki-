@@ -1,0 +1,30 @@
+[package]
+name = "book-extension-runtime"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[dependencies]
+shogi_core = "=0.1.5"
+shogi_legality_lite = "=0.1.3"
+shogi_usi_parser = "=0.1.0"
+thiserror = "=2.0.18"
+tempfile = "=3.27.0"
+serde = { version = "=1.0.228", features = ["derive"] }
+toml = "=0.8.23"
+rusqlite = { version = "=0.32.1", features = ["bundled"] }
+serde_json = "=1.0.149"
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO"] }
+clap = { version = "=4.6.1", features = ["derive"] }
+sha2 = "=0.10.9"
+
+[dev-dependencies]
+tempfile = "=3.27.0"
+serde = { version = "=1.0.228", features = ["derive"] }
+toml = "=0.8.23"
+rusqlite = { version = "=0.32.1", features = ["bundled"] }
+serde_json = "=1.0.149"
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO"] }
+clap = { version = "=4.6.1", features = ["derive"] }
+sha2 = "=0.10.9"

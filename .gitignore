@@ -258,3 +258,6 @@ corpus-data/
 *.sqlite-wal
 *.sqlite-shm
 *.7z
+script/book-extension-rs/target/
+!script/book-extension-rs/src/bin/
+!script/book-extension-rs/src/bin/*.rs

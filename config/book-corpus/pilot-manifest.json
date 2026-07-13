@@ -1,0 +1,36 @@
+{
+  "sources": [
+    {
+      "size": 168725129,
+      "event": "floodgate-2026-07",
+      "site": "floodgate",
+      "url": "https://wdoor.c.u-tokyo.ac.jp/shogi/archive/wdoor2026.7z",
+      "year": 2026,
+      "retrieved_at": 1783900800,
+      "sha256": "eb9c604c36ee9b94950bf610011fd3b39cf84562b2345ee410d1cc1c56c7680d",
+      "relative_path": "wdoor2026.7z"
+    },
+    {
+      "size": 1421658,
+      "event": "wcsc36",
+      "site": "wcsc",
+      "url": "https://www.computer-shogi.org/kifu/wcsc36_kifu.zip",
+      "year": 2026,
+      "retrieved_at": 1783848290,
+      "sha256": "48ece58b091dbb4df41e6fb55b73600767f77f4c9ee9ff8360474d5b75bb2631",
+      "relative_path": "wcsc36_kifu.zip"
+    },
+    {
+      "size": 3211045,
+      "event": "denryu6",
+      "site": "denryu",
+      "url": "https://denryu-sen.jp/denryusen/dr6_production/kifu_dr6production.zip",
+      "year": 2025,
+      "retrieved_at": 1783848290,
+      "sha256": "82d43d51d627a984a3a281c5cff6749e24d3c179c1a9858b3d7e646abd15898a",
+      "relative_path": "kifu_dr6production.zip"
+    }
+  ],
+  "manifest_version": 1,
+  "created_at_utc": "2026-07-12T18:24:50.9699375+09:00"
+}

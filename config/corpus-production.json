@@ -1,0 +1,510 @@
+{
+  "schema_version": 1,
+  "name": "production",
+  "manifest": "book-corpus/production-manifest.json",
+  "ingests": [
+    {
+      "site": "denryu",
+      "event": "denryu2",
+      "year": 2021,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "denryu/dr2_kifu.zip"
+      ]
+    },
+    {
+      "site": "denryu",
+      "event": "denryu3",
+      "year": 2022,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "denryu/kif_dr3.zip"
+      ]
+    },
+    {
+      "site": "denryu",
+      "event": "denryu4",
+      "year": 2023,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "denryu/kif_dr4prd.zip"
+      ]
+    },
+    {
+      "site": "denryu",
+      "event": "denryu5",
+      "year": 2024,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "denryu/kif_dr5_production.zip"
+      ]
+    },
+    {
+      "site": "denryu",
+      "event": "denryu6",
+      "year": 2025,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "denryu/kifu_dr6production.zip"
+      ]
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2011",
+      "year": 2011,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "floodgate/wdoor2011.tar.xz"
+      ]
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2012",
+      "year": 2012,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "floodgate/wdoor2012.tar.xz"
+      ]
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2014",
+      "year": 2014,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "floodgate/wdoor2014.7z"
+      ]
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2015",
+      "year": 2015,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "floodgate/wdoor2015.7z"
+      ]
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2016",
+      "year": 2016,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "floodgate/wdoor2016.7z"
+      ]
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2017",
+      "year": 2017,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "floodgate/wdoor2017.7z"
+      ]
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2018",
+      "year": 2018,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "floodgate/wdoor2018.7z"
+      ]
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2019",
+      "year": 2019,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "floodgate/wdoor2019.7z"
+      ]
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2020",
+      "year": 2020,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "floodgate/wdoor2020.7z"
+      ]
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2021",
+      "year": 2021,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "floodgate/wdoor2021.7z"
+      ]
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2022",
+      "year": 2022,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "floodgate/wdoor2022.7z"
+      ]
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2023",
+      "year": 2023,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "floodgate/wdoor2023.7z"
+      ]
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2024",
+      "year": 2024,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "floodgate/wdoor2024.7z"
+      ]
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2025",
+      "year": 2025,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "floodgate/wdoor2025.7z"
+      ]
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2026",
+      "year": 2026,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "floodgate/wdoor2026.7z"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc20",
+      "year": 2010,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc20_kifu.zip"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc21",
+      "year": 2011,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc21_kifu.zip"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc22",
+      "year": 2012,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc22_kifu.zip"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc23",
+      "year": 2013,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc23_kifu.zip"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc24",
+      "year": 2014,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc24_kifu.zip"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc25",
+      "year": 2015,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc25_kifu.zip"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc26",
+      "year": 2016,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc26_kifu.zip"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc33",
+      "year": 2023,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc33_kifu.zip"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc28",
+      "year": 2018,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc28_kifu.zip"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc29",
+      "year": 2019,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc29_kifu.zip"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc31",
+      "year": 2021,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc31_kifu.zip"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc32",
+      "year": 2022,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc32_kifu.zip"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc34",
+      "year": 2024,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc34_kifu.zip"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc19",
+      "year": 2009,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc19_kifu.zip"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc27",
+      "year": 2017,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc27_kifu.zip"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc18",
+      "year": 2008,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc18_kifu.zip"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc5",
+      "year": 1994,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/kifu5.lzh"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc16",
+      "year": 2006,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc16_kifu.lzh"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc1",
+      "year": 1990,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/kifu1.lzh"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc10",
+      "year": 2000,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/kifu10.lzh"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc11",
+      "year": 2001,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/kifu11.lzh"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc12",
+      "year": 2002,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/kifu12.lzh"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc2",
+      "year": 1991,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/kifu2.lzh"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc3",
+      "year": 1992,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/kifu3.lzh"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc4",
+      "year": 1993,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/kifu4.lzh"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc35",
+      "year": 2025,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc35_kifu.zip"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc6",
+      "year": 1996,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/kifu6.lzh"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc7",
+      "year": 1997,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/kifu7.lzh"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc8",
+      "year": 1998,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/kifu8.lzh"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc9",
+      "year": 1999,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/kifu9.lzh"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc13",
+      "year": 2003,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc13_kifu.lzh"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc14",
+      "year": 2004,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc14_kifu.lzh"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc15",
+      "year": 2005,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc15_kifu.lzh"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc17",
+      "year": 2007,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc17.zip"
+      ]
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc36",
+      "year": 2026,
+      "retrieved_at": 1783900800,
+      "inputs": [
+        "wcsc/wcsc36_kifu.zip"
+      ]
+    }
+  ],
+  "ranking_files": [
+    "book-corpus/wcsc36-ranking.json",
+    "book-corpus/denryu6-ranking.json"
+  ],
+  "rating_file": null,
+  "rating_config": null,
+  "input_book": null,
+  "coverage_snapshot_id": "production-initial"
+}

@@ -1,0 +1,395 @@
+{
+  "site": "wcsc",
+  "event": "wcsc36",
+  "source_url": "https://www.computer-shogi.org/wcsc36/final.html",
+  "source_sha256": "711c438e5efca9ba9e2b86125076ab62cde48cc824c32279a31f8431e784ef5d",
+  "retrieved_at": 1783848290,
+  "provisional": false,
+  "results": [
+    {
+      "official_name": "Ryfamate",
+      "stage": "final",
+      "stage_tier": 3,
+      "rank": 2,
+      "participants": 8
+    },
+    {
+      "official_name": "氷彗",
+      "stage": "final",
+      "stage_tier": 3,
+      "rank": 1,
+      "participants": 8
+    },
+    {
+      "official_name": "dlshogi",
+      "stage": "final",
+      "stage_tier": 3,
+      "rank": 3,
+      "participants": 8
+    },
+    {
+      "official_name": "奏乗",
+      "stage": "final",
+      "stage_tier": 3,
+      "rank": 6,
+      "participants": 8
+    },
+    {
+      "official_name": "水匠",
+      "stage": "final",
+      "stage_tier": 3,
+      "rank": 4,
+      "participants": 8
+    },
+    {
+      "official_name": "六角堂狸",
+      "stage": "final",
+      "stage_tier": 3,
+      "rank": 7,
+      "participants": 8
+    },
+    {
+      "official_name": "ponkotsu",
+      "stage": "final",
+      "stage_tier": 3,
+      "rank": 5,
+      "participants": 8
+    },
+    {
+      "official_name": "AobaZero",
+      "stage": "final",
+      "stage_tier": 3,
+      "rank": 8,
+      "participants": 8
+    },
+    {
+      "official_name": "やねうら王 with GTNET",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 11,
+      "participants": 28
+    },
+    {
+      "official_name": "Sinfonietta",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 20,
+      "participants": 28
+    },
+    {
+      "official_name": "あすとら将棋",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 17,
+      "participants": 28
+    },
+    {
+      "official_name": "HoneyWaffle",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 18,
+      "participants": 28
+    },
+    {
+      "official_name": "Ari Shogi and フレンズ",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 13,
+      "participants": 28
+    },
+    {
+      "official_name": "Daigorilla",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 26,
+      "participants": 28
+    },
+    {
+      "official_name": "名人コブラとうさぎ将棋",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 12,
+      "participants": 28
+    },
+    {
+      "official_name": "習甦",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 16,
+      "participants": 28
+    },
+    {
+      "official_name": "nshogi",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 21,
+      "participants": 28
+    },
+    {
+      "official_name": "二番絞り",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 14,
+      "participants": 28
+    },
+    {
+      "official_name": "東横将棋",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 9,
+      "participants": 28
+    },
+    {
+      "official_name": "四七八将棋",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 22,
+      "participants": 28
+    },
+    {
+      "official_name": "ねね将棋",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 10,
+      "participants": 28
+    },
+    {
+      "official_name": "芽生将棋",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 19,
+      "participants": 28
+    },
+    {
+      "official_name": "こだぬき",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 15,
+      "participants": 28
+    },
+    {
+      "official_name": "GABEL",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 24,
+      "participants": 28
+    },
+    {
+      "official_name": "W@nderER",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 23,
+      "participants": 28
+    },
+    {
+      "official_name": "Gokaku",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 25,
+      "participants": 28
+    },
+    {
+      "official_name": "JHBR",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 28,
+      "participants": 28
+    },
+    {
+      "official_name": "タンゴ",
+      "stage": "upper",
+      "stage_tier": 2,
+      "rank": 27,
+      "participants": 28
+    },
+    {
+      "official_name": "名探偵 Qhapaq！",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 12,
+      "participants": 37
+    },
+    {
+      "official_name": "いちびん",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 14,
+      "participants": 37
+    },
+    {
+      "official_name": "なのは",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 13,
+      "participants": 37
+    },
+    {
+      "official_name": "65537",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 19,
+      "participants": 37
+    },
+    {
+      "official_name": "Argp",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 11,
+      "participants": 37
+    },
+    {
+      "official_name": "ザ・グレートウシジマ",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 15,
+      "participants": 37
+    },
+    {
+      "official_name": "手抜き",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 18,
+      "participants": 37
+    },
+    {
+      "official_name": "きのあ将棋",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 16,
+      "participants": 37
+    },
+    {
+      "official_name": "山田将棋",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 23,
+      "participants": 37
+    },
+    {
+      "official_name": "カツ丼将棋",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 21,
+      "participants": 37
+    },
+    {
+      "official_name": "爆裂駒拾太郎",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 25,
+      "participants": 37
+    },
+    {
+      "official_name": "なり金将棋",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 32,
+      "participants": 37
+    },
+    {
+      "official_name": "はるか",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 28,
+      "participants": 37
+    },
+    {
+      "official_name": "こまあそび",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 33,
+      "participants": 37
+    },
+    {
+      "official_name": "隠岐",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 30,
+      "participants": 37
+    },
+    {
+      "official_name": "あうあう将棋",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 36,
+      "participants": 37
+    },
+    {
+      "official_name": "komadokun",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 24,
+      "participants": 37
+    },
+    {
+      "official_name": "TMOQ",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 34,
+      "participants": 37
+    },
+    {
+      "official_name": "etude12",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 17,
+      "participants": 37
+    },
+    {
+      "official_name": "きふわらぷりー",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 37,
+      "participants": 37
+    },
+    {
+      "official_name": "元気もりもりニンニクパワー",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 29,
+      "participants": 37
+    },
+    {
+      "official_name": "まったりゆうちゃん",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 31,
+      "participants": 37
+    },
+    {
+      "official_name": "Kuro651",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 35,
+      "participants": 37
+    },
+    {
+      "official_name": "ねびゅら",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 20,
+      "participants": 37
+    },
+    {
+      "official_name": "tiger",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 26,
+      "participants": 37
+    },
+    {
+      "official_name": "Dainagon",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 22,
+      "participants": 37
+    },
+    {
+      "official_name": "重-KASANE-",
+      "stage": "lower",
+      "stage_tier": 1,
+      "rank": 27,
+      "participants": 37
+    }
+  ]
+}

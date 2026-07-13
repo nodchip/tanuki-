@@ -1,0 +1,556 @@
+{
+  "manifest_version": 1,
+  "created_at_utc": "2026-07-13T00:00:00Z",
+  "sources": [
+    {
+      "site": "denryu",
+      "event": "denryu2",
+      "year": 2021,
+      "retrieved_at": 1783900800,
+      "url": "https://golan.sakura.ne.jp/denryusen/dr2_production/dr2_kifu.zip",
+      "relative_path": "denryu/dr2_kifu.zip",
+      "size": 3816342,
+      "sha256": "62c76fa3a36c477ad86a2eab0745a11c3f37f471620c939adf59d7e7e4829686"
+    },
+    {
+      "site": "denryu",
+      "event": "denryu3",
+      "year": 2022,
+      "retrieved_at": 1783900800,
+      "url": "https://denryu-sen.jp/denryusen/dr3_production/kif_dr3.zip",
+      "relative_path": "denryu/kif_dr3.zip",
+      "size": 3826732,
+      "sha256": "f02924a152e1e2dadb20114fd162d426ae268ef38193b2364949fe920f1b6697"
+    },
+    {
+      "site": "denryu",
+      "event": "denryu4",
+      "year": 2023,
+      "retrieved_at": 1783900800,
+      "url": "https://denryu-sen.jp/denryusen/dr4_production/kif_dr4prd.zip",
+      "relative_path": "denryu/kif_dr4prd.zip",
+      "size": 5005136,
+      "sha256": "05dccc06365f3255a848217a856c8b877f1aa1632d77d356ca45f95c279af540"
+    },
+    {
+      "site": "denryu",
+      "event": "denryu5",
+      "year": 2024,
+      "retrieved_at": 1783900800,
+      "url": "https://denryu-sen.jp/denryusen/dr5_production/kif_dr5_production.zip",
+      "relative_path": "denryu/kif_dr5_production.zip",
+      "size": 4554787,
+      "sha256": "af54d655412b34b352012207e183128a6635a48ea0033b890cae6a51d13e79c4"
+    },
+    {
+      "site": "denryu",
+      "event": "denryu6",
+      "year": 2025,
+      "retrieved_at": 1783900800,
+      "url": "https://denryu-sen.jp/denryusen/dr6_production/kifu_dr6production.zip",
+      "relative_path": "denryu/kifu_dr6production.zip",
+      "size": 3211045,
+      "sha256": "82d43d51d627a984a3a281c5cff6749e24d3c179c1a9858b3d7e646abd15898a"
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2011",
+      "year": 2011,
+      "retrieved_at": 1783900800,
+      "url": "https://wdoor.c.u-tokyo.ac.jp/shogi/archive/wdoor2011.tar.xz",
+      "relative_path": "floodgate/wdoor2011.tar.xz",
+      "size": 161925024,
+      "sha256": "f56b92d45daa63fdfaa2330ed033f4160e9bd077b68997511c9b936ae699219b"
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2012",
+      "year": 2012,
+      "retrieved_at": 1783900800,
+      "url": "https://wdoor.c.u-tokyo.ac.jp/shogi/archive/wdoor2012.tar.xz",
+      "relative_path": "floodgate/wdoor2012.tar.xz",
+      "size": 230256200,
+      "sha256": "4d071fb9e3299efec711b36f0cf85e5e278807595484ef9a2e58e46fb283071e"
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2014",
+      "year": 2014,
+      "retrieved_at": 1783900800,
+      "url": "https://wdoor.c.u-tokyo.ac.jp/shogi/archive/wdoor2014.7z",
+      "relative_path": "floodgate/wdoor2014.7z",
+      "size": 166572904,
+      "sha256": "a49392b373ffc2809246f5e6319baeb4d9ee36995d7eb68d462ddd0e00cfcfac"
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2015",
+      "year": 2015,
+      "retrieved_at": 1783900800,
+      "url": "https://wdoor.c.u-tokyo.ac.jp/shogi/archive/wdoor2015.7z",
+      "relative_path": "floodgate/wdoor2015.7z",
+      "size": 191229593,
+      "sha256": "24780b2b3a9ebbb094ff4199df9a0c47b2a1cc699ce205d91dcccb53665e81d2"
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2016",
+      "year": 2016,
+      "retrieved_at": 1783900800,
+      "url": "https://wdoor.c.u-tokyo.ac.jp/shogi/archive/wdoor2016.7z",
+      "relative_path": "floodgate/wdoor2016.7z",
+      "size": 227802443,
+      "sha256": "ea2e9919e332914c89decca0e980fb490612b7eae491e0671d7c357a6d6cc525"
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2017",
+      "year": 2017,
+      "retrieved_at": 1783900800,
+      "url": "https://wdoor.c.u-tokyo.ac.jp/shogi/archive/wdoor2017.7z",
+      "relative_path": "floodgate/wdoor2017.7z",
+      "size": 192495725,
+      "sha256": "31a43e57d92ad89ec17da441604922a814d565e93fe0638bc7e1a5ece249c14f"
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2018",
+      "year": 2018,
+      "retrieved_at": 1783900800,
+      "url": "https://wdoor.c.u-tokyo.ac.jp/shogi/archive/wdoor2018.7z",
+      "relative_path": "floodgate/wdoor2018.7z",
+      "size": 112075135,
+      "sha256": "d5bc1e7996ec3e9aa3895e665a2bea588683002a1dd7a5fd3be1598d85eb3867"
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2019",
+      "year": 2019,
+      "retrieved_at": 1783900800,
+      "url": "https://wdoor.c.u-tokyo.ac.jp/shogi/archive/wdoor2019.7z",
+      "relative_path": "floodgate/wdoor2019.7z",
+      "size": 227086721,
+      "sha256": "7e9d10b2e32f27eec57bbde0983a3eea5c847052a70b0dce58349cca6780624b"
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2020",
+      "year": 2020,
+      "retrieved_at": 1783900800,
+      "url": "https://wdoor.c.u-tokyo.ac.jp/shogi/archive/wdoor2020.7z",
+      "relative_path": "floodgate/wdoor2020.7z",
+      "size": 353649671,
+      "sha256": "50ca62725bf7ad96349705c33459929f8602d22d47bcc115d6c3e2dc93a5e3dd"
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2021",
+      "year": 2021,
+      "retrieved_at": 1783900800,
+      "url": "https://wdoor.c.u-tokyo.ac.jp/shogi/archive/wdoor2021.7z",
+      "relative_path": "floodgate/wdoor2021.7z",
+      "size": 368751730,
+      "sha256": "96182a29d30c4f851f20fbcd68a92afc06afa6b991092e78a6a39d5b14abaa60"
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2022",
+      "year": 2022,
+      "retrieved_at": 1783900800,
+      "url": "https://wdoor.c.u-tokyo.ac.jp/shogi/archive/wdoor2022.7z",
+      "relative_path": "floodgate/wdoor2022.7z",
+      "size": 304544768,
+      "sha256": "e0c367f2a5224eed8a70e6b82ca87aaa16cf578ba2c9478c493b78828068cb60"
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2023",
+      "year": 2023,
+      "retrieved_at": 1783900800,
+      "url": "https://wdoor.c.u-tokyo.ac.jp/shogi/archive/wdoor2023.7z",
+      "relative_path": "floodgate/wdoor2023.7z",
+      "size": 355277214,
+      "sha256": "d10ba4a2b9d67f751a66ea92cb23f24eeafd69e744dab1e62da3d8729dcfd5b9"
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2024",
+      "year": 2024,
+      "retrieved_at": 1783900800,
+      "url": "https://wdoor.c.u-tokyo.ac.jp/shogi/archive/wdoor2024.7z",
+      "relative_path": "floodgate/wdoor2024.7z",
+      "size": 354255238,
+      "sha256": "4847d98cb297283f8c53e135107afcc083b90cd8933cb78fa8d1120e37f4e3e9"
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2025",
+      "year": 2025,
+      "retrieved_at": 1783900800,
+      "url": "https://wdoor.c.u-tokyo.ac.jp/shogi/archive/wdoor2025.7z",
+      "relative_path": "floodgate/wdoor2025.7z",
+      "size": 351630898,
+      "sha256": "423504903f211316ec40f9c3d8dcc2e5faf392fc4d1334ede1489242a9d09baa"
+    },
+    {
+      "site": "floodgate",
+      "event": "floodgate-2026",
+      "year": 2026,
+      "retrieved_at": 1783900800,
+      "url": "https://wdoor.c.u-tokyo.ac.jp/shogi/archive/wdoor2026.7z",
+      "relative_path": "floodgate/wdoor2026.7z",
+      "size": 168725129,
+      "sha256": "eb9c604c36ee9b94950bf610011fd3b39cf84562b2345ee410d1cc1c56c7680d"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc20",
+      "year": 2010,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc20_kifu.zip",
+      "relative_path": "wcsc/wcsc20_kifu.zip",
+      "size": 228991,
+      "sha256": "6dce0fb8ca05fc5388c2e6eba0aaa747c45a0fe85ccb0989ff4816c237142e90"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc21",
+      "year": 2011,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc21_kifu.zip",
+      "relative_path": "wcsc/wcsc21_kifu.zip",
+      "size": 173218,
+      "sha256": "326175312bad069253ec959fa281e0caa907c1a7bacdffed56d173e47e969525"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc22",
+      "year": 2012,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc22_kifu.zip",
+      "relative_path": "wcsc/wcsc22_kifu.zip",
+      "size": 202315,
+      "sha256": "b705924fe2abe9b1cb62ed73808f00f52b68562c308b4bd3feeca555e990210c"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc23",
+      "year": 2013,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc23_kifu.zip",
+      "relative_path": "wcsc/wcsc23_kifu.zip",
+      "size": 179443,
+      "sha256": "8ccc9f1e46273ff58f5f04e1ebc8454d63618ea40925e46d6c10ea65b74dbf1e"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc24",
+      "year": 2014,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc24_kifu.zip",
+      "relative_path": "wcsc/wcsc24_kifu.zip",
+      "size": 172678,
+      "sha256": "e7a756e3664fdcef111e19064b5d37a2409b5c02e94184aeccdc4f6f969cdce4"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc25",
+      "year": 2015,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc25_kifu.zip",
+      "relative_path": "wcsc/wcsc25_kifu.zip",
+      "size": 172504,
+      "sha256": "0e6adbcb8c0b17a6441de957f6f9e22f8cf91682e69aa38e1bd0e0a5ec6262b6"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc26",
+      "year": 2016,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc26_kifu.zip",
+      "relative_path": "wcsc/wcsc26_kifu.zip",
+      "size": 210782,
+      "sha256": "ca73a5f14ba7dc858f7e2c40b48e5e04d682d557436b0e0db182e2a007b0b0f9"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc33",
+      "year": 2023,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc33_kifu.zip",
+      "relative_path": "wcsc/wcsc33_kifu.zip",
+      "size": 1248004,
+      "sha256": "50c71ad972bc276da4c9f0bf727d9285bbe8a1d3134b3b4a9941df29bb14ae6e"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc28",
+      "year": 2018,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc28_kifu.zip",
+      "relative_path": "wcsc/wcsc28_kifu.zip",
+      "size": 248364,
+      "sha256": "65dc58bd5cca888df8864a3e4647e616e1dcc6a9bf4ced715c5d39fb0865e9db"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc29",
+      "year": 2019,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc29_kifu.zip",
+      "relative_path": "wcsc/wcsc29_kifu.zip",
+      "size": 260392,
+      "sha256": "a6e03a1b7d68450f7d29cb7d58964e15eb9cfb93197c4cf490b6d7565c9aba18"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc31",
+      "year": 2021,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc31_kifu.zip",
+      "relative_path": "wcsc/wcsc31_kifu.zip",
+      "size": 265998,
+      "sha256": "7992b536adfaa6538f77f5380d8385ed112c2fec45204ae6a8a6dc4993da2379"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc32",
+      "year": 2022,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc32_kifu.zip",
+      "relative_path": "wcsc/wcsc32_kifu.zip",
+      "size": 297175,
+      "sha256": "d6b8ed2b4b971f488800835d2f8e5fe3a2026c5bf893b5c3e161c8a0d48eac03"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc34",
+      "year": 2024,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc34_kifu.zip",
+      "relative_path": "wcsc/wcsc34_kifu.zip",
+      "size": 1552701,
+      "sha256": "db375e4d30397e6b0a3d6882531aa681b73ddbc177d5e5652f00210430ba9647"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc19",
+      "year": 2009,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc19_kifu.zip",
+      "relative_path": "wcsc/wcsc19_kifu.zip",
+      "size": 183281,
+      "sha256": "aef9f9e57cf67084321ad9ca0b770cb4276cfccd94e40d255bc8f846b02c4265"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc27",
+      "year": 2017,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc27_kifu.zip",
+      "relative_path": "wcsc/wcsc27_kifu.zip",
+      "size": 202682,
+      "sha256": "34eff02b7c35c79ca24c2571a41c3bad5cc19295817ebc90dc1c21252ee2999b"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc18",
+      "year": 2008,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc18_kifu.zip",
+      "relative_path": "wcsc/wcsc18_kifu.zip",
+      "size": 177114,
+      "sha256": "998a7b25237990b9166786246eb2c6e351f63e21671403dfc214b347ed1a07fb"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc5",
+      "year": 1994,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/kifu5.lzh",
+      "relative_path": "wcsc/kifu5.lzh",
+      "size": 127787,
+      "sha256": "3af7e0b7f56b32bc580ce0ba9da56d3a63c609055587a8f80b04f62aece0a958"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc16",
+      "year": 2006,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc16_kifu.lzh",
+      "relative_path": "wcsc/wcsc16_kifu.lzh",
+      "size": 607473,
+      "sha256": "4647f7d82a1be51076f3b6349f5c235c4e18fb9fdbae12dfb364efd39438481d"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc1",
+      "year": 1990,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/kifu1.lzh",
+      "relative_path": "wcsc/kifu1.lzh",
+      "size": 20696,
+      "sha256": "2a1f98039d3c37de553fd1008a239617e3d8374c7e451bd37c10332c6cc2275a"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc10",
+      "year": 2000,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/kifu10.lzh",
+      "relative_path": "wcsc/kifu10.lzh",
+      "size": 554417,
+      "sha256": "d9a81fb08bb60df16f90698dcb17a7c99457247c3a40a0583fba9ce7455a2917"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc11",
+      "year": 2001,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/kifu11.lzh",
+      "relative_path": "wcsc/kifu11.lzh",
+      "size": 653980,
+      "sha256": "d4acb6ad01a40430eb4de83f5aa4ea69d7a51f6f6a87c8341acef484e5ca76aa"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc12",
+      "year": 2002,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/kifu12.lzh",
+      "relative_path": "wcsc/kifu12.lzh",
+      "size": 798838,
+      "sha256": "c7ebb20737e9ccb14cee22f01daebed8037a51d685870cbb568be820bd2562e8"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc2",
+      "year": 1991,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/kifu2.lzh",
+      "relative_path": "wcsc/kifu2.lzh",
+      "size": 36216,
+      "sha256": "d2727a7a472787c93206678ae39a55dd54626d312dc3bc37a1b3883c9c4207e4"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc3",
+      "year": 1992,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/kifu3.lzh",
+      "relative_path": "wcsc/kifu3.lzh",
+      "size": 69698,
+      "sha256": "4a0bdf19b7f2ed85f65fb4c712afb353a003a1d0344278af50b07c3f9550468a"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc4",
+      "year": 1993,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/kifu4.lzh",
+      "relative_path": "wcsc/kifu4.lzh",
+      "size": 65062,
+      "sha256": "ee0ce5422f804a22e5c5fe2487034674b4faed31dd72511a0aeccdc30d88bd77"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc35",
+      "year": 2025,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc35_kifu.zip",
+      "relative_path": "wcsc/wcsc35_kifu.zip",
+      "size": 1672525,
+      "sha256": "dd401899ac623a20e8d16086229fcd55fc6aea8f7ba975fcf358f36e0280e48e"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc6",
+      "year": 1996,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/kifu6.lzh",
+      "relative_path": "wcsc/kifu6.lzh",
+      "size": 265502,
+      "sha256": "397e0a2e5e3542c066944df7793012444522720b7f828459919d0e068d6d760e"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc7",
+      "year": 1997,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/kifu7.lzh",
+      "relative_path": "wcsc/kifu7.lzh",
+      "size": 298811,
+      "sha256": "1ace47bb7a107d12769e3773ddeb7a99b911d393543e655e3366d00d99c7b131"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc8",
+      "year": 1998,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/kifu8.lzh",
+      "relative_path": "wcsc/kifu8.lzh",
+      "size": 413876,
+      "sha256": "543635573909e905d64842e2431e81f44b3179a580a970255a526858e09135be"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc9",
+      "year": 1999,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/kifu9.lzh",
+      "relative_path": "wcsc/kifu9.lzh",
+      "size": 388910,
+      "sha256": "7b4f756bea7d3fe100c97d89bbbfad5ee9776f353fff18f44f219c8118986439"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc13",
+      "year": 2003,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc13_kifu.lzh",
+      "relative_path": "wcsc/wcsc13_kifu.lzh",
+      "size": 544054,
+      "sha256": "aab4739d54b9ffe0b221abf4a78b22ee5d8e55847ee6b7e6a5f2782c983ae184"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc14",
+      "year": 2004,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc14_kifu.lzh",
+      "relative_path": "wcsc/wcsc14_kifu.lzh",
+      "size": 484688,
+      "sha256": "f9cbfd8790a23589231bd4569685f8a2cac79bc2442c461c593852a7b196ff84"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc15",
+      "year": 2005,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc15_kifu.lzh",
+      "relative_path": "wcsc/wcsc15_kifu.lzh",
+      "size": 742408,
+      "sha256": "803766ab89e63ce8d57a71f8990aa6d53520b0cd31f4e2d65f0740ff7bf43e68"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc17",
+      "year": 2007,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc17.zip",
+      "relative_path": "wcsc/wcsc17.zip",
+      "size": 173477,
+      "sha256": "fcc006ce46bfbe16ef0bc289ffa7358c31117f4f87eb1dd25bdc02f8dbd96f9e"
+    },
+    {
+      "site": "wcsc",
+      "event": "wcsc36",
+      "year": 2026,
+      "retrieved_at": 1783900800,
+      "url": "https://www.computer-shogi.org/kifu/wcsc36_kifu.zip",
+      "relative_path": "wcsc/wcsc36_kifu.zip",
+      "size": 1421658,
+      "sha256": "48ece58b091dbb4df41e6fb55b73600767f77f4c9ee9ff8360474d5b75bb2631"
+    }
+  ]
+}

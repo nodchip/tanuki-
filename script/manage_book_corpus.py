@@ -97,6 +97,7 @@ def _bundle_create(args: argparse.Namespace) -> int:
     manifest = create_bundle(
         args.output, book=args.book, corpus_db=args.db, config=args.config,
         vulnerability_books=args.vulnerability_book,
+        runtime_exe=args.runtime_exe,
     )
     print(json.dumps(manifest, ensure_ascii=False, sort_keys=True))
     return 0
@@ -164,6 +165,7 @@ def build_parser() -> argparse.ArgumentParser:
     bundle.add_argument("--db", type=pathlib.Path, required=True)
     bundle.add_argument("--config", type=pathlib.Path, required=True)
     bundle.add_argument("--vulnerability-book", type=pathlib.Path, action="append", default=[])
+    bundle.add_argument("--runtime-exe", type=pathlib.Path, required=True)
     bundle.add_argument("--output", type=pathlib.Path, required=True)
     bundle.set_defaults(handler=_bundle_create)
 

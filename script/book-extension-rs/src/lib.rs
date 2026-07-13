@@ -1,0 +1,13 @@
+pub mod book;
+pub mod config;
+pub mod coordinator;
+pub mod corpus;
+pub mod engine;
+pub mod priority;
+pub mod python_random;
+pub mod runtime;
+pub mod search;
+pub mod storage;
+pub mod usi;
+pub mod validation;
+pub const STARTPOS_SFEN: &str = "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1";

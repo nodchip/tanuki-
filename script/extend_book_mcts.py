@@ -1,3 +1,5 @@
+"""DEPRECATED: Rust book-extender is the operational runtime; this module is a compatibility oracle."""
+
 from __future__ import annotations
 
 import argparse

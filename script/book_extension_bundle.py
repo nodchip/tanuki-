@@ -41,6 +41,7 @@ def create_bundle(
     corpus_db: pathlib.Path,
     config: pathlib.Path,
     vulnerability_books: Sequence[pathlib.Path],
+    runtime_exe: pathlib.Path,
 ) -> dict[str, Any]:
     """Create a stopped, checkpointed, hash-manifested portable ZIP bundle."""
     archive = pathlib.Path(archive)
@@ -82,6 +83,10 @@ def create_bundle(
         config_target.parent.mkdir(parents=True)
         shutil.copy2(config, config_target)
         members[config_target.relative_to(root).as_posix()] = config_target
+        runtime_target = root / "runtime" / pathlib.Path(runtime_exe).name
+        runtime_target.parent.mkdir(parents=True)
+        shutil.copy2(runtime_exe, runtime_target)
+        members[runtime_target.relative_to(root).as_posix()] = runtime_target
 
         for index, target_book in enumerate(vulnerability_books):
             target = root / "targets" / f"{index:02d}-{pathlib.Path(target_book).name}"

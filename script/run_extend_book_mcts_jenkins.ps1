@@ -1,14 +1,12 @@
 param(
     [Parameter(Mandatory = $true)]
-    [string]$PythonExe,
-    [Parameter(Mandatory = $true)]
-    [string]$ExtensionScript,
+    [string]$RuntimeExe,
     [Parameter(Mandatory = $true)]
     [string]$StateDir,
     [int]$HeartbeatIntervalSec = 2,
     [int]$GracefulStopTimeoutSec = 75,
     [Parameter(ValueFromRemainingArguments = $true)]
-    [string[]]$ExtensionArgs
+    [string[]]$RuntimeArgs
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,18 +17,20 @@ $stopRequestPath = Join-Path $statePath 'stop.request'
 $lockPath = Join-Path $statePath 'book-extension.lock'
 Remove-Item -LiteralPath $stopRequestPath -Force -ErrorAction SilentlyContinue
 
-# Freestyle ProcessTreeKiller must leave the child alive when Abort kills this wrapper.
+# Freestyle ProcessTreeKiller must leave the Rust child alive when Abort kills this wrapper.
 # The stale heartbeat then asks the child to send USI stop and checkpoint normally.
 $previousBuildId = $env:BUILD_ID
 $env:BUILD_ID = 'dontKillMe'
 $arguments = @(
-    $ExtensionScript
     '--heartbeat-path', $heartbeatPath
     '--stop-request-path', $stopRequestPath
     '--lock-path', $lockPath
-) + $ExtensionArgs
+) + $RuntimeArgs
 
-$process = Start-Process -FilePath $PythonExe -ArgumentList $arguments -PassThru -WindowStyle Hidden
+[System.IO.File]::WriteAllText($heartbeatPath, [DateTimeOffset]::UtcNow.ToString('O'))
+$process = Start-Process -FilePath $RuntimeExe -ArgumentList $arguments -PassThru -WindowStyle Hidden
+# Only the child inherited dontKillMe. Restore the wrapper cookie before waiting so Abort can kill it.
+$env:BUILD_ID = $previousBuildId
 try {
     while (-not $process.HasExited) {
         [System.IO.File]::WriteAllText($heartbeatPath, [DateTimeOffset]::UtcNow.ToString('O'))

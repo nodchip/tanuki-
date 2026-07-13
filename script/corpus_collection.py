@@ -4,6 +4,7 @@ import pathlib
 import shutil
 import subprocess
 import tempfile
+import tarfile
 import zipfile
 from collections.abc import Iterator
 
@@ -21,12 +22,49 @@ def _decode_csa(data: bytes) -> str:
     return data.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
 
 
+def _kif_to_csa(data: bytes) -> str:
+    try:
+        import cshogi
+        from cshogi import KIF
+    except ImportError as error:
+        raise CollectionError("cshogi is required for KIF corpus input") from error
+    parsed = KIF.Parser.parse_str(_decode_csa(data))
+    if isinstance(parsed, list):
+        if not parsed:
+            raise CollectionError("KIF contains no game")
+        parsed = parsed[0]
+    if parsed.sfen != cshogi.STARTING_SFEN:
+        raise CollectionError("KIF game does not start from startpos")
+    names = list(parsed.names[:2]) + ["", ""]
+    lines = ["V2.2", f"N+{names[0] or ''}", f"N-{names[1] or ''}", "PI", "+"]
+    for ply, move in enumerate(parsed.moves):
+        lines.append(("+" if ply % 2 == 0 else "-") + cshogi.move_to_csa(move))
+    lines.append(parsed.endgame or "%CHUDAN")
+    return "\n".join(lines) + "\n"
+
 def iter_csa_records(path: pathlib.Path) -> Iterator[tuple[str, str]]:
     """Yield stable source-relative names and CSA text from loose, ZIP, directory, or 7z inputs."""
     path = pathlib.Path(path)
     if path.is_dir():
-        for child in sorted(path.rglob("*.csa")):
-            yield child.relative_to(path).as_posix(), _decode_csa(child.read_bytes())
+        for child in sorted(item for item in path.rglob("*") if item.suffix.lower() in {".csa", ".kif"}):
+            text = _decode_csa(child.read_bytes()) if child.suffix.lower() == ".csa" else _kif_to_csa(child.read_bytes())
+            yield child.relative_to(path).as_posix(), text
+        return
+    if path.name.lower().endswith(".tar.xz"):
+        with tarfile.open(path, "r:xz") as archive:
+            members = sorted(archive.getmembers(), key=lambda item: item.name)
+            for member in members:
+                member_path = pathlib.PurePosixPath(member.name)
+                if (
+                    not member.isfile()
+                    or member_path.suffix.lower() != ".csa"
+                    or member_path.is_absolute()
+                    or ".." in member_path.parts
+                ):
+                    continue
+                source = archive.extractfile(member)
+                if source is not None:
+                    yield f"{path.name}!/{member_path.as_posix()}", _decode_csa(source.read())
         return
     suffix = path.suffix.lower()
     if suffix == ".csa":
@@ -36,12 +74,19 @@ def iter_csa_records(path: pathlib.Path) -> Iterator[tuple[str, str]]:
         with zipfile.ZipFile(path) as archive:
             for name in sorted(archive.namelist()):
                 member = pathlib.PurePosixPath(name)
-                if member.suffix.lower() != ".csa" or member.is_absolute() or ".." in member.parts:
+                if member.is_absolute() or ".." in member.parts:
                     continue
-                yield f"{path.name}!/{member.as_posix()}", _decode_csa(archive.read(name))
+                if member.suffix.lower() == ".csa":
+                    yield f"{path.name}!/{member.as_posix()}", _decode_csa(archive.read(name))
+                elif member.suffix.lower() == ".kif":
+                    yield f"{path.name}!/{member.as_posix()}", _kif_to_csa(archive.read(name))
         return
-    if suffix == ".7z":
-        executable = shutil.which("7z") or shutil.which("7z.exe")
+    if suffix in {".7z", ".lzh"}:
+        executable = (
+            shutil.which("7z")
+            or shutil.which("7z.exe")
+            or (r"C:\Program Files\7-Zip\7z.exe" if pathlib.Path(r"C:\Program Files\7-Zip\7z.exe").is_file() else None)
+        )
         with tempfile.TemporaryDirectory() as temporary_directory:
             if executable is not None:
                 result = subprocess.run(
@@ -50,15 +95,18 @@ def iter_csa_records(path: pathlib.Path) -> Iterator[tuple[str, str]]:
                 )
                 if result.returncode != 0:
                     raise CollectionError(f"7z extraction failed: {result.stderr or result.stdout}")
-            else:
+            elif suffix == ".7z":
                 try:
                     import py7zr
                 except ImportError as error:
                     raise CollectionError("7z executable or py7zr is required") from error
                 with py7zr.SevenZipFile(path) as archive:
                     archive.extractall(temporary_directory)
+            else:
+                raise CollectionError("7z executable is required for LZH input")
             root = pathlib.Path(temporary_directory)
-            for child in sorted(root.rglob("*.csa")):
-                yield f"{path.name}!/{child.relative_to(root).as_posix()}", _decode_csa(child.read_bytes())
+            for child in sorted(item for item in root.rglob("*") if item.suffix.lower() in {".csa", ".kif"}):
+                text = _decode_csa(child.read_bytes()) if child.suffix.lower() == ".csa" else _kif_to_csa(child.read_bytes())
+                yield f"{path.name}!/{child.relative_to(root).as_posix()}", text
         return
     raise CollectionError(f"unsupported corpus input: {path}")
