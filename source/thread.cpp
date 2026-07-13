@@ -414,7 +414,8 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
                 rootMoves.emplace_back(m);
     };
 
-    if (generate_all_legal_moves) {
+    // searchmovesで明示された合法手は、通常探索で省略する不成も含めて受け付ける。
+    if (!limits.searchmoves.empty() || generate_all_legal_moves) {
         auto legalmoves = MoveList<LEGAL_ALL>(pos);
         setup_rootMoves(legalmoves);
     } else {
