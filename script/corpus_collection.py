@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 import shutil
 import subprocess
 import tempfile
@@ -42,13 +43,24 @@ def _kif_to_csa(data: bytes) -> str:
     lines.append(parsed.endgame or "%CHUDAN")
     return "\n".join(lines) + "\n"
 
-def iter_csa_records(path: pathlib.Path) -> Iterator[tuple[str, str]]:
+def iter_csa_records(
+    path: pathlib.Path,
+    member_pattern: str | None = None,
+) -> Iterator[tuple[str, str]]:
     """Yield stable source-relative names and CSA text from loose, ZIP, directory, or 7z inputs."""
     path = pathlib.Path(path)
+    member_regex = re.compile(member_pattern) if member_pattern is not None else None
+
+    def included(name: str) -> bool:
+        return member_regex is None or member_regex.search(name) is not None
+
     if path.is_dir():
         for child in sorted(item for item in path.rglob("*") if item.suffix.lower() in {".csa", ".kif"}):
+            relative_name = child.relative_to(path).as_posix()
+            if not included(relative_name):
+                continue
             text = _decode_csa(child.read_bytes()) if child.suffix.lower() == ".csa" else _kif_to_csa(child.read_bytes())
-            yield child.relative_to(path).as_posix(), text
+            yield relative_name, text
         return
     if path.name.lower().endswith(".tar.xz"):
         with tarfile.open(path, "r:xz") as archive:
@@ -60,6 +72,7 @@ def iter_csa_records(path: pathlib.Path) -> Iterator[tuple[str, str]]:
                     or member_path.suffix.lower() != ".csa"
                     or member_path.is_absolute()
                     or ".." in member_path.parts
+                    or not included(member_path.as_posix())
                 ):
                     continue
                 source = archive.extractfile(member)
@@ -75,6 +88,8 @@ def iter_csa_records(path: pathlib.Path) -> Iterator[tuple[str, str]]:
             for name in sorted(archive.namelist()):
                 member = pathlib.PurePosixPath(name)
                 if member.is_absolute() or ".." in member.parts:
+                    continue
+                if not included(member.as_posix()):
                     continue
                 if member.suffix.lower() == ".csa":
                     yield f"{path.name}!/{member.as_posix()}", _decode_csa(archive.read(name))
@@ -106,7 +121,10 @@ def iter_csa_records(path: pathlib.Path) -> Iterator[tuple[str, str]]:
                 raise CollectionError("7z executable is required for LZH input")
             root = pathlib.Path(temporary_directory)
             for child in sorted(item for item in root.rglob("*") if item.suffix.lower() in {".csa", ".kif"}):
+                relative_name = child.relative_to(root).as_posix()
+                if not included(relative_name):
+                    continue
                 text = _decode_csa(child.read_bytes()) if child.suffix.lower() == ".csa" else _kif_to_csa(child.read_bytes())
-                yield f"{path.name}!/{child.relative_to(root).as_posix()}", text
+                yield f"{path.name}!/{relative_name}", text
         return
     raise CollectionError(f"unsupported corpus input: {path}")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import pathlib
+import re
 from typing import Any
 
 
@@ -17,6 +18,7 @@ class CorpusIngestSpec:
     year: int
     retrieved_at: float
     inputs: tuple[pathlib.Path, ...]
+    member_pattern: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -45,6 +47,7 @@ _PROFILE_KEYS = {
     "coverage_snapshot_id",
 }
 _INGEST_KEYS = {"site", "event", "year", "retrieved_at", "inputs"}
+_INGEST_OPTIONAL_KEYS = {"member_pattern"}
 _SITES = {"floodgate", "wcsc", "denryu"}
 
 
@@ -54,11 +57,16 @@ def _object(value: Any, label: str) -> dict[str, Any]:
     return value
 
 
-def _required(document: dict[str, Any], keys: set[str], label: str) -> None:
+def _required(
+    document: dict[str, Any],
+    keys: set[str],
+    label: str,
+    optional_keys: set[str] | None = None,
+) -> None:
     missing = keys - document.keys()
     if missing:
         raise ProfileError(f"{label} is missing keys: {sorted(missing)}")
-    unknown = document.keys() - keys
+    unknown = document.keys() - keys - (optional_keys or set())
     if unknown:
         raise ProfileError(f"unknown {label} keys: {sorted(unknown)}")
 
@@ -114,12 +122,13 @@ def load_build_profile(path: pathlib.Path) -> CorpusBuildProfile:
     identities: set[tuple[str, str, int]] = set()
     for index, raw in enumerate(raw_ingests):
         ingest = _object(raw, f"ingest[{index}]")
-        _required(ingest, _INGEST_KEYS, f"ingest[{index}]")
+        _required(ingest, _INGEST_KEYS, f"ingest[{index}]", _INGEST_OPTIONAL_KEYS)
         site = ingest["site"]
         event = ingest["event"]
         year = ingest["year"]
         retrieved_at = ingest["retrieved_at"]
         inputs = ingest["inputs"]
+        member_pattern = ingest.get("member_pattern")
         if site not in _SITES or not isinstance(event, str) or not event:
             raise ProfileError(f"invalid ingest identity at index {index}")
         if not isinstance(year, int) or not isinstance(retrieved_at, (int, float)):
@@ -132,6 +141,15 @@ def load_build_profile(path: pathlib.Path) -> CorpusBuildProfile:
             raise ProfileError(f"ingest {identity} is not represented in manifest")
         if not isinstance(inputs, list) or not inputs:
             raise ProfileError(f"ingest {identity} requires inputs")
+        if member_pattern is not None:
+            if not isinstance(member_pattern, str) or not member_pattern:
+                raise ProfileError(f"ingest {identity} has invalid member_pattern")
+            try:
+                re.compile(member_pattern)
+            except re.error as error:
+                raise ProfileError(
+                    f"ingest {identity} has invalid member_pattern: {error}"
+                ) from error
         ingests.append(
             CorpusIngestSpec(
                 site=site,
@@ -139,6 +157,7 @@ def load_build_profile(path: pathlib.Path) -> CorpusBuildProfile:
                 year=year,
                 retrieved_at=float(retrieved_at),
                 inputs=tuple(_relative_input(item) for item in inputs),
+                member_pattern=member_pattern,
             )
         )
 

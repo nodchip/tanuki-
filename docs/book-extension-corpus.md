@@ -19,7 +19,7 @@
 
     python script/prepare_book_corpus.py --profile production --state-dir C:/book-extension-state/production
 
-pilot は取得日時を固定した floodgate 2026、WCSC36、電竜戦6本戦の3アーカイブである。production は公式配布を確認できた floodgate 年度別15本（2011、2012、2014～2026）、WCSC35大会（第1～29回、第31～36回。第30回は中止）、平手開始の電竜戦本戦5大会（第2～6回）を含む。manifest上の合計ダウンロード量は約3.54 GiBで、ダウンロード済みファイルはサイズとSHA-256が一致すれば再利用する。古いWCSCのLZH展開には7-Zipが必要である。
+pilot は取得日時を固定した floodgate 2026、WCSC36、電竜戦6本戦の3アーカイブである。production は公式配布を確認できた floodgate 年度別15本（2011、2012、2014～2026）、WCSC35大会（第1～29回、第31～36回。第30回は中止）、平手開始の電竜戦本戦5大会（第2～6回）、第7回電竜戦TSEC第2部・先手持ち時間0秒戦347棋譜を含む。TSEC7の公式ZIPは指定局面戦と平手戦が混在するため、profileの`member_pattern`で第2部のKIFだけを取り込む。第2部347棋譜のうち341局は合法に取り込め、指し手がない6棋譜は`ingest_error`へ記録してcoverage分母から除外する。manifest上の合計ダウンロード量は約3.55 GiBで、ダウンロード済みファイルはサイズとSHA-256が一致すれば再利用する。古いWCSCのLZH展開には7-Zipが必要である。
 
 実行中の定跡延長が book-extension.lock を保持している場合、および別のcorpus作成が corpus-build.lock を保持している場合は、既存成果物を変更せず終了する。作成は一時SQLite上で行い、検証成功後に corpus.sqlite、snapshot.json、coverage、summaryを配置する。旧 corpus.sqlite は corpus.sqlite.previous に1世代だけ保持する。失敗時はphase別終了コードと corpus-build-summary.json を残す。
 
@@ -59,14 +59,14 @@ coverageは全棋譜局面をPythonへ`fetchall()`せず、disk-backed TEMP tabl
 
 read-onlyの全件比較では、68,142 logical game、69,389 source-game対応、70,974 raw source、全7,801,932棋譜局面（site/event/yearを含む）、5,963,731 canonical candidateと優先度、7,864,207 candidate-source組、1,585 ingest errorのストリーミングSHA-256がschema v4とv5で一致した。occurrence coverageと全内訳も同じである。unique coverageは、旧DBがSFEN手数を別局面として数えていたため、旧5,915,153局面・79,050 coveredからcanonicalな5,846,363局面・58,703 coveredへ訂正されたもので、棋譜局面の欠落ではない。`integrity_check=ok`、`foreign_key_check`は0件だった。
 
-production manifestの圧縮アーカイブは3.54 GiBである。pilotの実測比21.35倍を単純適用した完成DBの中心推定は約75.6 GiB、コードが空き容量検査に使う保守的40倍推定は141.63 GiBである。新規作成ではアーカイブと512 MiB余裕を含め約145.67 GiBの空きを要求する。中心推定では通常のactive + previousが約151.2 GiB、更新中のactive + previous + buildが約226.8 GiBとなる。大会ごとの平均手数・重複率で変動するため、実運用では保守的推定を空き容量判定の正本とする。
+production manifestの圧縮アーカイブは3.547 GiBである。pilotの実測比21.35倍を単純適用した完成DBの中心推定は約75.7 GiB、コードが空き容量検査に使う保守的40倍推定は141.89 GiBである。新規作成ではアーカイブと512 MiB余裕を含め約145.93 GiBの空きを要求する。中心推定では通常のactive + previousが約151.4 GiB、更新中のactive + previous + buildが約227.1 GiBとなる。大会ごとの平均手数・重複率で変動するため、実運用では保守的推定を空き容量判定の正本とする。
 ## 固定 snapshot の収集条件
 
 `script/collect_book_corpus.py` は明示した JSON manifest だけを取得する。manifest の各 source には `site`、`event`、`year`、`retrieved_at`、`url`、`relative_path`、`size`、`sha256` を記録する。巨大データを暗黙に全取得しない。
 
 - floodgate: 完了年度は年度別 `.7z` を全件、進行年度は取得日時を固定した snapshot。rating は棋譜を削る条件にせず、同年度・同 anchor era・同 connected component の信頼できる相対値だけを優先度に使う。
 - WCSC: 公式公開の大会・全 stage。到達 stage、指し手側順位、対戦相手順位を ranking JSON から入れる。
-- 電竜戦: 大会 ZIP または取得日時固定の個別 CSA/KIF。平手初期局面から始まる棋譜だけを採用し、駒落ちは除外する。
+- 電竜戦: 大会 ZIP または取得日時固定の個別 CSA/KIF。平手初期局面から始まる棋譜だけを採用し、駒落ちと指定局面開始は除外する。1つの公式アーカイブに対象・対象外の棋譜が混在する場合は、ingestの`member_pattern`をアーカイブ内相対パスへ適用し、対象棋譜だけを解析する。
 
 収集例:
 

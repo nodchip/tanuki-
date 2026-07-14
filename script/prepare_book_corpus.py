@@ -153,7 +153,9 @@ def _ingest_sources(
         priority = encode_priority(priority_tuple(PriorityFacts(year=ingest.year)))
         for relative_input in ingest.inputs:
             input_path = download_dir / relative_input
-            for relative_path, text in iter_csa_records(input_path):
+            for relative_path, text in iter_csa_records(
+                input_path, ingest.member_pattern
+            ):
                 result = ingest_csa_text(
                     store,
                     text,

@@ -58,8 +58,24 @@ class CorpusBuildProfileTest(unittest.TestCase):
             self.assertEqual(profile.name, "pilot")
             self.assertEqual(profile.manifest, root / "manifest.json")
             self.assertEqual(profile.ingests[0].inputs, (pathlib.Path("raw/fixture.7z"),))
+            self.assertIsNone(profile.ingests[0].member_pattern)
             self.assertEqual(profile.ranking_files, (root / "ranking.json",))
             self.assertEqual(profile.input_book, root / "book.db")
+
+    def test_loads_optional_ingest_member_pattern(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = pathlib.Path(temporary_directory)
+            path = self.write_fixture(root)
+            document = json.loads(path.read_text(encoding="utf-8"))
+            document["ingests"][0]["member_pattern"] = r"_tsec7p2-.*\.kif$"
+            path.write_text(json.dumps(document), encoding="utf-8")
+
+            try:
+                profile = load_build_profile(path)
+            except ProfileError as error:
+                self.fail(f"member_pattern should be supported: {error}")
+
+            self.assertEqual(profile.ingests[0].member_pattern, r"_tsec7p2-.*\.kif$")
 
     def test_rejects_unknown_profile_key(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

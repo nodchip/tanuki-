@@ -1,0 +1,234 @@
+{
+  "site": "denryu",
+  "event": "denryu7-tsec7-p2",
+  "source_url": "https://denryu-sen.jp/denryusen/dr7_tsec7/league_table_p2.html",
+  "source_sha256": "a6a7dc984c00c499c6d0180e25ad90659ab0e114bf90660a51aed165f5575e07",
+  "retrieved_at": 1783995139,
+  "provisional": false,
+  "results": [
+    {
+      "official_name": "水匠",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 1,
+      "participants": 32
+    },
+    {
+      "official_name": "ぱらべらむ",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 2,
+      "participants": 32
+    },
+    {
+      "official_name": "奏乗",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 3,
+      "participants": 32
+    },
+    {
+      "official_name": "Sinfonietta",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 4,
+      "participants": 32
+    },
+    {
+      "official_name": "鯤鱶",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 5,
+      "participants": 32
+    },
+    {
+      "official_name": "BeKo",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 6,
+      "participants": 32
+    },
+    {
+      "official_name": "白ビール",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 7,
+      "participants": 32
+    },
+    {
+      "official_name": "やねうら王 with GTNET",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 8,
+      "participants": 32
+    },
+    {
+      "official_name": "Nnuenagon",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 9,
+      "participants": 32
+    },
+    {
+      "official_name": "毘沙門狸",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 10,
+      "participants": 32
+    },
+    {
+      "official_name": "Ari Shogi and フレンズ",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 11,
+      "participants": 32
+    },
+    {
+      "official_name": "二番絞り",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 12,
+      "participants": 32
+    },
+    {
+      "official_name": "ねね将棋",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 13,
+      "participants": 32
+    },
+    {
+      "official_name": "こだぬき",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 14,
+      "participants": 32
+    },
+    {
+      "official_name": "雪風 -漣-",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 15,
+      "participants": 32
+    },
+    {
+      "official_name": "桐一葉",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 16,
+      "participants": 32
+    },
+    {
+      "official_name": "hatena",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 17,
+      "participants": 32
+    },
+    {
+      "official_name": "ぐうき",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 18,
+      "participants": 32
+    },
+    {
+      "official_name": "Gokaku",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 19,
+      "participants": 32
+    },
+    {
+      "official_name": "きのあ将棋",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 20,
+      "participants": 32
+    },
+    {
+      "official_name": "ONIGIRI",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 21,
+      "participants": 32
+    },
+    {
+      "official_name": "Dainagon",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 22,
+      "participants": 32
+    },
+    {
+      "official_name": "爆裂玉登太郎",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 23,
+      "participants": 32
+    },
+    {
+      "official_name": "TMOQ（特大もっきゅ）",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 24,
+      "participants": 32
+    },
+    {
+      "official_name": "なのは",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 25,
+      "participants": 32
+    },
+    {
+      "official_name": "元気もりもりニンニクパワー",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 26,
+      "participants": 32
+    },
+    {
+      "official_name": "@Rustify",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 27,
+      "participants": 32
+    },
+    {
+      "official_name": "65537",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 28,
+      "participants": 32
+    },
+    {
+      "official_name": "飛車丸",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 29,
+      "participants": 32
+    },
+    {
+      "official_name": "飛車丸２",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 30,
+      "participants": 32
+    },
+    {
+      "official_name": "Pyfamate",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 31,
+      "participants": 32
+    },
+    {
+      "official_name": "アランチューリング",
+      "stage": "tsec7-p2",
+      "stage_tier": 3,
+      "rank": 32,
+      "participants": 32
+    }
+  ]
+}

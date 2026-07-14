@@ -60,6 +60,28 @@ class CorpusCollectionTest(unittest.TestCase):
             self.assertIn("+7776FU", records[0][1])
             self.assertIn("-3334FU", records[0][1])
             self.assertTrue(records[0][1].endswith("%CHUDAN\n"))
+
+    def test_filters_zip_members_before_parsing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            archive = pathlib.Path(temporary_directory) / "event.zip"
+            kif = (
+                "先手：Alpha\n後手：Beta\n"
+                "手数----指手---------消費時間--\n"
+                "1 ７六歩(77)\n2 ３四歩(33)\n3 投了\n"
+            )
+            with zipfile.ZipFile(archive, "w") as output:
+                output.writestr("stage/game_tsec7p1-1.kif", b"not a KIF")
+                output.writestr("stage/game_tsec7p2-1.kif", kif.encode("utf-8"))
+
+            try:
+                records = list(iter_csa_records(archive, r"_tsec7p2-.*\.kif$"))
+            except TypeError as error:
+                self.fail(f"member filtering should be supported: {error}")
+
+            self.assertEqual(
+                [source for source, _ in records],
+                ["event.zip!/stage/game_tsec7p2-1.kif"],
+            )
     def test_reads_loose_and_zip_csa_with_stable_relative_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = pathlib.Path(temporary_directory)

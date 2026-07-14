@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "created_at_utc": "2026-07-13T00:00:00Z",
+  "created_at_utc": "2026-07-14T02:12:19Z",
   "sources": [
     {
       "site": "denryu",
@@ -51,6 +51,16 @@
       "relative_path": "denryu/kifu_dr6production.zip",
       "size": 3211045,
       "sha256": "82d43d51d627a984a3a281c5cff6749e24d3c179c1a9858b3d7e646abd15898a"
+    },
+    {
+      "site": "denryu",
+      "event": "denryu7-tsec7-p2",
+      "year": 2026,
+      "retrieved_at": 1783995139,
+      "url": "https://denryu-sen.jp/denryusen/dr7_tsec7/kifu_dr7tsec.zip",
+      "relative_path": "denryu/kifu_dr7tsec.zip",
+      "size": 5826666,
+      "sha256": "e4a1ce24a18c4411ba13f531a96d08e797b7e17597766621f2dd2fda598bf551"
     },
     {
       "site": "floodgate",

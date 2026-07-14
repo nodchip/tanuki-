@@ -49,6 +49,16 @@
       ]
     },
     {
+      "site": "denryu",
+      "event": "denryu7-tsec7-p2",
+      "year": 2026,
+      "retrieved_at": 1783995139,
+      "inputs": [
+        "denryu/kifu_dr7tsec.zip"
+      ],
+      "member_pattern": "_tsec7p2-.*\\.kif$"
+    },
+    {
       "site": "floodgate",
       "event": "floodgate-2011",
       "year": 2011,
@@ -501,7 +511,8 @@
   ],
   "ranking_files": [
     "book-corpus/wcsc36-ranking.json",
-    "book-corpus/denryu6-ranking.json"
+    "book-corpus/denryu6-ranking.json",
+    "book-corpus/denryu7-tsec7-p2-ranking.json"
   ],
   "rating_file": null,
   "rating_config": null,
