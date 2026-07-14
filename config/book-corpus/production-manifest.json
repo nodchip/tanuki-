@@ -196,11 +196,11 @@
       "site": "floodgate",
       "event": "floodgate-2026",
       "year": 2026,
-      "retrieved_at": 1783900800,
+      "retrieved_at": 1783994174,
       "url": "https://wdoor.c.u-tokyo.ac.jp/shogi/archive/wdoor2026.7z",
       "relative_path": "floodgate/wdoor2026.7z",
-      "size": 168725129,
-      "sha256": "eb9c604c36ee9b94950bf610011fd3b39cf84562b2345ee410d1cc1c56c7680d"
+      "size": 169801236,
+      "sha256": "67b4e7801c2394d86337c9f332c9dfed4d0bc45797374a23aa327d6232dd2468"
     },
     {
       "site": "wcsc",

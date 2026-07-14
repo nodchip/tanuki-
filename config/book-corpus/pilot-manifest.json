@@ -1,13 +1,13 @@
 {
   "sources": [
     {
-      "size": 168725129,
+      "size": 169801236,
       "event": "floodgate-2026-07",
       "site": "floodgate",
       "url": "https://wdoor.c.u-tokyo.ac.jp/shogi/archive/wdoor2026.7z",
       "year": 2026,
-      "retrieved_at": 1783900800,
-      "sha256": "eb9c604c36ee9b94950bf610011fd3b39cf84562b2345ee410d1cc1c56c7680d",
+      "retrieved_at": 1783994174,
+      "sha256": "67b4e7801c2394d86337c9f332c9dfed4d0bc45797374a23aa327d6232dd2468",
       "relative_path": "wdoor2026.7z"
     },
     {
@@ -32,5 +32,5 @@
     }
   ],
   "manifest_version": 1,
-  "created_at_utc": "2026-07-12T18:24:50.9699375+09:00"
+  "created_at_utc": "2026-07-14T01:56:14.1006530Z"
 }
