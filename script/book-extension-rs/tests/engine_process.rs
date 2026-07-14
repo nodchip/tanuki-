@@ -60,6 +60,27 @@ fn process_engine_searchmove_accepts_bound_and_ponder_response() {
 }
 
 #[test]
+fn engine_clears_hash_when_switching_generate_all_legal_moves_mode() {
+    let mut engine = UsiEngine::start(
+        &fake_engine(),
+        EngineOptions {
+            hash_mb: 16,
+            threads: 1,
+            multipv: 1,
+            extra: vec![],
+        },
+    )
+    .unwrap();
+
+    let corpus_result = engine.search_move(&PositionRoot::Startpos, &[], 200, "8g8f");
+    assert!(corpus_result.is_ok());
+
+    let normal_results = engine.search(&PositionRoot::Startpos, &[], 100).unwrap();
+    assert!(!normal_results.is_empty());
+    engine.close().unwrap();
+}
+
+#[test]
 fn malformed_bestmove_is_reported_instead_of_waiting_forever() {
     let mut engine = UsiEngine::start(
         &fake_engine(),

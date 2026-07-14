@@ -80,6 +80,7 @@ pub struct UsiEngine {
     stdout: BufReader<ChildStdout>,
     searching: Arc<AtomicBool>,
     option_names: HashSet<String>,
+    generate_all_legal_moves: bool,
 }
 
 impl UsiEngine {
@@ -99,6 +100,7 @@ impl UsiEngine {
             stdout,
             searching: Arc::new(AtomicBool::new(false)),
             option_names: HashSet::new(),
+            generate_all_legal_moves: false,
         };
         engine.send("usi")?;
         engine.wait_for("usiok")?;
@@ -112,6 +114,11 @@ impl UsiEngine {
         engine.set_option("MultiPV", Some(&options.multipv.to_string()))?;
         for (name, value) in &options.extra {
             engine.set_option(name, value.as_deref())?;
+            if name.eq_ignore_ascii_case("GenerateAllLegalMoves") {
+                engine.generate_all_legal_moves = value
+                    .as_deref()
+                    .is_some_and(|value| value.eq_ignore_ascii_case("true"));
+            }
         }
         engine.send("isready")?;
         engine.wait_for("readyok")?;
@@ -133,6 +140,7 @@ impl UsiEngine {
         *self.stdin.lock().map_err(|_| EngineError::Poisoned)? = replacement_stdin;
         self.stdout = replacement.stdout;
         self.option_names = replacement.option_names;
+        self.generate_all_legal_moves = replacement.generate_all_legal_moves;
         self.searching.store(false, Ordering::Release);
         Ok(())
     }
@@ -150,6 +158,7 @@ impl UsiEngine {
         moves: &[&str],
         nodes: u64,
     ) -> Result<Vec<SearchResult>, EngineError> {
+        self.ensure_generate_all_legal_moves(false)?;
         self.searching.store(true, Ordering::Release);
         let result = self.search_inner(root, moves, nodes);
         self.searching.store(false, Ordering::Release);
@@ -187,6 +196,7 @@ impl UsiEngine {
         nodes: u64,
         move_usi: &str,
     ) -> Result<SearchResult, EngineError> {
+        self.ensure_generate_all_legal_moves(true)?;
         self.searching.store(true, Ordering::Release);
         let result = self.search_move_inner(root, moves, nodes, move_usi);
         self.searching.store(false, Ordering::Release);
@@ -263,6 +273,19 @@ impl UsiEngine {
             Some(value) => self.send(&format!("setoption name {name} value {value}")),
             None => self.send(&format!("setoption name {name}")),
         }
+    }
+
+    fn ensure_generate_all_legal_moves(&mut self, desired: bool) -> Result<(), EngineError> {
+        if self.generate_all_legal_moves == desired {
+            return Ok(());
+        }
+        self.set_option(
+            "GenerateAllLegalMoves",
+            Some(if desired { "true" } else { "false" }),
+        )?;
+        self.set_option("Clear Hash", None)?;
+        self.generate_all_legal_moves = desired;
+        Ok(())
     }
 
     fn wait_for(&mut self, expected: &str) -> Result<(), EngineError> {

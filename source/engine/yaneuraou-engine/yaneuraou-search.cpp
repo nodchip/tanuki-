@@ -131,6 +131,14 @@ void YaneuraOuEngine::add_options() {
 
 	// 📌 この探索部が用いるオプションの追加。
 
+#if !STOCKFISH
+    options.add("Clear Hash", Option([this](const Option&) {
+                    wait_for_search_finished();
+                    tt.clear(threads);
+                    return std::nullopt;
+                }));
+#endif
+
 #if STOCKFISH
     options.add(  //
         "Hash", Option(16, 1, MaxHashMB, [this](const Option& o) {

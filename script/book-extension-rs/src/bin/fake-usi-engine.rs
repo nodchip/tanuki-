@@ -5,6 +5,8 @@ fn main() {
     let mut stdout = io::stdout().lock();
     let mut waiting_for_stop = false;
     let mut position = String::new();
+    let mut generate_all_legal_moves = false;
+    let mut mode_switch_pending_clear = false;
     for line in stdin.lock().lines() {
         let line = line.unwrap();
         if line.starts_with("position ") {
@@ -26,7 +28,25 @@ fn main() {
                 "option name MultiPV type spin default 1 min 1 max 128"
             )
             .unwrap();
+            writeln!(
+                stdout,
+                "option name GenerateAllLegalMoves type check default false"
+            )
+            .unwrap();
+            writeln!(stdout, "option name Clear Hash type button").unwrap();
             writeln!(stdout, "usiok").unwrap();
+        } else if line == "setoption name GenerateAllLegalMoves value true" {
+            if !generate_all_legal_moves {
+                generate_all_legal_moves = true;
+                mode_switch_pending_clear = true;
+            }
+        } else if line == "setoption name GenerateAllLegalMoves value false" {
+            if generate_all_legal_moves {
+                generate_all_legal_moves = false;
+                mode_switch_pending_clear = true;
+            }
+        } else if line == "setoption name Clear Hash" {
+            mode_switch_pending_clear = false;
         } else if line == "isready" {
             writeln!(stdout, "readyok").unwrap();
         } else if line == "go nodes 991" {
@@ -47,18 +67,22 @@ fn main() {
             waiting_for_stop = false;
             writeln!(stdout, "bestmove none").unwrap();
         } else if line.starts_with("go ") && line.contains("searchmoves 8g8f") {
-            writeln!(
-                stdout,
-                "info depth 11 multipv 1 score cp 77 nodes 100 pv 8g8f 3c3d"
-            )
-            .unwrap();
+            if generate_all_legal_moves && !mode_switch_pending_clear {
+                writeln!(
+                    stdout,
+                    "info depth 11 multipv 1 score cp 77 nodes 100 pv 8g8f 3c3d"
+                )
+                .unwrap();
+            }
             writeln!(stdout, "bestmove 8g8f ponder 3c3d").unwrap();
         } else if line.starts_with("go ") && line.contains("searchmoves 7g7f") {
-            writeln!(
-                stdout,
-                "info depth 15 multipv 1 score cp 135 lowerbound nodes 100 pv 7g7f"
-            )
-            .unwrap();
+            if generate_all_legal_moves && !mode_switch_pending_clear {
+                writeln!(
+                    stdout,
+                    "info depth 15 multipv 1 score cp 135 lowerbound nodes 100 pv 7g7f"
+                )
+                .unwrap();
+            }
             writeln!(stdout, "bestmove 7g7f ponder 3c3d").unwrap();
         } else if line.starts_with("go ") {
             if line == "go nodes 995" {
@@ -67,7 +91,9 @@ fn main() {
             if line == "go nodes 998" {
                 std::thread::sleep(std::time::Duration::from_millis(180));
             }
-            if position == "position startpos" {
+            if generate_all_legal_moves || mode_switch_pending_clear {
+                writeln!(stdout, "bestmove none").unwrap();
+            } else if position == "position startpos" {
                 writeln!(stdout, "info depth 10 multipv 1 score cp 25 pv 7g7f 3c3d").unwrap();
                 writeln!(stdout, "info depth 9 multipv 2 score cp 10 pv 2g2f 8c8d").unwrap();
                 writeln!(stdout, "bestmove 7g7f ponder 3c3d").unwrap();
