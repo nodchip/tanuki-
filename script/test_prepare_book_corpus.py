@@ -461,7 +461,7 @@ usi_stop_timeout_sec=5
             progress = mock.Mock()
             records = [
                 (f"game-{index}.csa", CSA_TEMPLATE.format(black="Alpha", white="Beta"))
-                for index in range(1000)
+                for index in range(1001)
             ]
 
             with CorpusStore(root / "corpus.sqlite") as store:
@@ -469,22 +469,27 @@ usi_stop_timeout_sec=5
                     "script.prepare_book_corpus.iter_csa_records",
                     side_effect=lambda *_args, **_kwargs: iter(records),
                 ), mock.patch(
-                    "script.prepare_book_corpus.ingest_csa_text",
-                    return_value=mock.Mock(accepted=True),
-                ):
+                    "script.prepare_book_corpus.ingest_csa_batch",
+                    side_effect=lambda _store, batch, **_kwargs: mock.Mock(
+                        accepted=len(batch), excluded=0
+                    ),
+                ) as ingest_batch:
                     accepted, excluded = _ingest_sources(
                         store, profile, root / "downloads", progress=progress
                     )
 
-            self.assertEqual((accepted, excluded), (3000, 0))
-            last_game = [
+            self.assertEqual((accepted, excluded), (3003, 0))
+            batch_sizes = [len(call.args[1]) for call in ingest_batch.call_args_list]
+            self.assertEqual(batch_sizes, [500, 500, 1] * 3)
+            last_batch = [
                 call for call in progress.ingest_progress.call_args_list
-                if call.args == ("game",)
+                if call.args == ("batch_done",)
             ][-1]
-            self.assertEqual(last_game.kwargs["games"], 3000)
-            self.assertEqual(last_game.kwargs["accepted"], 3000)
-            self.assertEqual(last_game.kwargs["excluded"], 0)
-            self.assertEqual(last_game.kwargs["site"], "wcsc")
+            self.assertEqual(last_batch.kwargs["batch_games"], 1)
+            self.assertEqual(last_batch.kwargs["games"], 3003)
+            self.assertEqual(last_batch.kwargs["accepted"], 3003)
+            self.assertEqual(last_batch.kwargs["excluded"], 0)
+            self.assertEqual(last_batch.kwargs["site"], "wcsc")
 
     def test_cli_returns_phase_exit_code_without_traceback(self) -> None:
         stderr = io.StringIO()

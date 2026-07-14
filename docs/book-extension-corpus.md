@@ -19,7 +19,7 @@
 
     python script/prepare_book_corpus.py --profile production --state-dir C:/book-extension-state/production
 
-作成中の進捗は標準エラーへ即時出力され、Jenkinsではコンソールログから確認できる。storage、download、ingest、metadata、coverage、optimize、validation、publishの開始・完了と、長時間処理中の30秒ごとのheartbeatを表示する。downloadはファイル数・バイト数、ingestは処理棋譜数・accepted・excludedも表示する。正常終了時の最終JSONは従来どおり標準出力へ1行だけ出力される。
+作成中の進捗は標準エラーへ即時出力され、Jenkinsではコンソールログから確認できる。storage、download、ingest、metadata、coverage、optimize、validation、publishの開始・完了と、長時間処理中の30秒ごとのheartbeatを表示する。downloadはファイル数・バイト数、ingestは500局以下のバッチをトランザクション単位として、各バッチの確定後に処理棋譜数・accepted・excludedも表示する。正常終了時の最終JSONは従来どおり標準出力へ1行だけ出力される。
 
 pilot は取得日時を固定した floodgate 2026、WCSC36、電竜戦6本戦の3アーカイブである。production は公式配布を確認できた floodgate 年度別15本（2011、2012、2014～2026）、WCSC35大会（第1～29回、第31～36回。第30回は中止）、平手開始の電竜戦本戦5大会（第2～6回）、第7回電竜戦TSEC第2部・先手持ち時間0秒戦347棋譜を含む。TSEC7の公式ZIPは指定局面戦と平手戦が混在するため、profileの`member_pattern`で第2部のKIFだけを取り込む。第2部347棋譜のうち341局は合法に取り込め、指し手がない6棋譜は`ingest_error`へ記録してcoverage分母から除外する。manifest上の合計ダウンロード量は約3.55 GiBで、ダウンロード済みファイルはサイズとSHA-256が一致すれば再利用する。古いWCSCのLZH展開には7-Zipが必要である。
 

@@ -21,7 +21,10 @@ try:
     from script.corpus_build_profile import CorpusBuildProfile, load_build_profile
     from script.corpus_collection import iter_csa_records
     from script.corpus_coverage import generate_coverage_report
-    from script.corpus_ingest import ingest_csa_text
+    from script.corpus_ingest import (
+        DEFAULT_INGEST_BATCH_SIZE,
+        ingest_csa_batch,
+    )
     from script.corpus_priority import PriorityFacts, encode_priority, priority_tuple
     from script.corpus_progress import CorpusProgressReporter
     from script.corpus_rankings import (
@@ -40,7 +43,7 @@ except ImportError:
     from corpus_build_profile import CorpusBuildProfile, load_build_profile
     from corpus_collection import iter_csa_records
     from corpus_coverage import generate_coverage_report
-    from corpus_ingest import ingest_csa_text
+    from corpus_ingest import DEFAULT_INGEST_BATCH_SIZE, ingest_csa_batch
     from corpus_priority import PriorityFacts, encode_priority, priority_tuple
     from corpus_progress import CorpusProgressReporter
     from corpus_rankings import (
@@ -175,29 +178,59 @@ def _ingest_sources(
                     accepted=accepted,
                     excluded=excluded,
                 )
+
+            batch: list[tuple[str, str]] = []
             for relative_path, text in iter_csa_records(
                 input_path, ingest.member_pattern
             ):
-                result = ingest_csa_text(
+                batch.append(
+                    (f"{relative_input.as_posix()}/{relative_path}", text)
+                )
+                if len(batch) < DEFAULT_INGEST_BATCH_SIZE:
+                    continue
+                result = ingest_csa_batch(
                     store,
-                    text,
+                    batch,
                     site=ingest.site,
                     event=ingest.event,
                     year=ingest.year,
-                    relative_path=f"{relative_input.as_posix()}/{relative_path}",
                     priority_key=priority,
                     retrieved_at=ingest.retrieved_at,
                 )
-                if result.accepted:
-                    accepted += 1
-                else:
-                    excluded += 1
+                accepted += result.accepted
+                excluded += result.excluded
                 if progress is not None:
                     progress.ingest_progress(
-                        "game",
+                        "batch_done",
                         site=ingest.site,
                         event_name=ingest.event,
                         input=relative_input.as_posix(),
+                        batch_games=len(batch),
+                        games=accepted + excluded,
+                        accepted=accepted,
+                        excluded=excluded,
+                    )
+                batch = []
+
+            if batch:
+                result = ingest_csa_batch(
+                    store,
+                    batch,
+                    site=ingest.site,
+                    event=ingest.event,
+                    year=ingest.year,
+                    priority_key=priority,
+                    retrieved_at=ingest.retrieved_at,
+                )
+                accepted += result.accepted
+                excluded += result.excluded
+                if progress is not None:
+                    progress.ingest_progress(
+                        "batch_done",
+                        site=ingest.site,
+                        event_name=ingest.event,
+                        input=relative_input.as_posix(),
+                        batch_games=len(batch),
                         games=accepted + excluded,
                         accepted=accepted,
                         excluded=excluded,
