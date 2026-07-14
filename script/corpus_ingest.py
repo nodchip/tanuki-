@@ -101,8 +101,8 @@ def ingest_csa_text(
         cursor = store.connection.execute(
             """
             INSERT OR IGNORE INTO logical_game(
-                game_hash, initial_sfen, black_name, white_name, moves_json
-            ) VALUES(?, ?, ?, ?, ?)
+                game_hash, initial_sfen, black_name, white_name, moves_json, primary_source_id
+            ) VALUES(?, ?, ?, ?, ?, ?)
             """,
             (
                 game_hash,
@@ -110,6 +110,7 @@ def ingest_csa_text(
                 game.players[0],
                 game.players[1],
                 json.dumps(list(game.moves), separators=(",", ":")),
+                source_id,
             ),
         )
         game_row = store.connection.execute(
@@ -124,28 +125,23 @@ def ingest_csa_text(
         )
         if is_new_game:
             for position in game.positions:
+                position_id = store._ensure_position(position.sfen)
                 store.connection.execute(
-                    """
-                    INSERT INTO game_position(
-                        game_id, ply, site, event, year, position_key, sfen,
-                        history_json, move
-                    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        game_id, position.ply, site, event, year, position.sfen,
-                        position.sfen,
-                        json.dumps(list(position.history), separators=(",", ":")),
-                        position.move,
-                    ),
+                    """INSERT INTO game_position(game_id, ply, position_id, move)
+                       VALUES(?, ?, ?, ?)""",
+                    (game_id, position.ply, position_id, position.move),
                 )
-
-    source_ref = f"{site}:{event}:{relative_path}"
-    for position in game.positions:
-        store.upsert_candidate(
-            position.sfen,
-            position.move,
-            position.history,
-            source_ref,
-            priority_key,
-        )
+        positions = store.connection.execute(
+            "SELECT ply, position_id, move FROM game_position WHERE game_id = ? ORDER BY ply",
+            (game_id,),
+        ).fetchall()
+        for position in positions:
+            store.upsert_ingested_candidate(
+                position_id=int(position["position_id"]),
+                move=str(position["move"]),
+                game_id=game_id,
+                ply=int(position["ply"]),
+                source_id=source_id,
+                priority_key=priority_key,
+            )
     return IngestResult(True, source_id, game_id)

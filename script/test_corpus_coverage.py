@@ -30,7 +30,8 @@ class CorpusCoverageTest(unittest.TestCase):
                     relative_path="a.csa", priority_key="9",
                 )
                 first_sfen = store.connection.execute(
-                    "SELECT sfen FROM game_position ORDER BY ply LIMIT 1"
+                    """SELECT p.position_key AS sfen FROM game_position gp
+                    JOIN position p ON p.id=gp.position_id ORDER BY gp.ply LIMIT 1"""
                 ).fetchone()["sfen"]
                 book = OpeningBook()
                 position = book.ensure_position(first_sfen)

@@ -7,11 +7,11 @@ use book_extension_runtime::{
 };
 
 #[test]
-fn creates_schema_v4_and_position_priority_index() {
+fn creates_schema_v5_and_position_priority_index() {
     let directory = tempfile::tempdir().unwrap();
     let store = CorpusStore::open(&directory.path().join("corpus.sqlite")).unwrap();
 
-    assert_eq!(store.schema_version().unwrap(), 4);
+    assert_eq!(store.schema_version().unwrap(), 5);
     let plan = store
         .position_query_plan("snapshot", "position", 1)
         .unwrap();
@@ -22,6 +22,25 @@ fn creates_schema_v4_and_position_priority_index() {
     );
 }
 
+#[test]
+fn rejects_schema_v4_with_rebuild_instruction() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("corpus.sqlite");
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute_batch(
+            "CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+             INSERT INTO meta(key,value) VALUES('schema_version','4');",
+        )
+        .unwrap();
+    drop(connection);
+
+    let error = match CorpusStore::open(&path) {
+        Ok(_) => panic!("schema v4 must be rejected"),
+        Err(error) => error,
+    };
+    assert!(error.to_string().contains("must be rebuilt as version 5"));
+}
 #[test]
 fn reserves_only_highest_priority_candidate_at_visited_position() {
     let directory = tempfile::tempdir().unwrap();

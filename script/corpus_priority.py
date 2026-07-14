@@ -30,9 +30,21 @@ class PriorityFacts:
     exact_time: float = 0.0
 
 
-def encode_priority(values: tuple[float, ...]) -> str:
-    """Encode a bounded numeric tuple so SQLite TEXT order preserves tuple order."""
-    return "|".join(f"{value + 1_000_000:020.6f}" for value in values)
+def encode_priority(values: tuple[float, ...]) -> bytes:
+    """Encode eleven bounded numbers as an order-preserving fixed-width SQLite BLOB."""
+    import struct
+
+    if len(values) != 11:
+        raise ValueError("priority tuple must contain exactly 11 values")
+    encoded = bytearray()
+    for value in values:
+        fixed = f"{value + 1_000_000:.6f}"
+        whole, fraction = fixed.split(".", 1)
+        scaled = int(whole) * 1_000_000 + int(fraction)
+        if not 0 <= scaled <= 0xFFFF_FFFF_FFFF_FFFF:
+            raise ValueError(f"priority component out of range: {value}")
+        encoded.extend(struct.pack(">Q", scaled))
+    return bytes(encoded)
 
 def priority_tuple(facts: PriorityFacts) -> tuple[float, ...]:
     """Build the explainable lexicographic key used within a site queue."""

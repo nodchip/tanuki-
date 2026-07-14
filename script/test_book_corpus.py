@@ -17,7 +17,7 @@ class BookCorpusStoreTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             path = pathlib.Path(temporary_directory) / "corpus.sqlite"
             with CorpusStore(path) as store:
-                self.assertEqual(store.schema_version(), 4)
+                self.assertEqual(store.schema_version(), 5)
                 self.assertEqual(store.corpus_revision(), 0)
                 self.assertEqual(store.progressive_width(), 1)
 
@@ -37,7 +37,7 @@ class BookCorpusStoreTest(unittest.TestCase):
         self.assertEqual(
             indexed_columns,
             [
-                ("position_key", 0),
+                ("position_id", 0),
                 ("active", 0),
                 ("priority_key", 1),
                 ("id", 0),
@@ -60,6 +60,15 @@ class BookCorpusStoreTest(unittest.TestCase):
             thread.start()
             thread.join()
             self.assertEqual(errors, [])
+    def test_migration_rejects_v4_with_rebuild_instruction(self) -> None:
+        import sqlite3
+        connection = sqlite3.connect(self.db_path)
+        connection.execute("CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        connection.execute("INSERT INTO meta(key, value) VALUES('schema_version', '4')")
+        connection.commit()
+        connection.close()
+        with self.assertRaisesRegex(ValueError, "must be rebuilt as version 5"):
+            CorpusStore(self.db_path)
     def test_migration_rejects_newer_unknown_schema(self) -> None:
         import sqlite3
         connection = sqlite3.connect(self.db_path)

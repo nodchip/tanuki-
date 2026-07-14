@@ -162,26 +162,38 @@ def _tournament_result(store: CorpusStore, event: str, player_name: str):
 
 
 def recompute_candidate_priorities(store: CorpusStore) -> int:
-    rows = store.connection.execute(
+    cursor = store.connection.execute(
         """
-        SELECT c.id AS candidate_id, gp.site, gp.event, gp.year, gp.ply,
-               lg.black_name, lg.white_name
-        FROM candidate c
-        JOIN game_position gp
-          ON gp.position_key = c.position_key AND gp.move = c.move
+        SELECT c.id AS candidate_id, rs.site, rs.event, rs.year, gp.ply,
+               gp.game_id, lg.black_name, lg.white_name, lg.primary_source_id
+        FROM game_position gp
+        JOIN candidate c ON c.position_id = gp.position_id AND c.move = gp.move
         JOIN logical_game lg ON lg.id = gp.game_id
+        JOIN raw_source rs ON rs.id = lg.primary_source_id
+        ORDER BY gp.game_id, gp.ply
         """
-    ).fetchall()
-    best: dict[int, tuple[float, ...]] = {}
-    for row in rows:
-        mover = row["black_name"] if int(row["ply"]) % 2 == 0 else row["white_name"]
-        opponent = row["white_name"] if int(row["ply"]) % 2 == 0 else row["black_name"]
-        mover_result = _tournament_result(store, str(row["event"]), str(mover))
-        opponent_result = _tournament_result(store, str(row["event"]), str(opponent))
-        rating_result = (
-            _rating_result(store, int(row["year"]), str(mover))
-            if row["site"] == "floodgate" else None
-        )
+    )
+    tournament_cache: dict[tuple[str, str], object] = {}
+    rating_cache: dict[tuple[int, str], object] = {}
+    updates: list[tuple[bytes, int, int, int, int, bytes]] = []
+    for row in cursor:
+        mover = str(row["black_name"] if int(row["ply"]) % 2 == 0 else row["white_name"])
+        opponent = str(row["white_name"] if int(row["ply"]) % 2 == 0 else row["black_name"])
+        event = str(row["event"])
+        mover_key = (event, mover)
+        opponent_key = (event, opponent)
+        if mover_key not in tournament_cache:
+            tournament_cache[mover_key] = _tournament_result(store, event, mover)
+        if opponent_key not in tournament_cache:
+            tournament_cache[opponent_key] = _tournament_result(store, event, opponent)
+        mover_result = tournament_cache[mover_key]
+        opponent_result = tournament_cache[opponent_key]
+        rating_result = None
+        if row["site"] == "floodgate":
+            rating_key = (int(row["year"]), mover)
+            if rating_key not in rating_cache:
+                rating_cache[rating_key] = _rating_result(store, rating_key[0], mover)
+            rating_result = rating_cache[rating_key]
         facts = PriorityFacts(
             year=int(row["year"]),
             stage_tier=int(mover_result["stage_tier"]) if mover_result else 0,
@@ -192,14 +204,27 @@ def recompute_candidate_priorities(store: CorpusStore) -> int:
             anchor_margin=float(rating_result["anchor_margin"]) if rating_result else 0.0,
             rating_percentile=float(rating_result["snapshot_percentile"]) if rating_result else 0.0,
         )
-        key = priority_tuple(facts)
-        candidate_id = int(row["candidate_id"])
-        if candidate_id not in best or key > best[candidate_id]:
-            best[candidate_id] = key
+        priority = encode_priority(priority_tuple(facts))
+        updates.append((
+            priority, int(row["game_id"]), int(row["ply"]),
+            int(row["primary_source_id"]), int(row["candidate_id"]), priority,
+        ))
+        if len(updates) >= 10_000:
+            _apply_priority_updates(store, updates)
+            updates.clear()
+    cursor.close()
+    if updates:
+        _apply_priority_updates(store, updates)
+    return int(store.connection.execute("SELECT COUNT(*) FROM candidate").fetchone()[0])
+
+
+def _apply_priority_updates(
+    store: CorpusStore, updates: list[tuple[bytes, int, int, int, int, bytes]]
+) -> None:
     with store.connection:
-        for candidate_id, key in best.items():
-            store.connection.execute(
-                "UPDATE candidate SET priority_key = ?, updated_at = strftime('%s','now') WHERE id = ?",
-                (encode_priority(key), candidate_id),
-            )
-    return len(best)
+        store.connection.executemany(
+            """UPDATE candidate SET priority_key=?, representative_game_id=?,
+               representative_ply=?, source_id=?, updated_at=strftime('%s','now')
+               WHERE id=? AND priority_key < ?""",
+            updates,
+        )

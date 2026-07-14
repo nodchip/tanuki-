@@ -25,6 +25,41 @@ pilot は取得日時を固定した floodgate 2026、WCSC36、電竜戦6本戦�
 
 入力定跡が別の場所にある場合だけ --input-book D:/path/book.db を追加する。peta_shock と定跡延長ランタイムの起動は自動実行しない。
 
+## SQLite schema v5 と容量管理
+
+schema v5では、局面までの累積`history_json`を各局面・候補・出典へ保存しない。`logical_game`が初期SFENと全指し手列を1回だけ保持し、`game_position`は`game_id`、`ply`、`position_id`、実戦手だけを持つ。候補の代表履歴は`representative_game_id + representative_ply`から復元するため、千日手判定に必要な順序付き履歴を失わない。canonical SFENは手数を除いた`position.position_key`へ正規化し、候補と棋譜局面は整数IDで参照する。
+
+候補優先度は11要素を88 byteの固定長big-endian BLOBへ符号化する。SQLiteのBLOB辞書順がpriority tuple順と一致し、`candidate_position_priority_idx(position_id, active, priority_key DESC, id)`が局面別上位N検索に使われる。`candidate_source`表は廃止し、出典集合は`game_position -> source_game -> raw_source`から導出する。DDLの正本は`script/corpus_schema.sql`で、Python作成系とRustランタイムが同じファイルを使用する。
+
+schema v4以前のDBは新ランタイムが自動変更せず、明確な再構築エラーにする。固定manifestから上記1コマンドでschema v5を再作成する。巨大な旧DBのin-place migrationは正式運用にしない。旧DBを比較する場合はread-onlyで次を実行し、logical game、raw source、source-game対応、全棋譜局面、候補集合、優先度、ingest errorの件数とストリーミングSHA-256を比較する。
+
+```powershell
+python script/compare_corpus_schemas.py `
+  --old C:\path\schema-v4\corpus.sqlite `
+  --new C:\path\schema-v5\corpus.sqlite `
+  --output C:\path\corpus-schema-comparison.json
+
+python script/analyze_corpus_storage.py `
+  --db C:\path\schema-v4\corpus.sqlite `
+  --db C:\path\schema-v5\corpus.sqlite `
+  --output C:\path\corpus-storage-comparison.json
+```
+
+作成前にはmanifestの圧縮アーカイブ合計から新DBを保守的に見積もり、未取得ダウンロード量と512 MiBの安全余裕を加えて空き容量を検査する。不足時はdownload/ingest開始前に`storage` phaseで終了する。summaryの`storage`に見積値と開始時空き容量を残す。
+
+更新時は完成した一時DBを検査してから正本へ置き換える。同一ボリュームがハードリンクを提供する場合、旧正本を`corpus.sqlite.previous`へ全量コピーせずリンクで世代化する。ハードリンク非対応環境だけcopy fallbackを使う。通常状態はactive + previousの2世代、作成中ピークはactive + previous + 新規DB + 未取得アーカイブで見積もる。WALはpublish前にcheckpoint/truncateし、公開対象へWAL/SHMを含めない。
+
+coverageは全棋譜局面をPythonへ`fetchall()`せず、disk-backed TEMP tableとSQL集計を使う。優先度再計算も候補全件を辞書へ保持せず、棋譜局面をストリーミングして1万件単位で条件付き更新する。
+
+### schema v5 pilot全件実測（2026-07-13）
+
+固定pilot manifestと`user_book1.2026-07-05`を使い、上記pilotコマンドを新規state directoryへ実行した。18分41.7秒で完了し、内訳はingest 898.24秒、ranking等metadata 96.67秒、coverage 93.85秒、DB検証28.57秒だった。Pythonプロセスの観測最大Working Setは1.363 GiBで、入力定跡の読込みを含む。完成DBは3,701,354,496 bytes（3.447 GiB）で、旧27,011,112,960 bytes（25.156 GiB）から86.30%削減した。初回作成中に同時保持した最大値はDB 3.447 GiB、WAL約0.06 GiB、取得済みアーカイブ0.161 GiBで約3.67 GiBだった。実測サイズの2世代は6.89 GiB、active + previous + build + archiveの更新時推定は約10.50 GiBである。失敗runの`build/<run-id>`とphase別summaryは診断用に自動削除せず保持し、正本停止確認後に運用者が削除する。publish前にはWALをtruncateし、WAL/SHMはbundleへ含めない。
+
+`dbstat`の主要内訳はcandidate 0.775 GiB、局面別candidate索引0.664 GiB、global candidate索引0.651 GiB、position表とunique索引の合計0.987 GiB、game_position 0.154 GiBだった。同じ100論理局面・各10回のlookupは旧schemaがp50 27.9 us / p95 70.2 us、新schemaがp50 27.8 us / p95 73.0 usで、p95は旧比1.04倍である。`EXPLAIN QUERY PLAN`はpositionのunique索引と`candidate_position_priority_idx`を使い、global scanはない。
+
+read-onlyの全件比較では、68,142 logical game、69,389 source-game対応、70,974 raw source、全7,801,932棋譜局面（site/event/yearを含む）、5,963,731 canonical candidateと優先度、7,864,207 candidate-source組、1,585 ingest errorのストリーミングSHA-256がschema v4とv5で一致した。occurrence coverageと全内訳も同じである。unique coverageは、旧DBがSFEN手数を別局面として数えていたため、旧5,915,153局面・79,050 coveredからcanonicalな5,846,363局面・58,703 coveredへ訂正されたもので、棋譜局面の欠落ではない。`integrity_check=ok`、`foreign_key_check`は0件だった。
+
+production manifestの圧縮アーカイブは3.54 GiBである。pilotの実測比21.35倍を単純適用した完成DBの中心推定は約75.6 GiB、コードが空き容量検査に使う保守的40倍推定は141.63 GiBである。新規作成ではアーカイブと512 MiB余裕を含め約145.67 GiBの空きを要求する。中心推定では通常のactive + previousが約151.2 GiB、更新中のactive + previous + buildが約226.8 GiBとなる。大会ごとの平均手数・重複率で変動するため、実運用では保守的推定を空き容量判定の正本とする。
 ## 固定 snapshot の収集条件
 
 `script/collect_book_corpus.py` は明示した JSON manifest だけを取得する。manifest の各 source には `site`、`event`、`year`、`retrieved_at`、`url`、`relative_path`、`size`、`sha256` を記録する。巨大データを暗黙に全取得しない。

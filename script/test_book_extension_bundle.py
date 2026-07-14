@@ -38,7 +38,7 @@ class BookExtensionBundleTest(unittest.TestCase):
             verified = extract_and_verify_bundle(archive, extracted)
 
             self.assertEqual(verified["bundle_id"], manifest["bundle_id"])
-            self.assertEqual(verified["schema_version"], 4)
+            self.assertEqual(verified["schema_version"], 5)
             self.assertEqual(verified["progressive_width"], 1)
             self.assertEqual(verified["corpus_revision"], 1)
             self.assertTrue((extracted / "book" / "book.db").exists())

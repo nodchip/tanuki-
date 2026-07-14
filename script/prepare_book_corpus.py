@@ -178,11 +178,14 @@ def _validate_database(path: pathlib.Path) -> dict[str, int | str]:
         integrity = str(connection.execute("PRAGMA integrity_check").fetchone()[0])
         if integrity != "ok":
             raise ValueError(f"SQLite integrity_check failed: {integrity}")
+        foreign_key_error = connection.execute("PRAGMA foreign_key_check").fetchone()
+        if foreign_key_error is not None:
+            raise ValueError(f"SQLite foreign_key_check failed: {tuple(foreign_key_error)}")
         version_row = connection.execute(
             "SELECT value FROM meta WHERE key = 'schema_version'"
         ).fetchone()
-        if version_row is None or int(version_row[0]) != 4:
-            raise ValueError("SQLite schema version must be 4")
+        if version_row is None or int(version_row[0]) != 5:
+            raise ValueError("SQLite schema version must be 5")
         index = connection.execute(
             "SELECT 1 FROM sqlite_master WHERE type='index' AND name=?",
             ("candidate_position_priority_idx",),
@@ -191,12 +194,13 @@ def _validate_database(path: pathlib.Path) -> dict[str, int | str]:
             raise ValueError("candidate_position_priority_idx is missing")
         return {
             "integrity_check": integrity,
-            "schema_version": 4,
+            "foreign_key_check": "ok",
+            "schema_version": 5,
             "raw_sources": int(connection.execute("SELECT COUNT(*) FROM raw_source").fetchone()[0]),
             "logical_games": int(connection.execute("SELECT COUNT(*) FROM logical_game").fetchone()[0]),
             "ingest_errors": int(connection.execute("SELECT COUNT(*) FROM ingest_error").fetchone()[0]),
             "candidates": int(connection.execute("SELECT COUNT(*) FROM candidate").fetchone()[0]),
-            "candidate_sources": int(connection.execute("SELECT COUNT(*) FROM candidate_source").fetchone()[0]),
+            "candidate_sources": int(connection.execute("SELECT COUNT(*) FROM game_position gp JOIN source_game sg ON sg.game_id=gp.game_id").fetchone()[0]),
         }
     finally:
         connection.close()
@@ -204,6 +208,70 @@ def _validate_database(path: pathlib.Path) -> dict[str, int | str]:
 def _publish(source: pathlib.Path, destination: pathlib.Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     os.replace(source, destination)
+
+
+def _check_free_space(path: pathlib.Path, required_bytes: int) -> int:
+    free_bytes = int(shutil.disk_usage(path).free)
+    if free_bytes < required_bytes:
+        raise CorpusBuildError(
+            2,
+            "storage",
+            f"insufficient free space: required={required_bytes}, available={free_bytes}",
+        )
+    return free_bytes
+
+
+def _storage_estimate(
+    profile: CorpusBuildProfile, download_dir: pathlib.Path
+) -> dict[str, int]:
+    document = json.loads(profile.manifest.read_text(encoding="utf-8"))
+    sources = document.get("sources", [])
+    archive_bytes = sum(int(item.get("size", 0)) for item in sources)
+    missing_download_bytes = sum(
+        int(item.get("size", 0))
+        for item in sources
+        if not (download_dir / str(item["relative_path"])).exists()
+    )
+    estimated_database_bytes = max(512 * 1024**2, archive_bytes * 40)
+    safety_bytes = 512 * 1024**2
+    return {
+        "archive_bytes": archive_bytes,
+        "missing_download_bytes": missing_download_bytes,
+        "estimated_database_bytes": estimated_database_bytes,
+        "safety_bytes": safety_bytes,
+        "required_free_bytes": estimated_database_bytes + missing_download_bytes + safety_bytes,
+    }
+
+
+def _publish_database_generation(
+    new_database: pathlib.Path,
+    active_database: pathlib.Path,
+    previous_database: pathlib.Path,
+) -> None:
+    """Publish a DB while preserving one generation without copying on NTFS."""
+    active_database.parent.mkdir(parents=True, exist_ok=True)
+    if not active_database.exists():
+        os.replace(new_database, active_database)
+        return
+    previous_temporary = previous_database.with_name(f"{previous_database.name}.tmp")
+    if previous_temporary.exists():
+        previous_temporary.unlink()
+    try:
+        os.link(active_database, previous_temporary)
+    except OSError:
+        shutil.copy2(active_database, previous_temporary)
+    try:
+        os.replace(new_database, active_database)
+        try:
+            os.replace(previous_temporary, previous_database)
+        except Exception:
+            os.replace(active_database, new_database)
+            os.replace(previous_temporary, active_database)
+            raise
+    except Exception:
+        if previous_temporary.exists():
+            previous_temporary.unlink()
+        raise
 
 
 def _build_corpus_unlocked(
@@ -222,6 +290,11 @@ def _build_corpus_unlocked(
     run_dir = state_dir / "build" / run_id
     run_dir.mkdir(parents=True)
     download_dir = state_dir / "downloads" / profile.name
+    storage_estimate = _storage_estimate(profile, download_dir)
+    try:
+        free_bytes_before = _check_free_space(state_dir, storage_estimate["required_free_bytes"])
+    except CorpusBuildError as error:
+        _fail_build(run_dir, profile, run_id, started_at, error)
     phase_started = time.perf_counter()
     try:
         collected = collect_manifest(profile.manifest, download_dir)
@@ -303,6 +376,8 @@ def _build_corpus_unlocked(
             json.dumps(coverage, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
         phase_seconds["coverage"] = time.perf_counter() - phase_started
+        store.connection.execute("ANALYZE")
+        store.connection.execute("PRAGMA optimize")
         store.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     phase_started = time.perf_counter()
@@ -334,15 +409,17 @@ def _build_corpus_unlocked(
         "database_checks": database_checks,
         "coverage": coverage["overall"],
         "phase_seconds": phase_seconds,
+        "storage": {**storage_estimate, "free_bytes_before": free_bytes_before},
     }
     phase_started = time.perf_counter()
     active_database = state_dir / "corpus.sqlite"
-    if active_database.exists():
-        previous_temporary = state_dir / "corpus.sqlite.previous.tmp"
-        shutil.copy2(active_database, previous_temporary)
-        os.replace(previous_temporary, state_dir / "corpus.sqlite.previous")
-    for name in ("corpus.sqlite", "snapshot.json", "coverage-initial.json"):
+    for name in ("snapshot.json", "coverage-initial.json"):
         _publish(run_dir / name, state_dir / name)
+    _publish_database_generation(
+        run_dir / "corpus.sqlite",
+        active_database,
+        state_dir / "corpus.sqlite.previous",
+    )
     phase_seconds["publish"] = time.perf_counter() - phase_started
     summary_document["finished_at"] = time.time()
     summary_path = run_dir / "corpus-build-summary.json"

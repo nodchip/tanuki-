@@ -6,7 +6,7 @@ use std::{
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use thiserror::Error;
 
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SearchTaskStatus {
@@ -36,7 +36,7 @@ pub struct CorpusCandidate {
     pub move_usi: String,
     pub history: Vec<String>,
     pub source: String,
-    pub priority_key: String,
+    pub priority_key: Vec<u8>,
     pub status: SearchTaskStatus,
     pub attempts: i64,
     pub book_snapshot_id: String,
@@ -73,6 +73,8 @@ pub enum CorpusError {
     Json(#[from] serde_json::Error),
     #[error("database uses newer schema version {0}")]
     NewerSchema(i64),
+    #[error("database schema version {0} must be rebuilt as version 5 with prepare_book_corpus.py")]
+    OlderSchema(i64),
     #[error("running task not found: {0}")]
     RunningTaskNotFound(i64),
 }
@@ -126,97 +128,27 @@ impl CorpusStore {
             if version > SCHEMA_VERSION {
                 return Err(CorpusError::NewerSchema(version));
             }
+            if version < SCHEMA_VERSION {
+                return Err(CorpusError::OlderSchema(version));
+            }
         }
-        self.connection.execute_batch(
-            "
-            CREATE TABLE IF NOT EXISTS meta (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS candidate (
-                id INTEGER PRIMARY KEY,
-                position_key TEXT NOT NULL,
-                move TEXT NOT NULL,
-                history_json TEXT NOT NULL,
-                source TEXT NOT NULL,
-                priority_key TEXT NOT NULL,
-                active INTEGER NOT NULL DEFAULT 1,
-                created_at REAL NOT NULL,
-                updated_at REAL NOT NULL,
-                UNIQUE(position_key, move)
-            );
-            CREATE TABLE IF NOT EXISTS candidate_source (
-                candidate_id INTEGER NOT NULL REFERENCES candidate(id),
-                source TEXT NOT NULL,
-                history_json TEXT NOT NULL,
-                PRIMARY KEY(candidate_id, source)
-            );
-            CREATE INDEX IF NOT EXISTS candidate_priority_idx
-                ON candidate(active, priority_key DESC, id);
-            CREATE INDEX IF NOT EXISTS candidate_position_priority_idx
-                ON candidate(position_key, active, priority_key DESC, id);
-            CREATE TABLE IF NOT EXISTS search_task (
-                id INTEGER PRIMARY KEY,
-                candidate_id INTEGER NOT NULL REFERENCES candidate(id),
-                book_snapshot_id TEXT NOT NULL,
-                status TEXT NOT NULL,
-                attempts INTEGER NOT NULL DEFAULT 0,
-                lease_until REAL,
-                last_error TEXT,
-                eval_cp INTEGER,
-                response TEXT,
-                depth INTEGER,
-                nodes INTEGER,
-                engine_config_id TEXT,
-                persisted_checkpoint_id INTEGER,
-                updated_at REAL NOT NULL,
-                UNIQUE(candidate_id, book_snapshot_id)
-            );
-            CREATE INDEX IF NOT EXISTS search_task_status_idx
-                ON search_task(book_snapshot_id, status, lease_until);
-            CREATE TABLE IF NOT EXISTS progressive_width_history (
-                id INTEGER PRIMARY KEY,
-                old_width INTEGER NOT NULL,
-                new_width INTEGER NOT NULL,
-                changed_at REAL NOT NULL,
-                reason TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS metric_counter (
-                name TEXT PRIMARY KEY,
-                value INTEGER NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS checkpoint (
-                id INTEGER PRIMARY KEY,
-                book_hash TEXT NOT NULL,
-                created_at REAL NOT NULL
-            );
-            ",
-        )?;
+        self.connection
+            .execute_batch(include_str!("../../corpus_schema.sql"))?;
         let transaction = self.connection.transaction()?;
-        transaction.execute(
-            "INSERT OR IGNORE INTO meta(key, value) VALUES('schema_version', ?1)",
-            params![SCHEMA_VERSION.to_string()],
-        )?;
-        transaction.execute(
-            "INSERT OR IGNORE INTO meta(key, value) VALUES('corpus_revision', '0')",
-            [],
-        )?;
-        transaction.execute(
-            "INSERT OR IGNORE INTO meta(key, value) VALUES('progressive_width', '1')",
-            [],
-        )?;
-        transaction.execute(
-            "INSERT OR IGNORE INTO meta(key, value) VALUES('zero_addition_rollouts', '0')",
-            [],
-        )?;
-        transaction.execute(
-            "UPDATE meta SET value = ?1 WHERE key = 'schema_version'",
-            params![SCHEMA_VERSION.to_string()],
-        )?;
+        for (key, value) in [
+            ("schema_version", SCHEMA_VERSION.to_string()),
+            ("corpus_revision", "0".to_owned()),
+            ("progressive_width", "1".to_owned()),
+            ("zero_addition_rollouts", "0".to_owned()),
+        ] {
+            transaction.execute(
+                "INSERT OR IGNORE INTO meta(key, value) VALUES(?1, ?2)",
+                params![key, value],
+            )?;
+        }
         transaction.commit()?;
         Ok(())
     }
-
     pub fn add_metric(&mut self, name: &str, value: i64) -> Result<(), CorpusError> {
         self.connection.execute(
             "INSERT INTO metric_counter(name, value) VALUES(?1, ?2)
@@ -258,31 +190,46 @@ impl CorpusStore {
         priority_key: &str,
     ) -> Result<i64, CorpusError> {
         let history_json = serde_json::to_string(history)?;
+        let canonical = canonical_position_key(position_key);
         let now = unix_time();
+        let priority_blob = format!("{priority_key:0>88}").into_bytes();
         let transaction = self.connection.transaction()?;
         transaction.execute(
-            "INSERT INTO candidate(position_key, move, history_json, source, priority_key, active, created_at, updated_at)
-             VALUES(?1, ?2, ?3, ?4, ?5, 1, ?6, ?6)
-             ON CONFLICT(position_key, move) DO UPDATE SET
-               history_json = CASE WHEN excluded.priority_key > candidate.priority_key THEN excluded.history_json ELSE candidate.history_json END,
-               source = CASE WHEN excluded.priority_key > candidate.priority_key THEN excluded.source ELSE candidate.source END,
-               priority_key = MAX(candidate.priority_key, excluded.priority_key), active = 1, updated_at = excluded.updated_at",
-            params![position_key, move_usi, history_json, source, priority_key, now],
+            "INSERT OR IGNORE INTO position(position_key) VALUES(?1)",
+            params![canonical],
         )?;
-        let candidate_id: i64 = transaction.query_row(
-            "SELECT id FROM candidate WHERE position_key = ?1 AND move = ?2",
-            params![position_key, move_usi],
+        let position_id: i64 = transaction.query_row(
+            "SELECT id FROM position WHERE position_key = ?1",
+            params![canonical],
             |row| row.get(0),
         )?;
         transaction.execute(
-            "INSERT INTO candidate_source(candidate_id, source, history_json) VALUES(?1, ?2, ?3)
-             ON CONFLICT(candidate_id, source) DO UPDATE SET history_json = excluded.history_json",
-            params![candidate_id, source, history_json],
+            "INSERT INTO candidate(position_id, move, priority_key, active, created_at, updated_at)
+             VALUES(?1, ?2, ?3, 1, ?4, ?4)
+             ON CONFLICT(position_id, move) DO UPDATE SET
+               priority_key = MAX(candidate.priority_key, excluded.priority_key),
+               active = 1, updated_at = excluded.updated_at",
+            params![position_id, move_usi, priority_blob, now],
+        )?;
+        let candidate_id: i64 = transaction.query_row(
+            "SELECT id FROM candidate WHERE position_id = ?1 AND move = ?2",
+            params![position_id, move_usi],
+            |row| row.get(0),
+        )?;
+        transaction.execute(
+            "INSERT INTO candidate_adhoc_history(candidate_id, position_sfen, history_json, source)
+             VALUES(?1, ?2, ?3, ?4) ON CONFLICT(candidate_id) DO UPDATE SET
+             position_sfen=excluded.position_sfen,
+             history_json=excluded.history_json, source=excluded.source",
+            params![candidate_id, position_key, history_json, source],
+        )?;
+        transaction.execute(
+            "INSERT OR IGNORE INTO candidate_adhoc_source(candidate_id, source) VALUES(?1, ?2)",
+            params![candidate_id, source],
         )?;
         transaction.commit()?;
         Ok(candidate_id)
     }
-
     #[allow(clippy::too_many_arguments)]
     pub fn reserve_for_position(
         &mut self,
@@ -352,9 +299,9 @@ impl CorpusStore {
         transaction.commit()?;
         Ok(Some(CorpusCandidate {
             id: task_id,
-            position_key: row.position_key,
+            position_key: position_sfen(&row.position_key),
             move_usi: row.move_usi,
-            history: serde_json::from_str(&row.history_json)?,
+            history: row.history,
             source: row.source,
             priority_key: row.priority_key,
             status: SearchTaskStatus::Running,
@@ -422,9 +369,13 @@ impl CorpusStore {
         parameters: &[&dyn rusqlite::ToSql],
     ) -> Result<Vec<StoredSearchResult>, CorpusError> {
         let sql = format!(
-            "SELECT t.id, c.position_key, c.move, t.eval_cp, t.response, t.depth, t.nodes,
-             t.engine_config_id, t.persisted_checkpoint_id FROM search_task t
-             JOIN candidate c ON c.id = t.candidate_id WHERE {condition} ORDER BY t.id"
+            "SELECT t.id, COALESCE(ah.position_sfen, p.position_key || ' 0'), c.move,
+             t.eval_cp, t.response, t.depth, t.nodes, t.engine_config_id,
+             t.persisted_checkpoint_id FROM search_task t
+             JOIN candidate c ON c.id = t.candidate_id
+             JOIN position p ON p.id = c.position_id
+             LEFT JOIN candidate_adhoc_history ah ON ah.candidate_id = c.id
+             WHERE {condition} ORDER BY t.id"
         );
         let mut statement = self.connection.prepare(&sql)?;
         let rows = statement.query_map(parameters, |row| {
@@ -619,7 +570,11 @@ impl CorpusStore {
         let sql = format!("EXPLAIN QUERY PLAN {}", POSITION_QUERY);
         let mut statement = self.connection.prepare(&sql)?;
         let lines = statement.query_map(
-            params![book_snapshot_id, position_key, width as i64],
+            params![
+                book_snapshot_id,
+                canonical_position_key(position_key),
+                width as i64
+            ],
             |row| row.get(3),
         )?;
         Ok(lines.collect::<Result<Vec<_>, _>>()?)
@@ -627,20 +582,26 @@ impl CorpusStore {
 }
 
 const POSITION_QUERY: &str = "
-SELECT c.id, c.position_key, c.move, c.history_json, c.source, c.priority_key,
+SELECT c.id, p.position_key, c.move, c.priority_key, c.representative_ply,
+       lg.moves_json, rs.site, rs.event, rs.relative_path,
+       ah.history_json, ah.source,
        t.id, t.status, t.attempts, t.lease_until
-FROM candidate c LEFT JOIN search_task t
-  ON t.candidate_id = c.id AND t.book_snapshot_id = ?1
-WHERE c.active = 1 AND c.position_key = ?2
+FROM candidate c
+JOIN position p ON p.id = c.position_id
+LEFT JOIN logical_game lg ON lg.id = c.representative_game_id
+LEFT JOIN raw_source rs ON rs.id = c.source_id
+LEFT JOIN candidate_adhoc_history ah ON ah.candidate_id = c.id
+LEFT JOIN search_task t ON t.candidate_id = c.id AND t.book_snapshot_id = ?1
+WHERE c.active = 1 AND p.position_key = ?2
 ORDER BY c.priority_key DESC, c.id LIMIT ?3";
 
 struct CandidateRow {
     candidate_id: i64,
     position_key: String,
     move_usi: String,
-    history_json: String,
+    history: Vec<String>,
     source: String,
-    priority_key: String,
+    priority_key: Vec<u8>,
     task_id: Option<i64>,
     status: Option<String>,
     attempts: Option<i64>,
@@ -652,28 +613,90 @@ fn query_candidates(
     book_snapshot_id: &str,
     position_key: &str,
     width: usize,
-) -> Result<Vec<CandidateRow>, rusqlite::Error> {
+) -> Result<Vec<CandidateRow>, CorpusError> {
     let mut statement = transaction.prepare(POSITION_QUERY)?;
-    let rows = statement.query_map(
-        params![book_snapshot_id, position_key, width as i64],
-        |row| {
-            Ok(CandidateRow {
-                candidate_id: row.get(0)?,
-                position_key: row.get(1)?,
-                move_usi: row.get(2)?,
-                history_json: row.get(3)?,
-                source: row.get(4)?,
-                priority_key: row.get(5)?,
-                task_id: row.get(6)?,
-                status: row.get(7)?,
-                attempts: row.get(8)?,
-                lease_until: row.get(9)?,
-            })
-        },
-    )?;
-    rows.collect()
+    let canonical = canonical_position_key(position_key);
+    let rows = statement.query_map(params![book_snapshot_id, canonical, width as i64], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, Vec<u8>>(3)?,
+            row.get::<_, Option<i64>>(4)?,
+            row.get::<_, Option<String>>(5)?,
+            row.get::<_, Option<String>>(6)?,
+            row.get::<_, Option<String>>(7)?,
+            row.get::<_, Option<String>>(8)?,
+            row.get::<_, Option<String>>(9)?,
+            row.get::<_, Option<String>>(10)?,
+            row.get::<_, Option<i64>>(11)?,
+            row.get::<_, Option<String>>(12)?,
+            row.get::<_, Option<i64>>(13)?,
+            row.get::<_, Option<f64>>(14)?,
+        ))
+    })?;
+    let mut candidates = Vec::new();
+    for row in rows {
+        let (
+            candidate_id,
+            position_key,
+            move_usi,
+            priority_key,
+            representative_ply,
+            moves_json,
+            site,
+            event,
+            relative_path,
+            adhoc_history,
+            adhoc_source,
+            task_id,
+            status,
+            attempts,
+            lease_until,
+        ) = row?;
+        let history = if let Some(moves_json) = moves_json {
+            let mut moves: Vec<String> = serde_json::from_str(&moves_json)?;
+            moves.truncate(representative_ply.unwrap_or(0) as usize);
+            moves
+        } else {
+            serde_json::from_str(adhoc_history.as_deref().unwrap_or("[]"))?
+        };
+        let source = match (site, event, relative_path) {
+            (Some(site), Some(event), Some(path)) => format!("{site}:{event}:{path}"),
+            _ => adhoc_source.unwrap_or_default(),
+        };
+        candidates.push(CandidateRow {
+            candidate_id,
+            position_key,
+            move_usi,
+            history,
+            source,
+            priority_key,
+            task_id,
+            status,
+            attempts,
+            lease_until,
+        });
+    }
+    Ok(candidates)
 }
 
+fn canonical_position_key(sfen: &str) -> String {
+    let tokens: Vec<&str> = sfen.split_whitespace().collect();
+    if tokens.len() >= 4 {
+        tokens[..3].join(" ")
+    } else {
+        sfen.to_owned()
+    }
+}
+
+fn position_sfen(position_key: &str) -> String {
+    if position_key.split_whitespace().count() == 3 {
+        format!("{position_key} 0")
+    } else {
+        position_key.to_owned()
+    }
+}
 fn unix_time() -> f64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

@@ -247,7 +247,7 @@ usi_stop_timeout_sec=5
                 (state / "corpus.sqlite.previous").read_bytes(), b"previous-database"
             )
             with CorpusStore(state / "corpus.sqlite") as store:
-                self.assertEqual(store.schema_version(), 4)
+                self.assertEqual(store.schema_version(), 5)
 
     def test_active_book_extension_lock_rejects_build_without_changes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -357,6 +357,7 @@ usi_stop_timeout_sec=5
                 (root / "state" / "corpus-build-summary.json").read_text(encoding="utf-8")
             )
             self.assertEqual(document["database_checks"]["ingest_errors"], 1)
+            self.assertEqual(document["database_checks"]["foreign_key_check"], "ok")
 
     def test_failure_run_writes_bounded_summary(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -435,6 +436,69 @@ usi_stop_timeout_sec=5
                 3,
             )
 
+    def test_storage_preflight_rejects_insufficient_free_space(self) -> None:
+        from script import prepare_book_corpus
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = pathlib.Path(temporary_directory)
+            with mock.patch.object(
+                prepare_book_corpus.shutil,
+                "disk_usage",
+                return_value=mock.Mock(free=99),
+            ):
+                with self.assertRaisesRegex(CorpusBuildError, "required=100"):
+                    prepare_book_corpus._check_free_space(root, 100)
+
+    def test_database_generation_publish_uses_hardlink_without_full_copy(self) -> None:
+        from script import prepare_book_corpus
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = pathlib.Path(temporary_directory)
+            new_database = root / "new.sqlite"
+            active = root / "corpus.sqlite"
+            previous = root / "corpus.sqlite.previous"
+            new_database.write_bytes(b"new")
+            active.write_bytes(b"active")
+            previous.write_bytes(b"older")
+            with mock.patch.object(
+                prepare_book_corpus.shutil,
+                "copy2",
+                side_effect=AssertionError("full database copy must not be used on hardlink-capable storage"),
+            ):
+                prepare_book_corpus._publish_database_generation(
+                    new_database, active, previous
+                )
+            self.assertEqual(active.read_bytes(), b"new")
+            self.assertEqual(previous.read_bytes(), b"active")
+            self.assertFalse(new_database.exists())
+
+    def test_database_generation_publish_propagates_replace_failure(self) -> None:
+        from script import prepare_book_corpus
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = pathlib.Path(temporary_directory)
+            new_database = root / "new.sqlite"
+            active = root / "corpus.sqlite"
+            previous = root / "corpus.sqlite.previous"
+            new_database.write_bytes(b"new")
+            active.write_bytes(b"active")
+            original_replace = prepare_book_corpus.os.replace
+
+            def fail_new_publish(source: object, destination: object) -> None:
+                if pathlib.Path(source) == new_database and pathlib.Path(destination) == active:
+                    raise OSError("injected publish failure")
+                original_replace(source, destination)
+
+            with mock.patch.object(
+                prepare_book_corpus.os, "replace", side_effect=fail_new_publish
+            ):
+                with self.assertRaisesRegex(OSError, "injected publish failure"):
+                    prepare_book_corpus._publish_database_generation(
+                        new_database, active, previous
+                    )
+            self.assertEqual(active.read_bytes(), b"active")
+            self.assertEqual(new_database.read_bytes(), b"new")
+            self.assertFalse(previous.exists())
 
 if __name__ == "__main__":
     unittest.main()
