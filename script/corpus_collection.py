@@ -63,21 +63,29 @@ def iter_csa_records(
             yield relative_name, text
         return
     if path.name.lower().endswith(".tar.xz"):
-        with tarfile.open(path, "r:xz") as archive:
-            members = sorted(archive.getmembers(), key=lambda item: item.name)
-            for member in members:
-                member_path = pathlib.PurePosixPath(member.name)
-                if (
-                    not member.isfile()
-                    or member_path.suffix.lower() != ".csa"
-                    or member_path.is_absolute()
-                    or ".." in member_path.parts
-                    or not included(member_path.as_posix())
-                ):
-                    continue
-                source = archive.extractfile(member)
-                if source is not None:
-                    yield f"{path.name}!/{member_path.as_posix()}", _decode_csa(source.read())
+        entries: list[tuple[str, int, int, int]] = []
+        with tempfile.TemporaryFile(mode="w+b", dir=path.parent) as spool:
+            with tarfile.open(path, "r|xz") as archive:
+                for ordinal, member in enumerate(archive):
+                    member_path = pathlib.PurePosixPath(member.name)
+                    if (
+                        not member.isfile()
+                        or member_path.suffix.lower() != ".csa"
+                        or member_path.is_absolute()
+                        or ".." in member_path.parts
+                        or not included(member_path.as_posix())
+                    ):
+                        continue
+                    source = archive.extractfile(member)
+                    if source is None:
+                        continue
+                    data = source.read()
+                    offset = spool.tell()
+                    spool.write(data)
+                    entries.append((member_path.as_posix(), ordinal, offset, len(data)))
+            for member_name, _, offset, size in sorted(entries):
+                spool.seek(offset)
+                yield f"{path.name}!/{member_name}", _decode_csa(spool.read(size))
         return
     suffix = path.suffix.lower()
     if suffix == ".csa":

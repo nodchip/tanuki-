@@ -5,6 +5,7 @@ import tempfile
 import tarfile
 import unittest
 import zipfile
+from unittest import mock
 
 from script.corpus_collection import iter_csa_records
 
@@ -28,6 +29,34 @@ class CorpusCollectionTest(unittest.TestCase):
             self.assertEqual(
                 list(iter_csa_records(archive)),
                 [("annual.tar.xz!/month/game.csa", "V2.2\n")],
+            )
+    def test_reads_tar_xz_in_single_stream_and_preserves_sorted_order(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = pathlib.Path(temporary_directory)
+            archive = root / "annual.tar.xz"
+            with tarfile.open(archive, "w:xz") as output:
+                for name in ("z/game.csa", "a/game.csa"):
+                    source = root / f"{name[0]}.csa"
+                    source.write_text(f"V2.2\nN+{name[0]}\n", encoding="utf-8")
+                    output.add(source, name)
+
+            modes = []
+            real_open = tarfile.open
+
+            def tracked_open(*args, **kwargs):
+                modes.append(args[1] if len(args) > 1 else kwargs.get("mode"))
+                return real_open(*args, **kwargs)
+
+            with mock.patch("script.corpus_collection.tarfile.open", side_effect=tracked_open):
+                records = list(iter_csa_records(archive))
+
+            self.assertEqual(modes, ["r|xz"])
+            self.assertEqual(
+                records,
+                [
+                    ("annual.tar.xz!/a/game.csa", "V2.2\nN+a\n"),
+                    ("annual.tar.xz!/z/game.csa", "V2.2\nN+z\n"),
+                ],
             )
     def test_reads_7z_with_python_fallback(self) -> None:
         import py7zr
