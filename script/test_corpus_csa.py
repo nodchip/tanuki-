@@ -3,6 +3,7 @@ from __future__ import annotations
 import pathlib
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -36,6 +37,13 @@ class CorpusCsaTest(unittest.TestCase):
         game = normalize_csa_game(VALID_CSA, source_path="raw/game.csa")
         self.assertEqual(len(game.positions), len(game.moves))
 
+    def test_accepts_inline_comment_after_first_move(self) -> None:
+        with_inline_comment = VALID_CSA.replace("+7776FU", "+7776FU'comment")
+        game = normalize_csa_game(
+            with_inline_comment, source_path="raw/inline-comment.csa"
+        )
+        self.assertEqual(game.moves[0], "7g7f")
+
     def test_rejects_non_startpos_games(self) -> None:
         handicap = VALID_CSA.replace("PI\n", "PI82HI\n")
         with self.assertRaisesRegex(CsaGameError, "startpos"):
@@ -46,6 +54,23 @@ class CorpusCsaTest(unittest.TestCase):
         with self.assertRaises(CsaGameError) as caught:
             normalize_csa_game(broken, source_path="raw/broken.csa")
         self.assertIn("raw/broken.csa", str(caught.exception))
+
+    def test_rejects_time_before_first_move_without_calling_native_parser(self) -> None:
+        broken = """V2.2
+PI
++
+'+2726FU
+T1
+"""
+        with mock.patch(
+            "corpus_csa.CSA.Parser",
+            side_effect=AssertionError("native parser must not be called"),
+        ):
+            with self.assertRaisesRegex(
+                CsaGameError, "time line before first recorded move"
+            ) as caught:
+                normalize_csa_game(broken, source_path="raw/time-before-move.csa")
+        self.assertEqual(caught.exception.line_number, 5)
 
 
 if __name__ == "__main__":

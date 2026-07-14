@@ -8,6 +8,14 @@ import cshogi
 from cshogi import CSA
 
 
+_CSA_MOVE_PIECE_CODES = frozenset(
+    (
+        "FU", "KY", "KE", "GI", "KI", "KA", "HI",
+        "OU", "TO", "NY", "NK", "NG", "UM", "RY",
+    )
+)
+
+
 class CsaGameError(ValueError):
     """A CSA record could not be accepted as one legal startpos game."""
 
@@ -74,8 +82,37 @@ def _position_key(sfen: str) -> str:
     return " ".join(tokens[:3])
 
 
+def _time_before_first_move_line(text: str) -> int | None:
+    has_move = False
+    has_endgame = False
+    for line_number, raw_line in enumerate(text.splitlines(), 1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        if (
+            len(line) >= 7
+            and line[0] in "+-"
+            and line[1:5].isdigit()
+            and line[5:7] in _CSA_MOVE_PIECE_CODES
+        ):
+            has_move = True
+        elif line[0] == "%":
+            has_endgame = True
+        elif line[0] == "T" and not has_move and not has_endgame:
+            return line_number
+    return None
+
+
 def normalize_csa_game(text: str, *, source_path: str) -> NormalizedGame:
     """Parse one CSA game, require startpos, and replay every recorded move."""
+    unsafe_time_line = _time_before_first_move_line(text)
+    if unsafe_time_line is not None:
+        raise CsaGameError(
+            source_path,
+            "time line before first recorded move",
+            line_number=unsafe_time_line,
+        )
+
     parser = CSA.Parser()
     try:
         parser.parse_csa_str(text)
