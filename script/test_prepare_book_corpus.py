@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import io
 import json
 import pathlib
 import tempfile
@@ -426,15 +428,77 @@ usi_stop_timeout_sec=5
             self.assertEqual(raised.exception.exit_code, 4)
             self.assertEqual(active.read_bytes(), b"active")
 
+    def test_cli_writes_progress_to_stderr_and_final_json_to_stdout(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = pathlib.Path(temporary_directory)
+            profile = self.create_fixture(root)
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                exit_code = main(
+                    ["--profile", str(profile), "--state-dir", str(root / "state")]
+                )
+
+            self.assertEqual(exit_code, 0)
+            stdout_lines = stdout.getvalue().splitlines()
+            self.assertEqual(len(stdout_lines), 1)
+            self.assertEqual(json.loads(stdout_lines[0])["status"], "success")
+            progress = stderr.getvalue()
+            self.assertIn("[corpus] phase=storage event=start", progress)
+            self.assertIn("[corpus] phase=download event=source_start", progress)
+            self.assertIn("[corpus] phase=ingest event=source_start", progress)
+            self.assertIn("[corpus] phase=publish event=done", progress)
+
+    def test_ingest_reports_cumulative_game_counts(self) -> None:
+        from script.corpus_build_profile import load_build_profile
+        from script.prepare_book_corpus import _ingest_sources
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = pathlib.Path(temporary_directory)
+            profile_path = self.create_fixture(root)
+            profile = load_build_profile(profile_path)
+            progress = mock.Mock()
+            records = [
+                (f"game-{index}.csa", CSA_TEMPLATE.format(black="Alpha", white="Beta"))
+                for index in range(1000)
+            ]
+
+            with CorpusStore(root / "corpus.sqlite") as store:
+                with mock.patch(
+                    "script.prepare_book_corpus.iter_csa_records",
+                    side_effect=lambda *_args, **_kwargs: iter(records),
+                ), mock.patch(
+                    "script.prepare_book_corpus.ingest_csa_text",
+                    return_value=mock.Mock(accepted=True),
+                ):
+                    accepted, excluded = _ingest_sources(
+                        store, profile, root / "downloads", progress=progress
+                    )
+
+            self.assertEqual((accepted, excluded), (3000, 0))
+            last_game = [
+                call for call in progress.ingest_progress.call_args_list
+                if call.args == ("game",)
+            ][-1]
+            self.assertEqual(last_game.kwargs["games"], 3000)
+            self.assertEqual(last_game.kwargs["accepted"], 3000)
+            self.assertEqual(last_game.kwargs["excluded"], 0)
+            self.assertEqual(last_game.kwargs["site"], "wcsc")
+
     def test_cli_returns_phase_exit_code_without_traceback(self) -> None:
+        stderr = io.StringIO()
         with mock.patch(
             "script.prepare_book_corpus.build_corpus",
             side_effect=CorpusBuildError(3, "download", "hash mismatch"),
-        ):
+        ), contextlib.redirect_stderr(stderr):
             self.assertEqual(
                 main(["--profile", "pilot", "--state-dir", "state"]),
                 3,
             )
+        failure = json.loads(stderr.getvalue().splitlines()[-1])
+        self.assertEqual(failure["phase"], "download")
+        self.assertEqual(failure["exit_code"], 3)
 
     def test_storage_preflight_rejects_insufficient_free_space(self) -> None:
         from script import prepare_book_corpus

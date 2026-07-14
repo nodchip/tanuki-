@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import hashlib
 import json
@@ -22,6 +23,7 @@ try:
     from script.corpus_coverage import generate_coverage_report
     from script.corpus_ingest import ingest_csa_text
     from script.corpus_priority import PriorityFacts, encode_priority, priority_tuple
+    from script.corpus_progress import CorpusProgressReporter
     from script.corpus_rankings import (
         FloodgateRatingResult,
         TournamentResult,
@@ -40,6 +42,7 @@ except ImportError:
     from corpus_coverage import generate_coverage_report
     from corpus_ingest import ingest_csa_text
     from corpus_priority import PriorityFacts, encode_priority, priority_tuple
+    from corpus_progress import CorpusProgressReporter
     from corpus_rankings import (
         FloodgateRatingResult,
         TournamentResult,
@@ -142,10 +145,19 @@ def _import_rating(store: CorpusStore, profile: CorpusBuildProfile) -> int:
     return 1
 
 
+def _progress_phase(
+    progress: Optional[CorpusProgressReporter], name: str, **fields: object
+):
+    if progress is None:
+        return contextlib.nullcontext()
+    return progress.phase(name, **fields)
+
+
 def _ingest_sources(
     store: CorpusStore,
     profile: CorpusBuildProfile,
     download_dir: pathlib.Path,
+    progress: Optional[CorpusProgressReporter] = None,
 ) -> tuple[int, int]:
     accepted = 0
     excluded = 0
@@ -153,6 +165,16 @@ def _ingest_sources(
         priority = encode_priority(priority_tuple(PriorityFacts(year=ingest.year)))
         for relative_input in ingest.inputs:
             input_path = download_dir / relative_input
+            if progress is not None:
+                progress.ingest_progress(
+                    "source_start",
+                    site=ingest.site,
+                    event_name=ingest.event,
+                    input=relative_input.as_posix(),
+                    games=accepted + excluded,
+                    accepted=accepted,
+                    excluded=excluded,
+                )
             for relative_path, text in iter_csa_records(
                 input_path, ingest.member_pattern
             ):
@@ -170,7 +192,18 @@ def _ingest_sources(
                     accepted += 1
                 else:
                     excluded += 1
+                if progress is not None:
+                    progress.ingest_progress(
+                        "game",
+                        site=ingest.site,
+                        event_name=ingest.event,
+                        input=relative_input.as_posix(),
+                        games=accepted + excluded,
+                        accepted=accepted,
+                        excluded=excluded,
+                    )
     return accepted, excluded
+
 
 def _validate_database(path: pathlib.Path) -> dict[str, int | str]:
     import sqlite3
@@ -282,6 +315,7 @@ def _build_corpus_unlocked(
     *,
     input_book: Optional[pathlib.Path] = None,
     now: Optional[float] = None,
+    progress: Optional[CorpusProgressReporter] = None,
 ) -> CorpusBuildSummary:
     started_at = time.time() if now is None else now
     phase_seconds: dict[str, float] = {}
@@ -294,12 +328,35 @@ def _build_corpus_unlocked(
     download_dir = state_dir / "downloads" / profile.name
     storage_estimate = _storage_estimate(profile, download_dir)
     try:
-        free_bytes_before = _check_free_space(state_dir, storage_estimate["required_free_bytes"])
+        with _progress_phase(
+            progress,
+            "storage",
+            required_bytes=storage_estimate["required_free_bytes"],
+        ):
+            free_bytes_before = _check_free_space(
+                state_dir, storage_estimate["required_free_bytes"]
+            )
     except CorpusBuildError as error:
         _fail_build(run_dir, profile, run_id, started_at, error)
+
+    manifest_document = json.loads(profile.manifest.read_text(encoding="utf-8"))
+    manifest_sources = manifest_document.get("sources", [])
+    download_callback = (
+        (lambda kind, fields: progress.download_progress(kind, **fields))
+        if progress is not None
+        else None
+    )
     phase_started = time.perf_counter()
     try:
-        collected = collect_manifest(profile.manifest, download_dir)
+        with _progress_phase(
+            progress,
+            "download",
+            sources=len(manifest_sources),
+            bytes_total=storage_estimate["archive_bytes"],
+        ):
+            collected = collect_manifest(
+                profile.manifest, download_dir, progress=download_callback
+            )
     except Exception as error:
         _fail_build(
             run_dir,
@@ -309,11 +366,15 @@ def _build_corpus_unlocked(
             CorpusBuildError(3, "download", str(error)),
         )
     phase_seconds["download"] = time.perf_counter() - phase_started
+
     database = run_dir / "corpus.sqlite"
     phase_started = time.perf_counter()
     with CorpusStore(database) as store:
         try:
-            accepted, excluded = _ingest_sources(store, profile, download_dir)
+            with _progress_phase(progress, "ingest"):
+                accepted, excluded = _ingest_sources(
+                    store, profile, download_dir, progress=progress
+                )
         except Exception as error:
             _fail_build(
                 run_dir,
@@ -323,31 +384,34 @@ def _build_corpus_unlocked(
                 CorpusBuildError(4, "ingest", str(error)),
             )
         phase_seconds["ingest"] = time.perf_counter() - phase_started
+
         phase_started = time.perf_counter()
-        if accepted:
-            store.bump_corpus_revision()
-        try:
-            ranking_count = _import_rankings(store, profile.ranking_files)
-        except Exception as error:
-            _fail_build(
-                run_dir,
-                profile,
-                run_id,
-                started_at,
-                CorpusBuildError(4, "ranking", str(error)),
-            )
-        try:
-            rating_count = _import_rating(store, profile)
-        except Exception as error:
-            _fail_build(
-                run_dir,
-                profile,
-                run_id,
-                started_at,
-                CorpusBuildError(4, "rating", str(error)),
-            )
-        recompute_candidate_priorities(store)
+        with _progress_phase(progress, "metadata"):
+            if accepted:
+                store.bump_corpus_revision()
+            try:
+                ranking_count = _import_rankings(store, profile.ranking_files)
+            except Exception as error:
+                _fail_build(
+                    run_dir,
+                    profile,
+                    run_id,
+                    started_at,
+                    CorpusBuildError(4, "ranking", str(error)),
+                )
+            try:
+                rating_count = _import_rating(store, profile)
+            except Exception as error:
+                _fail_build(
+                    run_dir,
+                    profile,
+                    run_id,
+                    started_at,
+                    CorpusBuildError(4, "rating", str(error)),
+                )
+            recompute_candidate_priorities(store)
         phase_seconds["metadata"] = time.perf_counter() - phase_started
+
         phase_started = time.perf_counter()
         selected_book = (
             pathlib.Path(input_book)
@@ -359,13 +423,18 @@ def _build_corpus_unlocked(
             )
         )
         try:
-            book = OpeningBook.load(selected_book, ignore_ply=True)
-            coverage = generate_coverage_report(
-                store,
-                book,
-                snapshot_id=profile.coverage_snapshot_id,
-                book_hash=sha256_file(selected_book),
-            )
+            with _progress_phase(progress, "coverage"):
+                book = OpeningBook.load(selected_book, ignore_ply=True)
+                coverage = generate_coverage_report(
+                    store,
+                    book,
+                    snapshot_id=profile.coverage_snapshot_id,
+                    book_hash=sha256_file(selected_book),
+                )
+                (run_dir / "coverage-initial.json").write_text(
+                    json.dumps(coverage, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
         except Exception as error:
             _fail_build(
                 run_dir,
@@ -374,17 +443,17 @@ def _build_corpus_unlocked(
                 started_at,
                 CorpusBuildError(5, "coverage", str(error)),
             )
-        (run_dir / "coverage-initial.json").write_text(
-            json.dumps(coverage, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
         phase_seconds["coverage"] = time.perf_counter() - phase_started
-        store.connection.execute("ANALYZE")
-        store.connection.execute("PRAGMA optimize")
-        store.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+        with _progress_phase(progress, "optimize"):
+            store.connection.execute("ANALYZE")
+            store.connection.execute("PRAGMA optimize")
+            store.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     phase_started = time.perf_counter()
     try:
-        database_checks = _validate_database(database)
+        with _progress_phase(progress, "validation"):
+            database_checks = _validate_database(database)
     except Exception as error:
         _fail_build(
             run_dir,
@@ -394,6 +463,7 @@ def _build_corpus_unlocked(
             CorpusBuildError(5, "database-validation", str(error)),
         )
     phase_seconds["validation"] = time.perf_counter() - phase_started
+
     shutil.copy2(download_dir / "snapshot.json", run_dir / "snapshot.json")
     summary_document = {
         "status": "success",
@@ -414,22 +484,25 @@ def _build_corpus_unlocked(
         "storage": {**storage_estimate, "free_bytes_before": free_bytes_before},
     }
     phase_started = time.perf_counter()
-    active_database = state_dir / "corpus.sqlite"
-    for name in ("snapshot.json", "coverage-initial.json"):
-        _publish(run_dir / name, state_dir / name)
-    _publish_database_generation(
-        run_dir / "corpus.sqlite",
-        active_database,
-        state_dir / "corpus.sqlite.previous",
-    )
-    phase_seconds["publish"] = time.perf_counter() - phase_started
-    summary_document["finished_at"] = time.time()
-    summary_path = run_dir / "corpus-build-summary.json"
-    summary_path.write_text(
-        json.dumps(summary_document, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    _publish(summary_path, state_dir / "corpus-build-summary.json")
+    with _progress_phase(progress, "publish"):
+        active_database = state_dir / "corpus.sqlite"
+        for name in ("snapshot.json", "coverage-initial.json"):
+            _publish(run_dir / name, state_dir / name)
+        _publish_database_generation(
+            run_dir / "corpus.sqlite",
+            active_database,
+            state_dir / "corpus.sqlite.previous",
+        )
+        phase_seconds["publish"] = time.perf_counter() - phase_started
+        summary_document["finished_at"] = time.time()
+        summary_path = run_dir / "corpus-build-summary.json"
+        summary_path.write_text(
+            json.dumps(summary_document, ensure_ascii=False, indent=2, sort_keys=True)
+            + "\n",
+            encoding="utf-8",
+        )
+        _publish(summary_path, state_dir / "corpus-build-summary.json")
+
     return CorpusBuildSummary(
         status="success",
         profile=profile.name,
@@ -446,6 +519,7 @@ def build_corpus(
     *,
     input_book: Optional[pathlib.Path] = None,
     now: Optional[float] = None,
+    progress: Optional[CorpusProgressReporter] = None,
 ) -> CorpusBuildSummary:
     state_dir = pathlib.Path(state_dir).resolve()
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -463,7 +537,11 @@ def build_corpus(
         raise CorpusBuildError(6, "lock", "another corpus build is active") from error
     try:
         return _build_corpus_unlocked(
-            profile_path, state_dir, input_book=input_book, now=now
+            profile_path,
+            state_dir,
+            input_book=input_book,
+            now=now,
+            progress=progress,
         )
     finally:
         build_lock.close()
@@ -484,9 +562,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
+    progress = CorpusProgressReporter(sys.stderr)
     try:
         summary = build_corpus(
-            resolve_profile(args.profile), args.state_dir, input_book=args.input_book
+            resolve_profile(args.profile),
+            args.state_dir,
+            input_book=args.input_book,
+            progress=progress,
         )
     except CorpusBuildError as error:
         print(

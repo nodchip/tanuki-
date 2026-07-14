@@ -6,7 +6,7 @@ import json
 import pathlib
 import tempfile
 import urllib.request
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 
 class ManifestError(ValueError):
@@ -21,14 +21,31 @@ def sha256_file(path: pathlib.Path) -> str:
     return digest.hexdigest()
 
 
-def collect_manifest(manifest_path: pathlib.Path, destination: pathlib.Path) -> list[dict[str, object]]:
+ProgressCallback = Callable[[str, dict[str, object]], None]
+
+
+def _notify(progress: Optional[ProgressCallback], kind: str, **fields: object) -> None:
+    if progress is not None:
+        progress(kind, fields)
+
+
+def collect_manifest(
+    manifest_path: pathlib.Path,
+    destination: pathlib.Path,
+    progress: Optional[ProgressCallback] = None,
+) -> list[dict[str, object]]:
     document = json.loads(manifest_path.read_text(encoding="utf-8"))
     entries = document.get("sources")
     if not isinstance(entries, list):
         raise ManifestError("manifest requires a sources list")
     destination.mkdir(parents=True, exist_ok=True)
     collected: list[dict[str, object]] = []
-    for entry in entries:
+    source_count = len(entries)
+    aggregate_total = sum(
+        int(entry.get("size", 0)) for entry in entries if isinstance(entry, dict)
+    )
+    aggregate_bytes = 0
+    for source_offset, entry in enumerate(entries):
         if not isinstance(entry, dict):
             raise ManifestError("each source must be an object")
         required = {"site", "event", "year", "retrieved_at", "url", "relative_path", "size", "sha256"}
@@ -42,19 +59,49 @@ def collect_manifest(manifest_path: pathlib.Path, destination: pathlib.Path) -> 
             raise ManifestError("relative_path must stay within destination")
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
+        common_progress = {
+            "source_index": source_offset + 1,
+            "source_count": source_count,
+            "file": relative.as_posix(),
+            "file_total": int(entry["size"]),
+            "aggregate_total": aggregate_total,
+        }
+        _notify(
+            progress,
+            "source_start",
+            **common_progress,
+            aggregate_bytes=aggregate_bytes,
+        )
         if target.exists():
             actual_size = target.stat().st_size
             actual_hash = sha256_file(target)
             if actual_size == int(entry["size"]) and actual_hash.lower() == str(entry["sha256"]).lower():
                 collected.append({**entry, "size": actual_size, "sha256": actual_hash,
                                   "local_path": relative.as_posix()})
+                aggregate_bytes += actual_size
+                _notify(
+                    progress,
+                    "source_cached",
+                    **common_progress,
+                    file_bytes=actual_size,
+                    aggregate_bytes=aggregate_bytes,
+                )
                 continue
             raise ManifestError(f"existing file does not match frozen manifest: {relative}")
         with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as temporary:
             temporary_path = pathlib.Path(temporary.name)
+            file_bytes = 0
             with urllib.request.urlopen(str(entry["url"])) as response:
                 while block := response.read(1024 * 1024):
                     temporary.write(block)
+                    file_bytes += len(block)
+                    _notify(
+                        progress,
+                        "download_chunk",
+                        **common_progress,
+                        file_bytes=file_bytes,
+                        aggregate_bytes=aggregate_bytes + file_bytes,
+                    )
         actual_size = temporary_path.stat().st_size
         if actual_size != int(entry["size"]):
             temporary_path.unlink(missing_ok=True)
@@ -66,6 +113,14 @@ def collect_manifest(manifest_path: pathlib.Path, destination: pathlib.Path) -> 
             raise ManifestError(f"SHA-256 mismatch: {relative}")
         temporary_path.replace(target)
         collected.append({**entry, "size": actual_size, "sha256": actual_hash, "local_path": relative.as_posix()})
+        aggregate_bytes += actual_size
+        _notify(
+            progress,
+            "source_done",
+            **common_progress,
+            file_bytes=actual_size,
+            aggregate_bytes=aggregate_bytes,
+        )
     snapshot = {
         "manifest_version": 1,
         "source_manifest": manifest_path.name,
