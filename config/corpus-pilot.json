@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "priority_reference_year": 2026,
   "name": "pilot",
   "manifest": "book-corpus/pilot-manifest.json",
   "ingests": [
@@ -35,6 +36,7 @@
     "book-corpus/wcsc36-ranking.json",
     "book-corpus/denryu6-ranking.json"
   ],
+  "alias_files": [],
   "rating_file": null,
   "rating_config": null,
   "input_book": null,

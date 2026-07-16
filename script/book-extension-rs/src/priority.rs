@@ -1,8 +1,37 @@
 use std::cmp::Ordering;
 use thiserror::Error;
 
-pub const POLICY_VERSION: &str = "corpus-priority-v1";
+pub const POLICY_VERSION: &str = "corpus-priority-v2";
 const SITES: [&str; 3] = ["wcsc", "denryu", "floodgate"];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct QualityFacts {
+    pub event_year: i32,
+    pub strength_tier: i32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct QualityDecision {
+    pub age_distance: i32,
+    pub quality_band: i32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OfficialStrength {
+    SingleStage { rank: i32, participants: i32 },
+    TopStage { rank: i32, participants: i32 },
+    OneStageBelow { rank: i32, participants: i32 },
+    TwoOrMoreStagesBelow,
+    Missing,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FloodgateStrength {
+    pub high_reliability: bool,
+    pub connected_to_anchor: bool,
+    pub enough_effective_games: bool,
+    pub snapshot_percentile: f64,
+}
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PriorityFacts {
@@ -48,12 +77,98 @@ impl Ord for PriorityTuple {
 pub enum PriorityError {
     #[error("year must be positive")]
     InvalidYear,
+    #[error("invalid quality facts")]
+    InvalidQualityFacts,
     #[error("weights must define three non-negative sites")]
     InvalidWeights,
     #[error("invalid site or node count")]
     InvalidRecord,
+    #[error("priority component is outside the fixed-width encoding range")]
+    InvalidComponent,
 }
 
+pub fn quality_decision(
+    priority_reference_year: i32,
+    facts: &QualityFacts,
+) -> Result<QualityDecision, PriorityError> {
+    if priority_reference_year <= 0
+        || facts.event_year <= 0
+        || !(0..=4).contains(&facts.strength_tier)
+    {
+        return Err(PriorityError::InvalidQualityFacts);
+    }
+    let age_distance = priority_reference_year
+        .saturating_sub(facts.event_year)
+        .div_euclid(3);
+    let quality_band = facts
+        .strength_tier
+        .checked_add(age_distance.saturating_mul(2))
+        .ok_or(PriorityError::InvalidQualityFacts)?;
+    Ok(QualityDecision {
+        age_distance,
+        quality_band,
+    })
+}
+
+pub fn official_strength_tier(strength: OfficialStrength) -> i32 {
+    let valid = |rank: i32, participants: i32| rank > 0 && participants > 0 && rank <= participants;
+    let top_quarter = |rank: i32, participants: i32| i64::from(rank) * 4 <= i64::from(participants);
+    let top_half = |rank: i32, participants: i32| i64::from(rank) * 2 <= i64::from(participants);
+
+    match strength {
+        OfficialStrength::SingleStage { rank, participants } if valid(rank, participants) => {
+            if rank == 1 {
+                0
+            } else if rank <= 3 {
+                1
+            } else if top_quarter(rank, participants) {
+                2
+            } else if top_half(rank, participants) {
+                3
+            } else {
+                4
+            }
+        }
+        OfficialStrength::TopStage { rank, participants } if valid(rank, participants) => {
+            if rank == 1 {
+                0
+            } else if rank <= 3 {
+                1
+            } else {
+                2
+            }
+        }
+        OfficialStrength::OneStageBelow { rank, participants } if valid(rank, participants) => {
+            if top_quarter(rank, participants) {
+                3
+            } else {
+                4
+            }
+        }
+        OfficialStrength::TwoOrMoreStagesBelow | OfficialStrength::Missing => 4,
+        _ => 4,
+    }
+}
+
+pub fn floodgate_strength_tier(strength: FloodgateStrength) -> i32 {
+    if !strength.high_reliability
+        || !strength.connected_to_anchor
+        || !strength.enough_effective_games
+        || !strength.snapshot_percentile.is_finite()
+        || !(0.0..=1.0).contains(&strength.snapshot_percentile)
+    {
+        return 4;
+    }
+    if strength.snapshot_percentile >= 0.99 {
+        1
+    } else if strength.snapshot_percentile >= 0.95 {
+        2
+    } else if strength.snapshot_percentile >= 0.80 {
+        3
+    } else {
+        4
+    }
+}
 pub fn recency_bucket(year: i32) -> Result<i32, PriorityError> {
     if year < 1 {
         return Err(PriorityError::InvalidYear);
@@ -80,6 +195,31 @@ pub fn priority_tuple(facts: &PriorityFacts) -> Result<PriorityTuple, PriorityEr
         facts.occurrences as f64,
         facts.exact_time,
     ]))
+}
+
+pub fn encode_priority(tuple: &PriorityTuple) -> Result<[u8; 88], PriorityError> {
+    let mut encoded = [0_u8; 88];
+    for (index, value) in tuple.0.iter().copied().enumerate() {
+        if !value.is_finite() {
+            return Err(PriorityError::InvalidComponent);
+        }
+        let fixed = format!("{:.6}", value + 1_000_000.0);
+        let (whole, fraction) = fixed
+            .split_once('.')
+            .ok_or(PriorityError::InvalidComponent)?;
+        let whole = whole
+            .parse::<u64>()
+            .map_err(|_| PriorityError::InvalidComponent)?;
+        let fraction = fraction
+            .parse::<u64>()
+            .map_err(|_| PriorityError::InvalidComponent)?;
+        let scaled = whole
+            .checked_mul(1_000_000)
+            .and_then(|value| value.checked_add(fraction))
+            .ok_or(PriorityError::InvalidComponent)?;
+        encoded[index * 8..index * 8 + 8].copy_from_slice(&scaled.to_be_bytes());
+    }
+    Ok(encoded)
 }
 
 #[derive(Clone, Debug)]

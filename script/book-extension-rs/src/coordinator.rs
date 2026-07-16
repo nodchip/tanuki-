@@ -10,11 +10,18 @@ use thiserror::Error;
 
 use crate::{
     book::OpeningBook,
-    corpus::{CorpusCandidate, CorpusStore, SearchCompletion},
+    corpus::{
+        CandidateChoice, CorpusCandidate, CorpusStore, FrontierTransition, RolloutObservation,
+        SearchCompletion, SearchTaskStatus, SourceSite,
+    },
     engine::{EngineError, EngineOptions, StopHandle, UsiEngine},
     priority::SiteNodeBudget,
     python_random::PythonRandom,
     runtime::HeartbeatMonitor,
+    runtime_status::{
+        BookSaveStatus, LastCandidateStatus, RuntimeStatusSnapshot, TaskStatusCounts,
+        write_runtime_status_atomic,
+    },
     search::{
         LeafPath, PetaFilter, SearchError, increment_path_visits, merge_search_results,
         propagate_minimax, reserve_leaf_path_with_filter_and_random,
@@ -41,6 +48,7 @@ pub struct CorpusRuntimeOptions {
     pub saturation_window: i64,
     pub input_book_hash: String,
     pub site_weights: [i64; 3],
+    pub engine_fingerprint: String,
 }
 
 #[derive(Clone, Debug)]
@@ -79,6 +87,9 @@ pub struct NormalRuntimeOptions {
     pub corpus: Option<CorpusRuntimeOptions>,
     pub stop_control: Option<StopControlOptions>,
     pub persistence: PersistenceOptions,
+    pub status_path: PathBuf,
+    pub status_interval_sec: f64,
+    pub engine_fingerprint: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -122,6 +133,10 @@ struct SharedState {
     running_workers: usize,
     site_budget: Option<SiteNodeBudget>,
     generation: u64,
+    corpus_add_successes: i64,
+    last_candidate: Option<LastCandidateStatus>,
+    last_book_save: Option<BookSaveStatus>,
+    save_finished: bool,
     random: PythonRandom,
 }
 
@@ -155,6 +170,9 @@ pub fn run_normal_extension(
         store
             .reset_interrupted_tasks(unix_time())
             .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
+        store
+            .requeue_retryable_failures(&corpus.engine_fingerprint, unix_time())
+            .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
         replay_corpus_results(&mut book, &store, &corpus.input_book_hash)?;
         Some(store)
     } else {
@@ -183,6 +201,10 @@ pub fn run_normal_extension(
             stop_reason: None,
             running_workers: options.worker_roles.len(),
             generation: 0,
+            corpus_add_successes: 0,
+            last_candidate: None,
+            last_book_save: None,
+            save_finished: false,
             random: PythonRandom::seeded(options.random_seed.unwrap_or_else(default_random_seed)),
             site_budget: options.corpus.as_ref().map(|corpus| {
                 SiteNodeBudget::new([
@@ -243,6 +265,19 @@ pub fn run_normal_extension(
                     persistence.backup_count,
                 ) {
                     let mut state = shared.0.lock().map_err(|_| CoordinatorError::Poisoned)?;
+                    state.last_book_save = Some(BookSaveStatus {
+                        saved_at: unix_time(),
+                        path: persistence.output_path.display().to_string(),
+                        success: false,
+                        detail: error.to_string(),
+                    });
+                    eprintln!(
+                        "[book_save] generation={} elapsed_ms={} output={} status=failure error={:?}",
+                        generation,
+                        save_started.elapsed().as_millis(),
+                        persistence.output_path.display(),
+                        error.to_string()
+                    );
                     state.error = Some(error.to_string());
                     state.stop_admission = true;
                     shared.1.notify_all();
@@ -257,9 +292,15 @@ pub fn run_normal_extension(
                             .record_checkpoint_through(&hash, through_task, unix_time())
                             .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
                     }
+                    state.last_book_save = Some(BookSaveStatus {
+                        saved_at: unix_time(),
+                        path: persistence.output_path.display().to_string(),
+                        success: true,
+                        detail: hash.clone(),
+                    });
                 }
                 eprintln!(
-                    "[save] generation={} through_task={} elapsed_ms={} output={}",
+                    "[book_save] generation={} through_task={} elapsed_ms={} output={} status=success",
                     generation,
                     through_task.map_or_else(|| "none".to_owned(), |id| id.to_string()),
                     save_started.elapsed().as_millis(),
@@ -277,6 +318,35 @@ pub fn run_normal_extension(
         })
     };
 
+    let status_handle = {
+        let shared = Arc::clone(&shared);
+        let status_path = options.status_path.clone();
+        let status_interval = std::time::Duration::from_secs_f64(options.status_interval_sec);
+        let engine_fingerprint = options.engine_fingerprint.clone();
+        thread::spawn(move || -> Result<(), CoordinatorError> {
+            loop {
+                let (snapshot, workers_done) = {
+                    let state = shared.0.lock().map_err(|_| CoordinatorError::Poisoned)?;
+                    (
+                        runtime_status_snapshot(&state, &engine_fingerprint)?,
+                        state.running_workers == 0 && state.save_finished,
+                    )
+                };
+                write_runtime_status_atomic(&status_path, &snapshot)
+                    .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
+                if workers_done {
+                    return Ok(());
+                }
+                let state = shared.0.lock().map_err(|_| CoordinatorError::Poisoned)?;
+                if state.running_workers != 0 {
+                    let _ = shared
+                        .1
+                        .wait_timeout(state, status_interval)
+                        .map_err(|_| CoordinatorError::Poisoned)?;
+                }
+            }
+        })
+    };
     let monitor_handle = options.stop_control.clone().map(|control| {
         let shared = Arc::clone(&shared);
         thread::spawn(move || -> Result<(), CoordinatorError> {
@@ -316,6 +386,11 @@ pub fn run_normal_extension(
                 if let Some(reason) = reason {
                     let stop_started = std::time::Instant::now();
                     eprintln!("[stop-request] reason={reason}");
+                    eprintln!(
+                        "[runtime_stop] reason={} elapsed_ms={}",
+                        reason,
+                        runtime_started.elapsed().as_millis()
+                    );
                     {
                         let mut state = shared.0.lock().map_err(|_| CoordinatorError::Poisoned)?;
                         state.stop_admission = true;
@@ -428,6 +503,7 @@ pub fn run_normal_extension(
 
                 if let Some(work) = corpus_work {
                     let history_refs: Vec<&str> = work.history.iter().map(String::as_str).collect();
+                    let corpus_search_started = std::time::Instant::now();
                     let result = watched_search_move(
                         &mut engine,
                         &position_root(&options.root_sfen),
@@ -449,7 +525,13 @@ pub fn run_normal_extension(
                     let (state_lock, wake) = &*shared;
                     let mut state = state_lock.lock().map_err(|_| CoordinatorError::Poisoned)?;
                     state.corpus_active -= 1;
-                    apply_corpus_result(&mut state, &work, result, &options)?;
+                    apply_corpus_result(
+                        &mut state,
+                        &work,
+                        result,
+                        &options,
+                        corpus_search_started.elapsed().as_millis(),
+                    )?;
                     wake.notify_all();
                 }
 
@@ -474,8 +556,21 @@ pub fn run_normal_extension(
     saver_handle
         .join()
         .map_err(|_| CoordinatorError::WorkerPanic)??;
+    {
+        let mut state = shared.0.lock().map_err(|_| CoordinatorError::Poisoned)?;
+        state.save_finished = true;
+        shared.1.notify_all();
+    }
     eprintln!(
         "[shutdown] phase=final-save-checkpoint elapsed_ms={}",
+        phase_started.elapsed().as_millis()
+    );
+    let phase_started = std::time::Instant::now();
+    status_handle
+        .join()
+        .map_err(|_| CoordinatorError::WorkerPanic)??;
+    eprintln!(
+        "[shutdown] phase=status-join elapsed_ms={}",
         phase_started.elapsed().as_millis()
     );
     let phase_started = std::time::Instant::now();
@@ -816,6 +911,15 @@ fn apply_normal_results(
     Ok(())
 }
 
+struct PathCorpusChoice {
+    choice: CandidateChoice,
+    sfen: String,
+    history: Vec<String>,
+    path: LeafPath,
+    site_rank: usize,
+    leaf_distance: usize,
+}
+
 fn reserve_corpus_work(
     state: &mut SharedState,
     path: &LeafPath,
@@ -832,40 +936,44 @@ fn reserve_corpus_work(
     {
         return Ok(None);
     }
-    let width = state
-        .corpus_store
-        .as_ref()
-        .expect("corpus configured")
-        .progressive_width()
-        .map_err(|error| CoordinatorError::Worker(error.to_string()))? as usize;
-    let history: Vec<String> = path
-        .steps
-        .iter()
-        .map(|step| step.move_usi.clone())
-        .collect();
-    let mut visited: Vec<(String, Vec<String>, LeafPath)> = path
-        .steps
-        .iter()
-        .enumerate()
-        .map(|(index, step)| {
-            (
-                step.sfen.clone(),
-                history[..index].to_vec(),
-                LeafPath {
-                    steps: path.steps[..index].to_vec(),
-                    leaf_sfen: step.sfen.clone(),
-                },
-            )
-        })
-        .collect();
-    visited.push((path.leaf_sfen.clone(), history.clone(), path.clone()));
-    let site_order = state
-        .site_budget
-        .as_ref()
-        .expect("corpus configured")
-        .order();
-    for site in site_order {
-        for (sfen, visit_history, visit_path) in visited.iter().rev() {
+    for retry in 0..2 {
+        let frontier = state
+            .corpus_store
+            .as_ref()
+            .expect("corpus configured")
+            .frontier_state()
+            .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
+        let width = frontier.progressive_width.max(0) as usize;
+        let history: Vec<String> = path
+            .steps
+            .iter()
+            .map(|step| step.move_usi.clone())
+            .collect();
+        let mut visited: Vec<(String, Vec<String>, LeafPath)> = path
+            .steps
+            .iter()
+            .enumerate()
+            .map(|(index, step)| {
+                (
+                    step.sfen.clone(),
+                    history[..index].to_vec(),
+                    LeafPath {
+                        steps: path.steps[..index].to_vec(),
+                        leaf_sfen: step.sfen.clone(),
+                    },
+                )
+            })
+            .collect();
+        visited.push((path.leaf_sfen.clone(), history.clone(), path.clone()));
+        let site_order = state
+            .site_budget
+            .as_ref()
+            .expect("corpus configured")
+            .order();
+        let mut choices = Vec::new();
+        let mut truncated = false;
+        let mut next_quality_band = None;
+        for (visit_index, (sfen, visit_history, visit_path)) in visited.iter().enumerate() {
             let excluded: HashSet<String> = state
                 .book
                 .position(sfen)
@@ -877,59 +985,175 @@ fn reserve_corpus_work(
                         .collect()
                 })
                 .unwrap_or_default();
+            for (site_rank, site_name) in site_order.iter().enumerate() {
+                let site = SourceSite::from_name(site_name);
+                let probe = state
+                    .corpus_store
+                    .as_ref()
+                    .expect("corpus configured")
+                    .probe_position(
+                        &corpus_options.snapshot_id,
+                        &state.book.position_key(sfen),
+                        &excluded,
+                        frontier.active_quality_band,
+                        site,
+                        width,
+                        unix_time(),
+                    )
+                    .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
+                truncated |= probe.truncated;
+                if let Some(band) = probe.next_quality_band {
+                    next_quality_band =
+                        Some(next_quality_band.map_or(band, |old: i32| old.min(band)));
+                }
+                choices.extend(probe.choices.into_iter().map(|choice| PathCorpusChoice {
+                    choice,
+                    sfen: sfen.clone(),
+                    history: visit_history.clone(),
+                    path: visit_path.clone(),
+                    site_rank,
+                    leaf_distance: visited.len() - 1 - visit_index,
+                }));
+            }
+        }
+        choices.sort_by(|left, right| {
+            left.choice
+                .quality_band
+                .cmp(&right.choice.quality_band)
+                .then_with(|| left.site_rank.cmp(&right.site_rank))
+                .then_with(|| right.choice.priority_key.cmp(&left.choice.priority_key))
+                .then_with(|| left.leaf_distance.cmp(&right.leaf_distance))
+                .then_with(|| left.choice.candidate_id.cmp(&right.choice.candidate_id))
+        });
+        let mut reservation_collision = false;
+        for selected in choices {
             let candidate = state
                 .corpus_store
                 .as_mut()
                 .expect("corpus configured")
-                .reserve_for_position(
+                .reserve_choice(
+                    &selected.choice,
                     &corpus_options.snapshot_id,
-                    &state.book.position_key(sfen),
-                    &excluded,
-                    width,
                     300.0,
-                    Some(site),
                     unix_time(),
                 )
                 .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
-            if let Some(candidate) = candidate {
-                state.corpus_active += 1;
-                state.searches += 1;
-                state.total_nodes += corpus_options.nodes;
-                state
-                    .site_budget
-                    .as_mut()
-                    .expect("corpus configured")
-                    .record(site, corpus_options.nodes as i64)
-                    .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
-                state
-                    .corpus_store
-                    .as_mut()
-                    .expect("corpus configured")
-                    .add_metric(&format!("corpus_nodes:{site}"), corpus_options.nodes as i64)
-                    .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
-                return Ok(Some(CorpusWork {
-                    candidate,
-                    sfen: state.book.output_sfen(sfen),
-                    history: visit_history.clone(),
-                    path: visit_path.clone(),
-                }));
-            }
+            let Some(candidate) = candidate else {
+                reservation_collision = true;
+                continue;
+            };
+            state
+                .corpus_store
+                .as_mut()
+                .expect("corpus configured")
+                .record_rollout_observation(
+                    &RolloutObservation {
+                        eligible_miss: false,
+                        reserved: true,
+                        truncated_in_active_band: truncated,
+                        smallest_higher_band: next_quality_band,
+                    },
+                    corpus_options.saturation_window,
+                    unix_time(),
+                )
+                .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
+            state.last_candidate = Some(LastCandidateStatus {
+                candidate_id: selected.choice.candidate_id,
+                position_key: selected.choice.position_key.clone(),
+                move_usi: selected.choice.move_usi.clone(),
+                source: selected.choice.source.clone(),
+                quality_band: selected.choice.quality_band,
+                result: "reserved".to_owned(),
+            });
+            eprintln!(
+                "[corpus_reserve] position_key={:?} move={} source={} band={} n={} task_id={}",
+                selected.choice.position_key,
+                selected.choice.move_usi,
+                selected.choice.source,
+                selected.choice.quality_band,
+                frontier.progressive_width,
+                candidate.id
+            );
+            state.corpus_active += 1;
+            state.searches += 1;
+            state.total_nodes += corpus_options.nodes;
+            let site = source_site_name(selected.choice.source_site);
+            state
+                .site_budget
+                .as_mut()
+                .expect("corpus configured")
+                .record(site, corpus_options.nodes as i64)
+                .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
+            state
+                .corpus_store
+                .as_mut()
+                .expect("corpus configured")
+                .add_metric(&format!("corpus_nodes:{site}"), corpus_options.nodes as i64)
+                .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
+            return Ok(Some(CorpusWork {
+                candidate,
+                sfen: state.book.output_sfen(&selected.sfen),
+                history: selected.history,
+                path: selected.path,
+            }));
         }
+        let transition = state
+            .corpus_store
+            .as_mut()
+            .expect("corpus configured")
+            .record_rollout_observation(
+                &RolloutObservation {
+                    eligible_miss: !reservation_collision,
+                    reserved: false,
+                    truncated_in_active_band: truncated,
+                    smallest_higher_band: next_quality_band,
+                },
+                corpus_options.saturation_window,
+                unix_time(),
+            )
+            .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
+        if transition != FrontierTransition::None {
+            let updated = state
+                .corpus_store
+                .as_ref()
+                .expect("corpus configured")
+                .frontier_state()
+                .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
+            let reason = match transition {
+                FrontierTransition::Width { .. } => "active_band_truncated",
+                FrontierTransition::Band { .. } => "next_quality_band",
+                FrontierTransition::None => unreachable!(),
+            };
+            eprintln!(
+                "[frontier_change] band={} n={} reason={} eligible_miss_count={}",
+                updated.active_quality_band,
+                updated.progressive_width,
+                reason,
+                updated.eligible_miss_count
+            );
+        }
+        if retry == 0 && transition != FrontierTransition::None {
+            continue;
+        }
+        return Ok(None);
     }
-    state
-        .corpus_store
-        .as_mut()
-        .expect("corpus configured")
-        .record_corpus_rollout(false, corpus_options.saturation_window, unix_time())
-        .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
     Ok(None)
 }
 
+fn source_site_name(site: SourceSite) -> &'static str {
+    match site {
+        SourceSite::Wcsc => "wcsc",
+        SourceSite::Denryu => "denryu",
+        SourceSite::Floodgate => "floodgate",
+        SourceSite::Unknown => "unknown",
+    }
+}
 fn apply_corpus_result(
     state: &mut SharedState,
     work: &CorpusWork,
     result: Result<crate::search::SearchResult, EngineError>,
     options: &NormalRuntimeOptions,
+    elapsed_ms: u128,
 ) -> Result<(), CoordinatorError> {
     let corpus_options = options.corpus.as_ref().expect("work requires corpus");
     if state.discard_results {
@@ -937,7 +1161,7 @@ fn apply_corpus_result(
             .corpus_store
             .as_mut()
             .expect("corpus configured")
-            .fail_search(work.candidate.id, "interrupted", 3, unix_time())
+            .interrupt_search(work.candidate.id, unix_time())
             .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
         return Ok(());
     }
@@ -962,37 +1186,115 @@ fn apply_corpus_result(
                         response: result.response,
                         depth: result.depth,
                         nodes: corpus_options.nodes as i64,
-                        engine_config_id: "usi-current".to_owned(),
+                        engine_config_id: corpus_options.engine_fingerprint.clone(),
                         now: unix_time(),
                     },
                 )
                 .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
-            state
-                .corpus_store
-                .as_mut()
-                .expect("corpus configured")
-                .record_corpus_rollout(added, corpus_options.saturation_window, unix_time())
-                .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
+            if added {
+                state.corpus_add_successes += 1;
+            }
+            eprintln!(
+                "[corpus_complete] position_key={:?} move={} source={} result={} fingerprint={} elapsed_ms={}",
+                work.candidate.position_key,
+                work.candidate.move_usi,
+                work.candidate.source,
+                if added { "added" } else { "already-present" },
+                corpus_options.engine_fingerprint,
+                elapsed_ms
+            );
+            if let Some(last) = state.last_candidate.as_mut()
+                && last.candidate_id == work.candidate.id
+            {
+                last.result = if added { "added" } else { "already-present" }.to_owned();
+            }
             state.generation += 1;
         }
         Err(error) => {
-            state
+            if let Some(last) = state.last_candidate.as_mut()
+                && last.candidate_id == work.candidate.id
+            {
+                last.result = format!("failed:{error}");
+            }
+            let status = state
                 .corpus_store
                 .as_mut()
                 .expect("corpus configured")
-                .fail_search(work.candidate.id, &error.to_string(), 3, unix_time())
+                .fail_engine_search(
+                    work.candidate.id,
+                    &error.to_string(),
+                    &corpus_options.engine_fingerprint,
+                    unix_time(),
+                )
                 .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
-            state
-                .corpus_store
-                .as_mut()
-                .expect("corpus configured")
-                .record_corpus_rollout(false, corpus_options.saturation_window, unix_time())
-                .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
+            let failure_class = if status == SearchTaskStatus::PermanentFailed {
+                "engine_retry_exhausted"
+            } else {
+                "engine_transient"
+            };
+            eprintln!(
+                "[corpus_failure] position_key={:?} move={} source={} failure_class={} fingerprint={} elapsed_ms={} error={:?}",
+                work.candidate.position_key,
+                work.candidate.move_usi,
+                work.candidate.source,
+                failure_class,
+                corpus_options.engine_fingerprint,
+                elapsed_ms,
+                error.to_string()
+            );
         }
     }
     Ok(())
 }
 
+fn runtime_status_snapshot(
+    state: &SharedState,
+    engine_fingerprint: &str,
+) -> Result<RuntimeStatusSnapshot, CoordinatorError> {
+    let (frontier, tasks, site_nodes, revision) = if let Some(store) = state.corpus_store.as_ref() {
+        (
+            store
+                .frontier_state()
+                .map_err(|error| CoordinatorError::Worker(error.to_string()))?,
+            store
+                .task_status_counts()
+                .map_err(|error| CoordinatorError::Worker(error.to_string()))?,
+            store
+                .site_node_metrics()
+                .map_err(|error| CoordinatorError::Worker(error.to_string()))?,
+            store
+                .corpus_revision()
+                .map_err(|error| CoordinatorError::Worker(error.to_string()))?,
+        )
+    } else {
+        (
+            crate::corpus::FrontierState {
+                active_quality_band: 0,
+                progressive_width: 1,
+                eligible_miss_count: 0,
+                truncated_candidate_seen: false,
+                next_quality_band_seen: None,
+            },
+            TaskStatusCounts::default(),
+            std::collections::BTreeMap::new(),
+            0,
+        )
+    };
+    Ok(RuntimeStatusSnapshot {
+        updated_at: unix_time(),
+        active_quality_band: frontier.active_quality_band,
+        progressive_width: frontier.progressive_width,
+        eligible_miss_count: frontier.eligible_miss_count,
+        tasks,
+        book_add_successes: state.corpus_add_successes,
+        site_nodes,
+        last_candidate: state.last_candidate.clone(),
+        corpus_revision: revision,
+        priority_policy_version: crate::priority::POLICY_VERSION.to_owned(),
+        engine_fingerprint: engine_fingerprint.to_owned(),
+        last_book_save: state.last_book_save.clone(),
+    })
+}
 fn position_root(root_sfen: &str) -> PositionRoot {
     if root_sfen == crate::STARTPOS_SFEN {
         PositionRoot::Startpos

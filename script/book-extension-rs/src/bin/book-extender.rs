@@ -1,4 +1,4 @@
-use std::{path::PathBuf, process::ExitCode, sync::Arc};
+use std::{collections::BTreeMap, path::PathBuf, process::ExitCode, sync::Arc};
 
 use book_extension_runtime::{
     book::OpeningBook,
@@ -8,6 +8,7 @@ use book_extension_runtime::{
         WorkerRole, run_normal_extension,
     },
     engine::EngineOptions,
+    engine_fingerprint::{EngineFingerprintInput, compute_engine_fingerprint},
     runtime::BookFileLock,
     storage::sha256_file,
     validation::validate_book,
@@ -136,7 +137,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         }));
     }
     worker_roles.extend((0..config.workers.general).map(|_| WorkerRole::General));
-    let corpus = if config.corpus.enabled {
+    let mut corpus = if config.corpus.enabled {
         let database_path = args
             .corpus_db
             .clone()
@@ -164,6 +165,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 config.corpus.denryu_weight as i64,
                 config.corpus.floodgate_weight as i64,
             ],
+            engine_fingerprint: String::new(),
         })
     } else {
         None
@@ -176,7 +178,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         "white" => "white",
         _ => return Err("book-side must be black or white".into()),
     };
-    let extra = args
+    let extra: Vec<(String, Option<String>)> = args
         .setoptions
         .iter()
         .map(|option| {
@@ -186,6 +188,19 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             )
         })
         .collect();
+    let fingerprint = compute_engine_fingerprint(&EngineFingerprintInput {
+        engine_sha256: sha256_file(&args.engine)?,
+        hash_mb: args.usi_hash,
+        threads: config.workers.threads_per_engine,
+        multipv: args.multipv,
+        extra: extra.iter().cloned().collect::<BTreeMap<_, _>>(),
+        corpus_nodes: corpus.as_ref().map_or(0, |value| value.nodes),
+        search_timeout_sec: args.usi_search_timeout_sec,
+        engine_config_revision: config.runtime.engine_config_revision,
+    })?;
+    if let Some(corpus) = corpus.as_mut() {
+        corpus.engine_fingerprint = fingerprint.clone();
+    }
     let runtime_options = NormalRuntimeOptions {
         worker_roles,
         engine_options: EngineOptions {
@@ -208,6 +223,9 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         search_timeout_sec: args.usi_search_timeout_sec,
         random_seed: args.random_seed.map(i64::unsigned_abs),
         corpus,
+        status_path: config.runtime.state_dir.join("runtime-status.json"),
+        status_interval_sec: config.runtime.status_interval_sec,
+        engine_fingerprint: fingerprint,
         persistence: PersistenceOptions {
             output_path: args.output.clone(),
             backup_count: config.runtime.backup_count,

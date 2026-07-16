@@ -72,6 +72,21 @@ T1
                 normalize_csa_game(broken, source_path="raw/time-before-move.csa")
         self.assertEqual(caught.exception.line_number, 5)
 
+    def test_rejects_turn_before_initial_position_without_calling_parser(self) -> None:
+        broken = """'header
++
++7776FU,T0
+"""
+        with mock.patch(
+            "corpus_csa.CSA.Parser",
+            side_effect=AssertionError("native parser must not be called"),
+        ):
+            with self.assertRaisesRegex(
+                CsaGameError, "turn line before initial position"
+            ) as caught:
+                normalize_csa_game(broken, source_path="raw/missing-position.csa")
+        self.assertEqual(caught.exception.line_number, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -82,6 +82,19 @@ def _position_key(sfen: str) -> str:
     return " ".join(tokens[:3])
 
 
+def _turn_before_initial_position_line(text: str) -> int | None:
+    has_position = False
+    for line_number, raw_line in enumerate(text.splitlines(), 1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line[0] == "P":
+            has_position = True
+        elif line in ("+", "-"):
+            return None if has_position else line_number
+    return None
+
+
 def _time_before_first_move_line(text: str) -> int | None:
     has_move = False
     has_endgame = False
@@ -105,6 +118,14 @@ def _time_before_first_move_line(text: str) -> int | None:
 
 def normalize_csa_game(text: str, *, source_path: str) -> NormalizedGame:
     """Parse one CSA game, require startpos, and replay every recorded move."""
+    unsafe_turn_line = _turn_before_initial_position_line(text)
+    if unsafe_turn_line is not None:
+        raise CsaGameError(
+            source_path,
+            "turn line before initial position",
+            line_number=unsafe_turn_line,
+        )
+
     unsafe_time_line = _time_before_first_move_line(text)
     if unsafe_time_line is not None:
         raise CsaGameError(

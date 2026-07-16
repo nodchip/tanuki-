@@ -24,3 +24,5 @@ save_interval_sec = 3600
 backup_count = 3
 heartbeat_timeout_sec = 10
 usi_stop_timeout_sec = 60
+status_interval_sec = 60
+engine_config_revision = 1

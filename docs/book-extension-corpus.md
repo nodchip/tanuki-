@@ -11,13 +11,19 @@
 
 定跡延長プログラムを手動停止し、対象の state directory に入力定跡を input-book.db として置いてから、次のどちらか1コマンドを実行する。
 
+最初にRust Release binaryを作成する（依存crate取得済みなら`--offline`でもよい）。
+
+    cargo build --manifest-path script/book-extension-rs/Cargo.toml --release --bin corpus-builder
+
 24時間pilot用:
 
-    python script/prepare_book_corpus.py --profile pilot --state-dir C:/book-extension-state/pilot
+    & .\script\book-extension-rs\target\release\corpus-builder.exe build --profile pilot --state-dir C:\book-extension-state\pilot --input-book C:\book-extension-state\pilot\input-book.db
 
 本番運用用フルセット:
 
-    python script/prepare_book_corpus.py --profile production --state-dir C:/book-extension-state/production
+    & .\script\book-extension-rs\target\release\corpus-builder.exe build --profile production --state-dir C:\book-extension-state\production --input-book C:\book-extension-state\production\input-book.db
+
+古いWCSCのLZHを含むprofileでは、起動前に7-Zipを検証する。標準配置または`PATH`にない場合だけ`--seven-zip C:\path\7z.exe`を追加する。実体パス、version、SHA-256はsummaryへ記録される。固定manifestの通常運用経路はこのRust binaryだけで完結し、Python/cshogiを起動・importしない。`script/prepare_book_corpus.py`は旧結果との比較用reference-onlyであり、本番入口として使用しない。
 
 作成中の進捗は標準エラーへ即時出力され、Jenkinsではコンソールログから確認できる。storage、download、ingest、metadata、coverage、optimize、validation、publishの開始・完了と、長時間処理中の30秒ごとのheartbeatを表示する。downloadはファイル数・バイト数、ingestは500局以下のバッチをトランザクション単位として、各バッチの確定後に処理棋譜数・accepted・excludedも表示する。正常終了時の最終JSONは従来どおり標準出力へ1行だけ出力される。
 
@@ -27,13 +33,13 @@ pilot は取得日時を固定した floodgate 2026、WCSC36、電竜戦6本戦�
 
 入力定跡が別の場所にある場合だけ --input-book D:/path/book.db を追加する。peta_shock と定跡延長ランタイムの起動は自動実行しない。
 
-## SQLite schema v5 と容量管理
+## 旧 SQLite schema v5 の設計と実測記録
 
-schema v5では、局面までの累積`history_json`を各局面・候補・出典へ保存しない。`logical_game`が初期SFENと全指し手列を1回だけ保持し、`game_position`は`game_id`、`ply`、`position_id`、実戦手だけを持つ。候補の代表履歴は`representative_game_id + representative_ply`から復元するため、千日手判定に必要な順序付き履歴を失わない。canonical SFENは手数を除いた`position.position_key`へ正規化し、候補と棋譜局面は整数IDで参照する。
+この節はschema v5時点の設計・容量実測を保存する履歴である。現行運用は後述のschema v6 quality frontierを使用する。schema v5では、局面までの累積`history_json`を各局面・候補・出典へ保存しない。`logical_game`が初期SFENと全指し手列を1回だけ保持し、`game_position`は`game_id`、`ply`、`position_id`、実戦手だけを持つ。候補の代表履歴は`representative_game_id + representative_ply`から復元するため、千日手判定に必要な順序付き履歴を失わない。canonical SFENは手数を除いた`position.position_key`へ正規化し、候補と棋譜局面は整数IDで参照する。
 
-候補優先度は11要素を88 byteの固定長big-endian BLOBへ符号化する。SQLiteのBLOB辞書順がpriority tuple順と一致し、`candidate_position_priority_idx(position_id, active, priority_key DESC, id)`が局面別上位N検索に使われる。`candidate_source`表は廃止し、出典集合は`game_position -> source_game -> raw_source`から導出する。DDLの正本は`script/corpus_schema.sql`で、Python作成系とRustランタイムが同じファイルを使用する。
+schema v5の候補優先度は11要素を88 byteの固定長big-endian BLOBへ符号化した。SQLiteのBLOB辞書順がpriority tuple順と一致し、当時は`candidate_position_priority_idx(position_id, active, priority_key DESC, id)`を局面別上位N検索に使用した。`candidate_source`表は廃止し、出典集合は`game_position -> source_game -> raw_source`から導出する。DDLの正本は`script/corpus_schema.sql`で、Python作成系とRustランタイムが同じファイルを使用する。
 
-schema v4以前のDBは新ランタイムが自動変更せず、明確な再構築エラーにする。固定manifestから上記1コマンドでschema v5を再作成する。巨大な旧DBのin-place migrationは正式運用にしない。旧DBを比較する場合はread-onlyで次を実行し、logical game、raw source、source-game対応、全棋譜局面、候補集合、優先度、ingest errorの件数とストリーミングSHA-256を比較する。
+schema v5導入時はschema v4以前を自動変更せず、固定manifestからschema v5を再作成した。現行ランタイムはschema v6だけを開き、v5の棋譜データは固定manifestからv6へ再構築する。再構築時にはv5のmutable runtime stateだけを自然キーで新DBへ移送できる。巨大な旧DBのin-place migrationは正式運用にしない。旧DBを比較する場合はread-onlyで次を実行し、logical game、raw source、source-game対応、全棋譜局面、候補集合、優先度、ingest errorの件数とストリーミングSHA-256を比較する。
 
 ```powershell
 python script/compare_corpus_schemas.py `
@@ -61,7 +67,27 @@ coverageは全棋譜局面をPythonへ`fetchall()`せず、disk-backed TEMP tabl
 
 read-onlyの全件比較では、68,142 logical game、69,389 source-game対応、70,974 raw source、全7,801,932棋譜局面（site/event/yearを含む）、5,963,731 canonical candidateと優先度、7,864,207 candidate-source組、1,585 ingest errorのストリーミングSHA-256がschema v4とv5で一致した。occurrence coverageと全内訳も同じである。unique coverageは、旧DBがSFEN手数を別局面として数えていたため、旧5,915,153局面・79,050 coveredからcanonicalな5,846,363局面・58,703 coveredへ訂正されたもので、棋譜局面の欠落ではない。`integrity_check=ok`、`foreign_key_check`は0件だった。
 
+### Rust corpus-builder pilot全件実測（2026-07-15）
+
+更新後の固定pilot manifestをRust Release `corpus-builder.exe`だけで処理した。途中で`stop.request`を2回投入して500局単位checkpointから再開し、既存正本を変更せず終了コード130になることを確認した後、同じfresh stateを最後まで作成した。最終runはwall 1,436.36秒、phase合計1,433.71秒、最大Working Set 106,835,968 bytes（約101.9 MiB）だった。phaseはingest 997.08秒、metadata 183.21秒、coverage 164.14秒、optimize 9.98秒、全件validator 79.21秒である。旧Python実測は18分41.7秒だが、Rust版は安全側parser、全68,089 logical game・7,784,612局面の再生validator、進捗、停止・再開を含むため、wall timeだけの単純比較はしない。メモリは旧Python約1.363 GiBから約92.7%減少した。
+
+3 source、71,445棋譜memberを読み、member filter除外0、accepted 69,353、excluded 2,092だった。error内訳はDecode 114、IllegalMove 4、MissingEndgame 389、NoMoves 1,585である。logical game 68,089、game position 7,784,612、canonical position 5,829,858、candidate 5,947,156、candidate-source occurrence 7,876,895となった。DBは3,638,398,976 bytes、SHA-256は`f6eaa850e6e0120e67fe4381aeab2c8361c643716b7bee5b4d1aa8622a31149cf`、WAL 0 bytes、`integrity_check=ok`、foreign key error 0件、全局面再生件数一致だった。候補lookupは`candidate_position_priority_idx(position_id, active, priority_key DESC, id)`を使用する。
+
+initial coverageはunique 58,632 / 5,829,858（1.005719%）、occurrence 1,316,871 / 7,784,612（16.916334%）だった。7-Zipは`C:\Program Files\7-Zip\7z.exe`、version 26.02、実体SHA-256 `83967f1b02b43c4efeda302795722c809e0ee81b8307de73558d10484d5676a7d`を起動前に検証しsummaryへ保存した。
+
+旧Python schema v5 DBは更新前floodgate snapshot（168,725,129 bytes、SHA-256 `eb9c604c36ee9b94950bf610011fd3b39cf84562b2345ee410d1cc1c56c7680d`）から作られ、現manifestは更新後snapshot（169,801,236 bytes）なので、DB全体の件数・hashは同一入力比較にならない。現在manifestに対するrecord fingerprint差分では、WCSC 295/295件のcoreと終局が一致し、電竜戦459/459件のcoreが一致した。電竜戦の終局32件はRustが`%TIME_UP`、`%KACHI`、`%ILLEGAL_MOVE`を保持するのに対し旧cshogiが`%CHUDAN`へ丸める意図した差である。floodgateは共有68,599 game中core mismatch 0件で、Rustのみ507件をdecode不能、非合法手、終局欠損として安全側に除外した。終局差の主因は、明示`%TORYO`がある異常終了棋譜をcshogiが`%ERROR`へ置き換える点である。
 production manifestの圧縮アーカイブは3.547 GiBである。pilotの実測比21.35倍を単純適用した完成DBの中心推定は約75.7 GiB、コードが空き容量検査に使う保守的40倍推定は141.89 GiBである。新規作成ではアーカイブと512 MiB余裕を含め約145.93 GiBの空きを要求する。中心推定では通常のactive + previousが約151.4 GiB、更新中のactive + previous + buildが約227.1 GiBとなる。大会ごとの平均手数・重複率で変動するため、実運用では保守的推定を空き容量判定の正本とする。
+### Rust corpus-builder production全件実測（2026-07-15～16）
+
+固定production manifest 56 sourceと`user_book1.2026-07-05`をRust Release `corpus-builder.exe`で処理した。floodgate 2011のtar.xz memberが慣例的な`./` prefixを持つことを初回runで検出し、`./`だけを正規化しつつ絶対path・`..`・colonを引き続き拒否するよう修正・回帰試験した。その後、同じfresh stateのcheckpoint（28,556 record）から再開して正常完了した。monitor wallは45,125.435秒（12時間32分5.435秒）、summaryのphase合計は44,023.773秒（12時間13分43.773秒）、最大Working Setは189,710,336 bytes（約180.9 MiB）だった。download済み56 sourceはsizeとSHA-256一致により全て再利用し、新規downloadは0件だった。
+
+archive内のrecord member 1,571,216件のうちmember filterで394件を除外し、1,570,822 recordを処理した。accepted 1,497,931、excluded 72,891、logical game 1,466,175、game position 174,801,835、canonical position 130,016,499、candidate 132,638,356、candidate-source occurrence 177,779,510である。error内訳はDecode 572、IllegalMove 51、InvalidMove 201、InvalidPositionToken 384、MissingEndgame 50,239、NoMoves 20,866、NonStartpos 326、TimeBeforeFirstMove 41、TurnBeforePosition 211だった。phaseはingest 23,860.995秒、metadata 2,935.369秒、coverage 2,709.400秒、optimize 2,439.052秒、validation 12,076.677秒である。 throughputは全phase基準でrecord 35.681件/秒、game position 3,970.624件/秒、SQLite row 10,041.501件/秒だった。parser/ingest区間だけのmove throughputは7,325.840手/秒である。SQLite rowはANALYZE後の全schema table entry 442,064,750件を合計した。Rust summaryは今後、これらを`records_per_second`、`moves_per_second`、`positions_per_second`、`sqlite_rows_per_second`として自動保存する。
+
+完成DBは`C:\tmp\rust-corpus-production-20260715\corpus.sqlite`、82,832,003,072 bytes（約77.13 GiB）、SHA-256 `9f54059ab4399b5d5d5aeb75866fd6347303143e3fed7ecd674715a55b8770de3`、WAL 0 bytesだった。作成前の保守的DB見積り152,348,437,040 bytesに対し実サイズは約54.4%で、空き容量判定は従来どおり保守的見積りを使用する。`integrity_check=ok`、foreign key error 0件、schema version 5、全1,466,175 logical game・174,801,835局面の再生件数一致を確認した。snapshot SHA-256は`b89514d02f25a940fb767c4c42577005dd34802d58d52291a393e7147302607bc`、coverage SHA-256は`938095621d7482b6badfddb9e5dff1848855807ab820e7fcb69e92282b93873c2`である。
+
+initial coverageはunique 254,055 / 130,016,499（0.195402%）、occurrence 18,159,864 / 174,801,835（10.388829%）だった。site別unique / occurrenceは、電竜戦5.523721% / 16.979304%、floodgate 0.193535% / 10.381359%、WCSC 1.846146% / 8.908554%である。
+
+production DBをread-only immutableで開き、ランタイムの`POSITION_QUERY`と同じjoin、priority順、width 4でlookupを測定した。MCTSの局所訪問を模した連続10局面・warm 100回はp50 36.5 us / p95 46.905 usだった。DB全域へ均等配置した10局面のcold参考値はp50 11.996 ms / p95 14.342 msであり、サンプル数が少ないため容量全域へのランダムI/Oの目安として扱う。`EXPLAIN QUERY PLAN`はposition unique index、`candidate_position_priority_idx`、logical game・raw source・adhoc historyの主キー、search task unique indexを使い、全表走査はなかった。
 ## 固定 snapshot の収集条件
 
 `script/collect_book_corpus.py` は明示した JSON manifest だけを取得する。manifest の各 source には `site`、`event`、`year`、`retrieved_at`、`url`、`relative_path`、`size`、`sha256` を記録する。巨大データを暗黙に全取得しない。
@@ -70,14 +96,14 @@ production manifestの圧縮アーカイブは3.547 GiBである。pilotの実�
 - WCSC: 公式公開の大会・全 stage。到達 stage、指し手側順位、対戦相手順位を ranking JSON から入れる。
 - 電竜戦: 大会 ZIP または取得日時固定の個別 CSA/KIF。平手初期局面から始まる棋譜だけを採用し、駒落ちと指定局面開始は除外する。1つの公式アーカイブに対象・対象外の棋譜が混在する場合は、ingestの`member_pattern`をアーカイブ内相対パスへ適用し、対象棋譜だけを解析する。
 
-収集例:
+manifest更新候補の調査・旧Python reference用の収集例（通常のfixed manifest buildでは使用しない）:
 
 ```powershell
 $python = 'C:\Users\nodchip\AppData\Local\Programs\Python\Python312\python.exe'
 & $python script\collect_book_corpus.py --manifest C:\corpus-manifests\pilot.json --destination C:\corpus-data\pilot
 ```
 
-取り込みは延長を手動停止してから site/event/year ごとに実行する。`retrieved-at` は Unix 秒で固定する。壊れた棋譜は `ingest_error` に残り、coverage 分母から除外される。
+通常運用では延長を手動停止してから`corpus-builder.exe build`を1回実行する。以下のsite/event/year別Python取り込みは旧版比較・診断専用である。`retrieved-at` は Unix 秒で固定し、壊れた棋譜は `ingest_error` に残りcoverage分母から除外する。
 
 ```powershell
 & $python script\manage_book_corpus.py ingest --db C:\book-extension-state\pilot\corpus.sqlite --site floodgate --event floodgate-2026-07 --year 2026 --retrieved-at 1783785600 --input C:\corpus-data\pilot\floodgate-2026-07
@@ -89,7 +115,7 @@ $python = 'C:\Users\nodchip\AppData\Local\Programs\Python\Python312\python.exe'
 
 ## 優先度データ
 
-WCSC/電竜戦 ranking JSON は大会 metadata と `official_name, stage, stage_tier, rank, participants` の配列を持つ。floodgate rating JSON は snapshot 品質情報と `player_name, rating, effective_games, connected_to_anchor, anchor_margin, snapshot_percentile` を持つ。
+Rust版`corpus-builder.exe`はprofileに固定されたmetadataを自動投入する。以下の個別Python importは旧版比較・診断専用である。WCSC/電竜戦 ranking JSON は大会 metadata と `official_name, stage, stage_tier, rank, participants` の配列を持つ。floodgate rating JSON は snapshot 品質情報と `player_name, rating, effective_games, connected_to_anchor, anchor_margin, snapshot_percentile` を持つ。
 
 ```powershell
 & $python script\manage_book_corpus.py ranking-import --db C:\book-extension-state\pilot\corpus.sqlite --json C:\corpus-data\pilot\wcsc36-ranking.json
@@ -100,7 +126,7 @@ WCSC/電竜戦 ranking JSON は大会 metadata と `official_name, stage, stage_
 
 ## Rust定跡延長ランタイムとpilot
 
-長時間稼働する定跡延長、MCTS、USIプロセス管理、corpus lane、保存・停止・再開はRust版`book-extender.exe`が担当する。棋譜収集、取り込み、ranking/rating、coverage、bundle管理はPythonツールを継続利用する。
+長時間稼働する定跡延長、MCTS、USIプロセス管理、corpus lane、保存・停止・再開はRust版`book-extender.exe`が担当する。固定manifestの取得、archive列挙、CSA/KIF解析、取り込み、ranking/rating、initial coverage、検証、公開はRust版`corpus-builder.exe`が担当する。Python/cshogiは通常運用に使わず、manifest更新候補の調査、旧版差分、可視化など本番経路外の補助だけに残す。
 
 ```powershell
 cargo build --manifest-path script\book-extension-rs\Cargo.toml --release --bin book-extender
@@ -121,7 +147,7 @@ $runtime = Resolve-Path script\book-extension-rs\target\release\book-extender.ex
 
 保存は設定した間隔（本番・pilotは3600秒）で行う。ロック内では定跡snapshotとSQLite task watermarkだけを取得し、全件検証とファイル書き込みはロック外で行う。保存成功後、watermarkまでをbook hash付きcheckpointにする。終了時も最終世代を保存し、3世代backupを維持する。
 
-coverageは管理用Pythonで生成する。
+初期coverageは`corpus-builder.exe build`が生成し、全成果物検証後に`coverage-initial.json`として公開する。以下のPythonコマンドは旧版との比較・調査専用であり、固定manifestの本番作成経路には含めない。
 
 ```powershell
 $python = 'C:\Users\nodchip\AppData\Local\Programs\Python\Python312\python.exe'
@@ -168,7 +194,7 @@ powershell -ExecutionPolicy Bypass -File script\run_extend_book_mcts_jenkins.ps1
 
 ## Rustランタイムの同期規約と検証記録
 
-`script/book-extension-rs/Cargo.lock`をRust依存関係の正本とする。直接依存は`shogi_core 0.1.5`、`shogi_legality_lite 0.1.3`、`shogi_usi_parser 0.1.0`（MIT）、`rusqlite 0.32.1`（MIT）、および`clap 4.6.1`、`serde 1.0.228`、`serde_json 1.0.149`、`sha2 0.10.9`、`tempfile 3.27.0`、`thiserror 2.0.18`、`toml 0.8.23`、`windows-sys 0.61.2`（MIT OR Apache-2.0）である。Windows x64で`cargo build --offline --release --bins`に成功している。
+`script/book-extension-rs/Cargo.lock`をRust依存関係の正本とする。将棋・DBの直接依存は`shogi_core 0.1.5`、`shogi_legality_lite 0.1.3`、`shogi_usi_parser 0.1.0`、`rusqlite 0.32.1`（MIT）である。pipeline追加分は`clap 4.6.1`、`ctrlc 3.5.2`、`encoding_rs 0.8.35`、`regex 1.13.0`、`serde 1.0.228`、`serde_json 1.0.149`、`sha2 0.10.9`、`tar 0.4.44`、`tempfile 3.27.0`、`thiserror 2.0.18`、`toml 0.8.23`、`unicode-normalization 0.1.25`、`ureq 3.3.0`、`windows-sys 0.61.2`、`xz2 0.1.7`（MIT / Apache-2.0系）、`zip 8.6.0`（MIT）である。`encoding_rs`はApache-2.0 OR MITにBSD-3-Clauseを併用する。古いWCSC LZHだけは外部7-Zip 26.02を明示的な事前要件とし、実体versionとSHA-256を検証する。Windows x64で`cargo build --offline --release --bins`に成功している。
 
 同期順序は次の通りとする。
 
@@ -199,3 +225,21 @@ powershell -ExecutionPolicy Bypass -File script\request_extend_book_stop.ps1 -St
 ```
 
 Jenkins実機Abort試験では、Abort時刻、heartbeat最終更新、`jenkins-heartbeat-expired`検出、USI stop完了、worker join、最終保存、checkpoint、プロセス終了までを記録する。実機試験後はRust validator、SQLite task重複、再開後hashを確認する。この試験だけはJenkinsがある別マシンで行う。
+
+## schema v6 quality frontier 運用
+
+schema v6では候補に`quality_band`、`source_site`、`recent_occurrences`、`occurrences`を持たせ、ランタイムは`active_quality_band=0`、`progressive_width=1`から開始する。候補検索は`candidate_position_site_quality_idx`を使い、band・site条件を`LIMIT N+1`より前に適用する。v5は巨大なin-place migrationを行わず、固定manifestからv6を再構築する。
+
+通常再起動ではband、N、適格miss、task、site実績を維持する。manifest、profile、基準年、policy、順位またはrating metadataが変わるcorpus再構築では、自然キー`(position_key, move, book_snapshot_id)`でmutable runtime stateを移し、Nと完了済みtaskを維持しつつ、bandとmiss観測をリセットする。`corpus-build-summary.json`の`runtime_state_migration`で`source_tasks = mapped_tasks + unmapped_tasks`、状態別件数、`copied_checkpoints`、`copied_frontier_history`を確認する。
+
+運用手順は次の通り。
+
+1. `book-extender`を手動、またはJenkinsから停止する。
+2. プロセス終了、最終定跡DB保存、`runtime-status.json`の最終更新を確認する。
+3. 既存のpilot用またはproduction用1コマンドでcorpusを再構築する。
+4. `runtime_state_migration`のmapped、unmapped、status件数を確認する。
+5. 新しく公開された`corpus.sqlite`を指定して`book-extender`を再開する。
+6. `runtime-status.json`と`frontier_change`、`corpus_reserve`、`corpus_complete`、`corpus_failure`、`runtime_stop`、`book_save`イベントを確認する。
+7. 必要な場合だけ、保存済み定跡DBへ`peta_shock`を手動実行する。
+
+`peta_shock`は自動実行しない。24時間pilotと実Jenkins停止ボタン試験は、4エンジン4時間pilot合格後に別マシンで行う後続ゲートである。

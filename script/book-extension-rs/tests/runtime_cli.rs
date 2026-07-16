@@ -279,7 +279,7 @@ usi_stop_timeout_sec = 5
     );
     assert_eq!(
         String::from_utf8_lossy(&result.stderr)
-            .matches("[save]")
+            .matches("[book_save]")
             .count(),
         1,
         "result notifications must not trigger per-result saves"
@@ -372,6 +372,14 @@ fn corpus_lane_adds_unregistered_move_from_visited_position_with_searchmoves() {
     store
         .upsert_candidate(root, "8g8f", &[], "wcsc:event", "999")
         .unwrap();
+    let connection = rusqlite::Connection::open(store.path()).unwrap();
+    connection
+        .execute(
+            "UPDATE candidate SET source_site=0,quality_band=0 WHERE move='8g8f'",
+            [],
+        )
+        .unwrap();
+    drop(connection);
     drop(store);
     std::fs::write(
         &config,
@@ -429,6 +437,15 @@ usi_stop_timeout_sec = 5
         "stderr={}",
         String::from_utf8_lossy(&result.stderr)
     );
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("[corpus_reserve]"), "{stderr}");
+    assert!(stderr.contains("[corpus_complete]"), "{stderr}");
+    assert!(stderr.contains("[book_save]"), "{stderr}");
+    let status: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(state.join("runtime-status.json")).unwrap()).unwrap();
+    assert_eq!(status["active_quality_band"], 0);
+    assert_eq!(status["book_add_successes"], 1);
+    assert!(status["last_book_save"]["success"].as_bool().unwrap());
     let saved = std::fs::read_to_string(&output).unwrap();
     assert!(saved.contains("8g8f 3c3d 77 11 0"), "{saved}");
     let store = CorpusStore::open(&corpus).unwrap();
@@ -441,6 +458,94 @@ usi_stop_timeout_sec = 5
     assert_eq!(store.metric("corpus_nodes:wcsc").unwrap(), 33);
 }
 
+#[test]
+fn runtime_status_updates_during_search_and_after_final_save() {
+    use std::{
+        thread,
+        time::{Duration, Instant},
+    };
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("input.db");
+    let output = directory.path().join("output.db");
+    let state = directory.path().join("state");
+    let config = directory.path().join("config.toml");
+    let status_path = state.join("runtime-status.json");
+    let root = "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1";
+    std::fs::write(&input, format!("#YANEURAOU-DB2016 1.00\nsfen {root}\n")).unwrap();
+    std::fs::write(
+        &config,
+        format!(
+            r#"[workers]
+engine_count = 1
+threads_per_engine = 1
+vulnerability_black = 0
+vulnerability_white = 0
+general = 1
+[corpus]
+enabled = false
+max_concurrent_searches = 0
+general_pool_node_share = 0.0
+[runtime]
+state_dir = "{}"
+save_interval_sec = 3600
+status_interval_sec = 0.05
+backup_count = 3
+heartbeat_timeout_sec = 10
+usi_stop_timeout_sec = 5
+"#,
+            state.display().to_string().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_book-extender"))
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "--input",
+            input.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--engine",
+            env!("CARGO_BIN_EXE_fake-usi-engine"),
+            "--nodes",
+            "999",
+            "--multipv",
+            "1",
+            "--max-searches",
+            "10",
+            "--max-runtime-sec",
+            "0.3",
+        ])
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !status_path.is_file() && child.try_wait().unwrap().is_none() && Instant::now() < deadline
+    {
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        status_path.is_file(),
+        "runtime status was not written during search"
+    );
+    assert!(
+        child.try_wait().unwrap().is_none(),
+        "runtime exited before mid-search status observation"
+    );
+    let during: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&status_path).unwrap()).unwrap();
+    assert!(during["last_book_save"].is_null(), "{during}");
+    let result = child.wait_with_output().unwrap();
+    assert!(
+        result.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let final_status: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&status_path).unwrap()).unwrap();
+    assert_eq!(final_status["last_book_save"]["success"], true);
+    assert!(final_status["updated_at"].as_f64().unwrap() >= during["updated_at"].as_f64().unwrap());
+}
 #[test]
 fn manual_stop_interrupts_active_search_and_discards_its_result() {
     use std::{
@@ -524,6 +629,11 @@ usi_stop_timeout_sec = 5
     );
     assert!(
         String::from_utf8_lossy(&result.stderr).contains("manual-stop-request"),
+        "stderr={}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&result.stderr).contains("[runtime_stop]"),
         "stderr={}",
         String::from_utf8_lossy(&result.stderr)
     );
@@ -874,4 +984,108 @@ usi_stop_timeout_sec = 0.1
         "stderr={}",
         String::from_utf8_lossy(&result.stderr)
     );
+}
+
+#[test]
+fn corpus_path_prefers_lower_band_over_nearer_leaf() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("input.db");
+    let output = directory.path().join("output.db");
+    let corpus = directory.path().join("corpus.sqlite");
+    let state = directory.path().join("state");
+    let config = directory.path().join("config.toml");
+    let root = "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1";
+    let after_7g7f = "lnsgkgsnl/1r5b1/ppppppppp/9/9/2P6/PP1PPPPPP/1B5R1/LNSGKGSNL w - 2";
+    std::fs::write(
+        &input,
+        format!("#YANEURAOU-DB2016 1.00\nsfen {root}\n7g7f none 100 1 0\n2g2f none 10 1 0\nsfen {after_7g7f}\n"),
+    )
+    .unwrap();
+    let mut store = CorpusStore::open(&corpus).unwrap();
+    store
+        .upsert_candidate(root, "8g8f", &[], "wcsc:event", "100")
+        .unwrap();
+    store
+        .upsert_candidate(after_7g7f, "4c4d", &["7g7f"], "wcsc:event", "999")
+        .unwrap();
+    let connection = rusqlite::Connection::open(store.path()).unwrap();
+    connection
+        .execute(
+            "UPDATE candidate SET source_site=0,quality_band=0 WHERE move='8g8f'",
+            [],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE candidate SET source_site=0,quality_band=1 WHERE move='4c4d'",
+            [],
+        )
+        .unwrap();
+    drop(connection);
+    drop(store);
+    std::fs::write(
+        &config,
+        format!(
+            r#"[workers]
+engine_count = 1
+threads_per_engine = 1
+vulnerability_black = 0
+vulnerability_white = 0
+general = 1
+[corpus]
+enabled = true
+max_concurrent_searches = 1
+general_pool_node_share = 0.25
+saturation_window = 100
+wcsc_weight = 40
+denryu_weight = 40
+floodgate_weight = 20
+[runtime]
+state_dir = "{}"
+save_interval_sec = 3600
+backup_count = 3
+heartbeat_timeout_sec = 10
+usi_stop_timeout_sec = 5
+"#,
+            state.display().to_string().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+
+    let result = Command::new(env!("CARGO_BIN_EXE_book-extender"))
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "--input",
+            input.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--engine",
+            env!("CARGO_BIN_EXE_fake-usi-engine"),
+            "--nodes",
+            "100",
+            "--multipv",
+            "2",
+            "--max-searches",
+            "2",
+            "--corpus-db",
+            corpus.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        result.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let saved = std::fs::read_to_string(&output).unwrap();
+    let root_section = saved
+        .split("sfen ")
+        .nth(1)
+        .unwrap()
+        .split("sfen ")
+        .next()
+        .unwrap();
+    assert!(root_section.contains("8g8f"), "{saved}");
 }

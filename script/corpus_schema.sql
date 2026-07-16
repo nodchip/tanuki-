@@ -49,6 +49,10 @@ CREATE TABLE IF NOT EXISTS candidate (
     representative_ply INTEGER,
     source_id INTEGER REFERENCES raw_source(id),
     priority_key BLOB NOT NULL CHECK(typeof(priority_key) = 'blob' AND length(priority_key) = 88),
+    quality_band INTEGER NOT NULL DEFAULT 4,
+    source_site INTEGER NOT NULL DEFAULT 3 CHECK(source_site BETWEEN 0 AND 3),
+    recent_occurrences INTEGER NOT NULL DEFAULT 0,
+    occurrences INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL,
@@ -72,8 +76,8 @@ CREATE TABLE IF NOT EXISTS candidate_adhoc_source (
 
 CREATE INDEX IF NOT EXISTS candidate_priority_idx
     ON candidate(active, priority_key DESC, id);
-CREATE INDEX IF NOT EXISTS candidate_position_priority_idx
-    ON candidate(position_id, active, priority_key DESC, id);
+CREATE INDEX IF NOT EXISTS candidate_position_site_quality_idx
+    ON candidate(position_id, active, source_site, quality_band ASC, priority_key DESC, id);
 CREATE TABLE IF NOT EXISTS search_task (
     id INTEGER PRIMARY KEY,
     candidate_id INTEGER NOT NULL REFERENCES candidate(id),
@@ -87,6 +91,9 @@ CREATE TABLE IF NOT EXISTS search_task (
     depth INTEGER,
     nodes INTEGER,
     engine_config_id TEXT,
+    failure_class TEXT,
+    engine_fingerprint TEXT,
+    consecutive_engine_failures INTEGER NOT NULL DEFAULT 0,
     persisted_checkpoint_id INTEGER,
     updated_at REAL NOT NULL,
     UNIQUE(candidate_id, book_snapshot_id)
@@ -164,8 +171,10 @@ CREATE TABLE IF NOT EXISTS rating_result (
     PRIMARY KEY(snapshot_id, player_name)
 ) WITHOUT ROWID;
 
-CREATE TABLE IF NOT EXISTS progressive_width_history (
+CREATE TABLE IF NOT EXISTS frontier_history (
     id INTEGER PRIMARY KEY,
+    old_band INTEGER NOT NULL,
+    new_band INTEGER NOT NULL,
     old_width INTEGER NOT NULL,
     new_width INTEGER NOT NULL,
     changed_at REAL NOT NULL,

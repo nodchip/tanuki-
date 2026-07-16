@@ -118,6 +118,10 @@ pub struct RuntimeConfig {
     pub backup_count: usize,
     pub heartbeat_timeout_sec: f64,
     pub usi_stop_timeout_sec: f64,
+    #[serde(default = "default_status_interval_sec")]
+    pub status_interval_sec: f64,
+    #[serde(default = "default_engine_config_revision")]
+    pub engine_config_revision: u64,
 }
 
 impl RuntimeConfig {
@@ -130,6 +134,9 @@ impl RuntimeConfig {
         }
         if self.usi_stop_timeout_sec <= 0.0 {
             return invalid("usi_stop_timeout_sec must be positive");
+        }
+        if self.status_interval_sec <= 0.0 {
+            return invalid("status_interval_sec must be positive");
         }
         Ok(())
     }
@@ -169,6 +176,12 @@ fn invalid<T>(message: impl Into<String>) -> Result<T, ConfigError> {
     Err(ConfigError::Invalid(message.into()))
 }
 
+const fn default_status_interval_sec() -> f64 {
+    60.0
+}
+const fn default_engine_config_revision() -> u64 {
+    1
+}
 const fn default_saturation_window() -> usize {
     100
 }

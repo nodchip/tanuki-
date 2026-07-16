@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "priority_reference_year": 2026,
   "name": "production",
   "manifest": "book-corpus/production-manifest.json",
   "ingests": [
@@ -514,6 +515,7 @@
     "book-corpus/denryu6-ranking.json",
     "book-corpus/denryu7-tsec7-p2-ranking.json"
   ],
+  "alias_files": [],
   "rating_file": null,
   "rating_config": null,
   "input_book": null,
