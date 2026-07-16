@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "created_at_utc": "2026-07-14T02:12:19Z",
+  "created_at_utc": "2026-07-16T15:06:54.4566009Z",
   "sources": [
     {
       "site": "denryu",
@@ -206,11 +206,11 @@
       "site": "floodgate",
       "event": "floodgate-2026",
       "year": 2026,
-      "retrieved_at": 1783994174,
+      "retrieved_at": 1784214414,
       "url": "https://wdoor.c.u-tokyo.ac.jp/shogi/archive/wdoor2026.7z",
       "relative_path": "floodgate/wdoor2026.7z",
-      "size": 169801236,
-      "sha256": "67b4e7801c2394d86337c9f332c9dfed4d0bc45797374a23aa327d6232dd2468"
+      "size": 171474616,
+      "sha256": "a3e8c8671fb7e72a1c28689c86c8987c5a0c729000bf572b5c262c4a82da9d7a"
     },
     {
       "site": "wcsc",
