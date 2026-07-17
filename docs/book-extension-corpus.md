@@ -145,6 +145,8 @@ $runtime = Resolve-Path script\book-extension-rs\target\release\book-extender.ex
 
 24時間pilotは同じコマンドの`--max-runtime-sec`を`86400`へ変更する。元DBを直接変更せず、入力コピーと専用state dirを使う。Rust runtimeは設定したworker数、仮想敵先手・後手・general、corpus同時数を使用する。`position startpos moves ...`または任意rootの`position sfen ... moves ...`で履歴を渡し、停止時の探索結果は破棄する。 各USI探索には既定3,600秒のwatchdogがあり、`--usi-search-timeout-sec`で変更できる。timeout時は`stop`、設定済みUSI stop timeout後の強制終了、engine再起動、最大3回再試行を行う。
 
+`--black-target`と`--white-target`の仮想敵定跡は、起動時に低メモリのストリーミング検証を行い、探索時はSFENでファイルを二分探索する。全局面・全指し手をメモリへ展開しない。同じパスを両方へ指定した場合は1個を共有する。対象DBは検索キー（通常は完全なSFEN、`--ignore-ply`時は手数を除いたSFEN）で厳密に昇順であり、重複キーや不正な指し手行を含んではならない。
+
 保存は設定した間隔（本番・pilotは3600秒）で行う。ロック内では定跡snapshotとSQLite task watermarkだけを取得し、全件検証とファイル書き込みはロック外で行う。保存成功後、watermarkまでをbook hash付きcheckpointにする。終了時も最終世代を保存し、3世代backupを維持する。
 
 初期coverageは`corpus-builder.exe build`が生成し、全成果物検証後に`coverage-initial.json`として公開する。以下のPythonコマンドは旧版との比較・調査専用であり、固定manifestの本番作成経路には含めない。

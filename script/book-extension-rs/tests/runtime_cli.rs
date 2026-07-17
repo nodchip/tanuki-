@@ -359,6 +359,75 @@ usi_stop_timeout_sec = 5
 }
 
 #[test]
+fn configured_vulnerability_worker_rejects_an_unsorted_target_book() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("input.db");
+    let target = directory.path().join("target.db");
+    let output = directory.path().join("output.db");
+    let state = directory.path().join("state");
+    let config = directory.path().join("config.toml");
+    let first = "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL w - 2";
+    let second = "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1";
+    std::fs::write(&input, format!("#YANEURAOU-DB2016 1.00\nsfen {second}\n")).unwrap();
+    std::fs::write(
+        &target,
+        format!(
+            "#YANEURAOU-DB2016 1.00\nsfen {first}\n3c3d 7g7f 10 1 0\nsfen {second}\n7g7f 3c3d 20 1 0\n"
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        &config,
+        format!(
+            r#"[workers]
+engine_count = 1
+threads_per_engine = 1
+vulnerability_black = 1
+vulnerability_white = 0
+general = 0
+[corpus]
+enabled = false
+max_concurrent_searches = 0
+general_pool_node_share = 0.0
+[runtime]
+state_dir = "{}"
+save_interval_sec = 3600
+backup_count = 3
+heartbeat_timeout_sec = 10
+usi_stop_timeout_sec = 5
+"#,
+            state.display().to_string().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+
+    let result = Command::new(env!("CARGO_BIN_EXE_book-extender"))
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "--input",
+            input.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--engine",
+            env!("CARGO_BIN_EXE_fake-usi-engine"),
+            "--nodes",
+            "100",
+            "--multipv",
+            "2",
+            "--max-searches",
+            "1",
+            "--black-target",
+            target.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!result.status.success());
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("not strictly sorted"), "{stderr}");
+}
+#[test]
 fn corpus_lane_adds_unregistered_move_from_visited_position_with_searchmoves() {
     let directory = tempfile::tempdir().unwrap();
     let input = directory.path().join("input.db");

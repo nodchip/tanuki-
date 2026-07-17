@@ -1,5 +1,6 @@
 use book_extension_runtime::{
     book::{BookEntry, OpeningBook},
+    disk_book::DiskOpeningBook,
     python_random::PythonRandom,
     search::{
         LeafPath, PathStep, PetaFilter, SearchResult, calculate_ucb, merge_search_results,
@@ -153,6 +154,36 @@ fn vulnerability_selection_forces_target_book_bestmove_on_target_side() {
         book.position(STARTPOS).unwrap().entries,
         vec![BookEntry::new("7g7f", "3c3d", 100, 7, 0, 0)]
     );
+}
+
+#[test]
+fn vulnerability_selection_reads_the_target_position_from_disk() {
+    let directory = tempfile::tempdir().unwrap();
+    let target_path = directory.path().join("target.db");
+    std::fs::write(
+        &target_path,
+        format!("#YANEURAOU-DB2016 1.00\nsfen {STARTPOS}\n2g2f 8c8d 10 1 0\n7g7f 3c3d 100 7 0\n"),
+    )
+    .unwrap();
+    let target = DiskOpeningBook::open(&target_path, false).unwrap();
+    let mut book = OpeningBook::new(false);
+
+    let path = reserve_vulnerability_leaf_path(
+        &mut book,
+        &target,
+        STARTPOS,
+        "black",
+        4,
+        1.4,
+        600.0,
+        &mut Default::default(),
+        Some(10),
+    )
+    .unwrap()
+    .expect("target leaf selected");
+
+    assert_eq!(path.steps, vec![PathStep::new(STARTPOS, "7g7f")]);
+    assert_eq!(path.leaf_sfen, AFTER_7G7F);
 }
 
 #[test]

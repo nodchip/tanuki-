@@ -34,7 +34,7 @@ use crate::{
 pub enum WorkerRole {
     General,
     Vulnerability {
-        target_book: Arc<OpeningBook>,
+        target_book: Arc<crate::disk_book::DiskOpeningBook>,
         target_side: &'static str,
     },
 }
@@ -858,7 +858,7 @@ fn reserve_normal_work(
                 });
                 crate::search::reserve_vulnerability_leaf_path_with_filter_and_random(
                     book,
-                    target_book,
+                    target_book.as_ref(),
                     &options.root_sfen,
                     target_side,
                     options.multipv,

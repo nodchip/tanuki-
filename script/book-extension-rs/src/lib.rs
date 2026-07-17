@@ -11,6 +11,7 @@ pub mod corpus_source;
 pub mod corpus_state_migration;
 pub mod corpus_writer;
 pub mod csa;
+pub mod disk_book;
 pub mod engine;
 pub mod engine_fingerprint;
 pub mod kif;

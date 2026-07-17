@@ -5,6 +5,7 @@ use thiserror::Error;
 
 use crate::{
     book::{BookEntry, BookPosition, OpeningBook},
+    disk_book::TargetBook,
     python_random::PythonRandom,
     validation::{legal_distinct_entry_count, parse_move, parse_position},
 };
@@ -66,6 +67,8 @@ pub enum SearchError {
     InvalidSfen(String),
     #[error("illegal move {move_usi} in {sfen}")]
     IllegalMove { sfen: String, move_usi: String },
+    #[error("target book lookup failed: {0}")]
+    TargetBook(String),
 }
 
 pub fn score_to_winrate(eval_cp: i32, eval_scale: f64) -> Result<f64, SearchError> {
@@ -354,9 +357,9 @@ fn select_available_leaf(
     Ok(None)
 }
 #[allow(clippy::too_many_arguments)]
-pub fn reserve_vulnerability_leaf_path(
+pub fn reserve_vulnerability_leaf_path<T: TargetBook + ?Sized>(
     book: &mut OpeningBook,
-    target_book: &OpeningBook,
+    target_book: &T,
     root_sfen: &str,
     target_side: &str,
     multipv: usize,
@@ -380,9 +383,9 @@ pub fn reserve_vulnerability_leaf_path(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn reserve_vulnerability_leaf_path_with_filter(
+pub fn reserve_vulnerability_leaf_path_with_filter<T: TargetBook + ?Sized>(
     book: &mut OpeningBook,
-    target_book: &OpeningBook,
+    target_book: &T,
     root_sfen: &str,
     target_side: &str,
     multipv: usize,
@@ -407,9 +410,9 @@ pub fn reserve_vulnerability_leaf_path_with_filter(
     )
 }
 #[allow(clippy::too_many_arguments)]
-pub fn reserve_vulnerability_leaf_path_with_filter_and_random(
+pub fn reserve_vulnerability_leaf_path_with_filter_and_random<T: TargetBook + ?Sized>(
     book: &mut OpeningBook,
-    target_book: &OpeningBook,
+    target_book: &T,
     root_sfen: &str,
     target_side: &str,
     multipv: usize,
@@ -446,9 +449,9 @@ pub fn reserve_vulnerability_leaf_path_with_filter_and_random(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn select_vulnerability_leaf(
+fn select_vulnerability_leaf<T: TargetBook + ?Sized>(
     book: &mut OpeningBook,
-    target_book: &OpeningBook,
+    target_book: &T,
     sfen: &str,
     target_side: &str,
     multipv: usize,
@@ -476,39 +479,40 @@ fn select_vulnerability_leaf(
         shogi_core::Color::Black => "black",
         shogi_core::Color::White => "white",
     };
-    if turn == target_side
-        && let Some(target_position) = target_book.position(sfen)
-        && let Some(source) =
-            best_eval_entry(&target_position.entries, random.as_deref_mut()).cloned()
-    {
-        let move_usi = book
-            .ensure_external_entry(sfen, &source)
-            .map_err(|error| SearchError::MissingPosition(error.to_string()))?;
-        let child_sfen = child_sfen(book, sfen, &move_usi)?;
-        visiting.insert(sfen.to_owned());
-        let child = select_vulnerability_leaf(
-            book,
-            target_book,
-            &child_sfen,
-            target_side,
-            multipv,
-            c_puct,
-            eval_scale,
-            inflight,
-            max_ply,
-            filter,
-            random.as_deref_mut(),
-            depth + 1,
-            visiting,
-            dead,
-        )?;
-        visiting.remove(sfen);
-        if let Some(mut child) = child {
-            child.steps.insert(0, PathStep::new(sfen, move_usi));
-            return Ok(Some(child));
+    if turn == target_side {
+        let target_entries = target_book
+            .lookup(sfen)
+            .map_err(|error| SearchError::TargetBook(error.to_string()))?;
+        if let Some(source) = best_eval_entry(&target_entries, random.as_deref_mut()).cloned() {
+            let move_usi = book
+                .ensure_external_entry(sfen, &source)
+                .map_err(|error| SearchError::MissingPosition(error.to_string()))?;
+            let child_sfen = child_sfen(book, sfen, &move_usi)?;
+            visiting.insert(sfen.to_owned());
+            let child = select_vulnerability_leaf(
+                book,
+                target_book,
+                &child_sfen,
+                target_side,
+                multipv,
+                c_puct,
+                eval_scale,
+                inflight,
+                max_ply,
+                filter,
+                random.as_deref_mut(),
+                depth + 1,
+                visiting,
+                dead,
+            )?;
+            visiting.remove(sfen);
+            if let Some(mut child) = child {
+                child.steps.insert(0, PathStep::new(sfen, move_usi));
+                return Ok(Some(child));
+            }
+            dead.insert(sfen.to_owned());
+            return Ok(None);
         }
-        dead.insert(sfen.to_owned());
-        return Ok(None);
     }
 
     let Some(position) = book.position(sfen) else {

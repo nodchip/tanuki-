@@ -7,6 +7,7 @@ use book_extension_runtime::{
         CorpusRuntimeOptions, NormalRuntimeOptions, PersistenceOptions, StopControlOptions,
         WorkerRole, run_normal_extension,
     },
+    disk_book::DiskOpeningBook,
     engine::EngineOptions,
     engine_fingerprint::{EngineFingerprintInput, compute_engine_fingerprint},
     runtime::BookFileLock,
@@ -99,7 +100,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     }
     let black_target = match (&args.black_target, config.workers.vulnerability_black) {
         (Some(path), count) if count > 0 => {
-            Some(Arc::new(OpeningBook::load(path, args.ignore_ply)?))
+            Some(Arc::new(DiskOpeningBook::open(path, args.ignore_ply)?))
         }
         (None, count) if count > 0 => {
             return Err("vulnerability_black workers require --black-target".into());
@@ -111,7 +112,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             if args.black_target.as_ref() == Some(path) {
                 black_target.clone()
             } else {
-                Some(Arc::new(OpeningBook::load(path, args.ignore_ply)?))
+                Some(Arc::new(DiskOpeningBook::open(path, args.ignore_ply)?))
             }
         }
         (None, count) if count > 0 => {
