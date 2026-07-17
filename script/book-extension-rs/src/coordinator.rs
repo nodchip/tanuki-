@@ -447,10 +447,12 @@ pub fn run_normal_extension(
                     .iter()
                     .map(|step| step.move_usi.clone())
                     .collect();
+                let depth = path.steps.len();
                 let search_started = std::time::Instant::now();
                 eprintln!(
-                    "[search-start] lane={} position_key={} nodes={}",
+                    "[search-start] lane={} depth={} position_key={} nodes={}",
                     worker_role_label(&role),
+                    depth,
                     path.leaf_sfen,
                     options.nodes
                 );
@@ -466,8 +468,9 @@ pub fn run_normal_extension(
                     options.nodes,
                 );
                 eprintln!(
-                    "[search-finish] lane={} position_key={} status={} elapsed_ms={}",
+                    "[search-finish] lane={} depth={} position_key={} status={} elapsed_ms={}",
                     worker_role_label(&role),
+                    depth,
                     path.leaf_sfen,
                     if normal_result.is_ok() { "ok" } else { "error" },
                     search_started.elapsed().as_millis()
@@ -1066,7 +1069,8 @@ fn reserve_corpus_work(
                 result: "reserved".to_owned(),
             });
             eprintln!(
-                "[corpus_reserve] position_key={:?} move={} source={} band={} n={} task_id={}",
+                "[corpus_reserve] depth={} position_key={:?} move={} source={} band={} n={} task_id={}",
+                selected.history.len(),
                 selected.choice.position_key,
                 selected.choice.move_usi,
                 selected.choice.source,
@@ -1195,7 +1199,8 @@ fn apply_corpus_result(
                 state.corpus_add_successes += 1;
             }
             eprintln!(
-                "[corpus_complete] position_key={:?} move={} source={} result={} fingerprint={} elapsed_ms={}",
+                "[corpus_complete] depth={} position_key={:?} move={} source={} result={} fingerprint={} elapsed_ms={}",
+                work.history.len(),
                 work.candidate.position_key,
                 work.candidate.move_usi,
                 work.candidate.source,
@@ -1233,7 +1238,8 @@ fn apply_corpus_result(
                 "engine_transient"
             };
             eprintln!(
-                "[corpus_failure] position_key={:?} move={} source={} failure_class={} fingerprint={} elapsed_ms={} error={:?}",
+                "[corpus_failure] depth={} position_key={:?} move={} source={} failure_class={} fingerprint={} elapsed_ms={} error={:?}",
+                work.history.len(),
                 work.candidate.position_key,
                 work.candidate.move_usi,
                 work.candidate.source,

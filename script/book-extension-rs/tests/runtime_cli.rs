@@ -352,6 +352,15 @@ usi_stop_timeout_sec = 5
         "stderr={}",
         String::from_utf8_lossy(&result.stderr)
     );
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("[search-start] lane=vulnerability-black depth=1"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("[search-finish] lane=vulnerability-black depth=1"),
+        "{stderr}"
+    );
     let saved = std::fs::read_to_string(&output).unwrap();
     let root_section = saved.split("sfen ").nth(1).unwrap();
     assert!(root_section.contains("2g2f 8c8d -25 1 1"), "{saved}");
@@ -507,8 +516,8 @@ usi_stop_timeout_sec = 5
         String::from_utf8_lossy(&result.stderr)
     );
     let stderr = String::from_utf8_lossy(&result.stderr);
-    assert!(stderr.contains("[corpus_reserve]"), "{stderr}");
-    assert!(stderr.contains("[corpus_complete]"), "{stderr}");
+    assert!(stderr.contains("[corpus_reserve] depth=0"), "{stderr}");
+    assert!(stderr.contains("[corpus_complete] depth=0"), "{stderr}");
     assert!(stderr.contains("[book_save]"), "{stderr}");
     let status: serde_json::Value =
         serde_json::from_slice(&std::fs::read(state.join("runtime-status.json")).unwrap()).unwrap();
@@ -525,6 +534,95 @@ usi_stop_timeout_sec = 5
             .unwrap()
     );
     assert_eq!(store.metric("corpus_nodes:wcsc").unwrap(), 33);
+}
+
+#[test]
+fn corpus_failure_log_reports_nonzero_path_depth() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("input.db");
+    let output = directory.path().join("output.db");
+    let corpus = directory.path().join("corpus.sqlite");
+    let state = directory.path().join("state");
+    let config = directory.path().join("config.toml");
+    let root = "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1";
+    let after_7g7f = "lnsgkgsnl/1r5b1/ppppppppp/9/9/2P6/PP1PPPPPP/1B5R1/LNSGKGSNL w - 2";
+    std::fs::write(
+        &input,
+        format!("#YANEURAOU-DB2016 1.00\nsfen {root}\n7g7f 3c3d 100 1 0\nsfen {after_7g7f}\n"),
+    )
+    .unwrap();
+    let mut store = CorpusStore::open(&corpus).unwrap();
+    store
+        .upsert_candidate(after_7g7f, "4c4d", &["7g7f"], "wcsc:event", "999")
+        .unwrap();
+    let connection = rusqlite::Connection::open(store.path()).unwrap();
+    connection
+        .execute(
+            "UPDATE candidate SET source_site=0,quality_band=0 WHERE move='4c4d'",
+            [],
+        )
+        .unwrap();
+    drop(connection);
+    drop(store);
+    std::fs::write(
+        &config,
+        format!(
+            r#"[workers]
+engine_count = 1
+threads_per_engine = 1
+vulnerability_black = 0
+vulnerability_white = 0
+general = 1
+[corpus]
+enabled = true
+max_concurrent_searches = 1
+general_pool_node_share = 0.25
+saturation_window = 100
+wcsc_weight = 40
+denryu_weight = 40
+floodgate_weight = 20
+[runtime]
+state_dir = "{}"
+save_interval_sec = 3600
+backup_count = 3
+heartbeat_timeout_sec = 10
+usi_stop_timeout_sec = 5
+"#,
+            state.display().to_string().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+
+    let result = Command::new(env!("CARGO_BIN_EXE_book-extender"))
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "--input",
+            input.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--engine",
+            env!("CARGO_BIN_EXE_fake-usi-engine"),
+            "--nodes",
+            "100",
+            "--multipv",
+            "2",
+            "--max-searches",
+            "3",
+            "--corpus-db",
+            corpus.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        result.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("[corpus_reserve] depth=1"), "{stderr}");
+    assert!(stderr.contains("[corpus_failure] depth=1"), "{stderr}");
 }
 
 #[test]
