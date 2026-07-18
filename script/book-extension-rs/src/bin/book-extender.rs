@@ -22,6 +22,8 @@ struct Args {
     #[arg(long)]
     config: PathBuf,
     #[arg(long)]
+    run_id: Option<String>,
+    #[arg(long)]
     input: PathBuf,
     #[arg(long)]
     output: PathBuf,
@@ -202,8 +204,26 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(corpus) = corpus.as_mut() {
         corpus.engine_fingerprint = fingerprint.clone();
     }
+    if args
+        .run_id
+        .as_ref()
+        .is_some_and(|value| value.trim().is_empty())
+    {
+        return Err("run-id must not be empty".into());
+    }
+    let run_id = args.run_id.unwrap_or_else(|| {
+        format!(
+            "direct-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+        )
+    });
     let runtime_options = NormalRuntimeOptions {
         worker_roles,
+        run_id,
         engine_options: EngineOptions {
             hash_mb: args.usi_hash,
             threads: config.workers.threads_per_engine,

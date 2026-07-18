@@ -23,6 +23,15 @@ pub struct LastCandidateStatus {
 }
 
 #[derive(Clone, Debug, Serialize)]
+pub struct LastSearchStatus {
+    pub lane: String,
+    pub depth: usize,
+    pub position_key: String,
+    pub status: String,
+    pub elapsed_ms: u128,
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct BookSaveStatus {
     pub saved_at: f64,
     pub path: String,
@@ -32,7 +41,18 @@ pub struct BookSaveStatus {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct RuntimeStatusSnapshot {
+    pub run_id: String,
+    pub pid: u32,
+    pub started_at: f64,
     pub updated_at: f64,
+    pub searches: u64,
+    pub added_positions: u64,
+    pub total_nodes: u64,
+    pub running_workers: usize,
+    pub corpus_active: usize,
+    pub lane_searches: BTreeMap<String, u64>,
+    pub lane_active: BTreeMap<String, usize>,
+    pub last_search: Option<LastSearchStatus>,
     pub active_quality_band: i32,
     pub progressive_width: i32,
     pub eligible_miss_count: i64,

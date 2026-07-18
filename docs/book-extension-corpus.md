@@ -166,6 +166,8 @@ Build stepはRust Release binaryを直接ラッパーへ渡す。Pythonや`Exten
 powershell -ExecutionPolicy Bypass -File script\run_extend_book_mcts_jenkins.ps1 `
   -RuntimeExe C:\book-extension\book-extender.exe `
   -StateDir C:\book-extension-state\pilot `
+  -ProgressIntervalSec 60 `
+  -LogRetentionCount 5 `
   --config C:\book-extension\book-extension-pilot.toml `
   --input C:\book-extension-state\pilot\input-book.db `
   --output C:\book-extension-state\pilot\output-book.db `
@@ -176,10 +178,26 @@ powershell -ExecutionPolicy Bypass -File script\run_extend_book_mcts_jenkins.ps1
   --corpus-db C:\book-extension-state\pilot\corpus.sqlite
 ```
 
+ラッパーはRustランタイムの標準出力・標準エラーをJenkinsコンソールへ継続的に中継する。同じ内容は`StateDir\logs\book-extender-<run-id>.stdout.log`と`StateDir\logs\book-extender-<run-id>.stderr.log`へ保存し、既定では実行中を含む直近5回分を保持する。`ProgressIntervalSec`の既定値は60秒、`LogRetentionCount`の既定値は5である。
+
+Jenkinsコンソールにはランタイムの探索イベントに加え、60秒ごとに次のような要約を出す。
+
+```text
+[progress] run_id=... uptime_sec=... searches=... added_positions=... total_nodes=... active_normal=... active_corpus=... band=... n=... corpus_evaluated=... corpus_added=... last_save_age_sec=...
+```
+
+`runtime-status.json`が未作成、別runのもの、更新停止、またはatomic置換の瞬間で読み取れない場合、ラッパーは停止せず`[progress-warning]`を出して次回再試行する。Rust側のstatus書き込みも一時的な失敗では探索を停止せず、`[runtime-status] event=write-failed`の後に成功すると`event=recovered`を記録する。statusには`run_id`、PID、開始・更新時刻、総探索回数、追加局面数、総nodes、lane別探索回数・実行中数、corpus実行中数、直近探索、frontier、task件数、直近保存結果を含む。
+
+Jenkins外から確認する場合は、実行中runのログファイルを追尾する。`runtime-status.json`はatomic置換されるため、`Get-Content -Wait`ではなく必要な時点で読み直す。
+
+```powershell
+Get-Content -Wait C:\book-extension-state\pilot\logs\book-extender-<run-id>.stderr.log
+Get-Content -Raw C:\book-extension-state\pilot\runtime-status.json | ConvertFrom-Json | Format-List
+```
+
 ラッパーは子だけに`BUILD_ID=dontKillMe`を継承させる。Jenkins Abortでラッパーが終了するとheartbeatが止まり、Rust子プロセスはtimeout後に全USIへ`stop`を送り、中断結果を破棄して最終保存する。通常の手動停止は`script/request_extend_book_stop.ps1 -StateDir C:\book-extension-state\pilot`を使う。
 
-実Jenkins停止ボタン試験は別マシンで行う。Abort後に`[stop] reason=jenkins-heartbeat-expired`が記録され、出力DBをRust validatorで読めること、再開時にtaskを重複適用しないことを確認する。
-
+実Jenkins停止ボタン試験は別マシンで行う。Abort後に`[stop] reason=jenkins-heartbeat-expired`が永続ログへ記録され、出力DBをRust validatorで読めること、再開時にtaskを重複適用しないことを確認する。
 ## 搬送
 
 停止後に bundle を作る。共有 registry は全延長マシンから同じパスに見える必要がある。

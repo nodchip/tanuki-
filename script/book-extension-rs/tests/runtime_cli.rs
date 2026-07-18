@@ -668,6 +668,8 @@ usi_stop_timeout_sec = 5
         .args([
             "--config",
             config.to_str().unwrap(),
+            "--run-id",
+            "runtime-status-test",
             "--input",
             input.to_str().unwrap(),
             "--output",
@@ -687,21 +689,30 @@ usi_stop_timeout_sec = 5
         .spawn()
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(2);
-    while !status_path.is_file() && child.try_wait().unwrap().is_none() && Instant::now() < deadline
-    {
+    let mut during = None;
+    while child.try_wait().unwrap().is_none() && Instant::now() < deadline {
+        if status_path.is_file() {
+            let snapshot: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&status_path).unwrap()).unwrap();
+            if snapshot["searches"].as_u64().unwrap_or(0) > 0 {
+                during = Some(snapshot);
+                break;
+            }
+        }
         thread::sleep(Duration::from_millis(10));
     }
-    assert!(
-        status_path.is_file(),
-        "runtime status was not written during search"
-    );
+    let during = during.expect("runtime status did not report an active search");
     assert!(
         child.try_wait().unwrap().is_none(),
         "runtime exited before mid-search status observation"
     );
-    let during: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&status_path).unwrap()).unwrap();
     assert!(during["last_book_save"].is_null(), "{during}");
+    assert_eq!(during["run_id"], "runtime-status-test");
+    assert!(during["pid"].as_u64().unwrap() > 0);
+    assert!(during["searches"].as_u64().unwrap() > 0);
+    assert!(during["total_nodes"].as_u64().unwrap() > 0);
+    assert!(during["lane_searches"]["normal"].as_u64().unwrap() > 0);
+    assert!(during["lane_active"]["normal"].as_u64().is_some());
     let result = child.wait_with_output().unwrap();
     assert!(
         result.status.success(),
@@ -712,6 +723,84 @@ usi_stop_timeout_sec = 5
         serde_json::from_slice(&std::fs::read(&status_path).unwrap()).unwrap();
     assert_eq!(final_status["last_book_save"]["success"], true);
     assert!(final_status["updated_at"].as_f64().unwrap() >= during["updated_at"].as_f64().unwrap());
+}
+#[test]
+fn runtime_status_recovers_after_transient_write_failure() {
+    use std::{thread, time::Duration};
+
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("input.db");
+    let output = directory.path().join("output.db");
+    let state = directory.path().join("state");
+    let config = directory.path().join("config.toml");
+    let status_path = state.join("runtime-status.json");
+    let root = "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1";
+    std::fs::write(&input, format!("#YANEURAOU-DB2016 1.00\nsfen {root}\n")).unwrap();
+    std::fs::create_dir_all(&status_path).unwrap();
+    std::fs::write(
+        &config,
+        format!(
+            r#"[workers]
+engine_count = 1
+threads_per_engine = 1
+vulnerability_black = 0
+vulnerability_white = 0
+general = 1
+[corpus]
+enabled = false
+max_concurrent_searches = 0
+general_pool_node_share = 0.0
+[runtime]
+state_dir = "{}"
+save_interval_sec = 3600
+status_interval_sec = 0.05
+backup_count = 3
+heartbeat_timeout_sec = 10
+usi_stop_timeout_sec = 5
+"#,
+            state.display().to_string().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+    let child = Command::new(env!("CARGO_BIN_EXE_book-extender"))
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "--run-id",
+            "status-recovery-test",
+            "--input",
+            input.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--engine",
+            env!("CARGO_BIN_EXE_fake-usi-engine"),
+            "--nodes",
+            "999",
+            "--multipv",
+            "1",
+            "--max-runtime-sec",
+            "0.5",
+        ])
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    thread::sleep(Duration::from_millis(150));
+    std::fs::remove_dir(&status_path).unwrap();
+    let result = child.wait_with_output().unwrap();
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(result.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("[runtime-status] event=write-failed"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("[runtime-status] event=recovered"),
+        "{stderr}"
+    );
+    let final_status: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(status_path).unwrap()).unwrap();
+    assert_eq!(final_status["last_book_save"]["success"], true);
 }
 #[test]
 fn manual_stop_interrupts_active_search_and_discards_its_result() {

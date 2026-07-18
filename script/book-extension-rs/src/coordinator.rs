@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     path::{Path, PathBuf},
     sync::{Arc, Condvar, Mutex},
     thread,
@@ -19,8 +19,8 @@ use crate::{
     python_random::PythonRandom,
     runtime::HeartbeatMonitor,
     runtime_status::{
-        BookSaveStatus, LastCandidateStatus, RuntimeStatusSnapshot, TaskStatusCounts,
-        write_runtime_status_atomic,
+        BookSaveStatus, LastCandidateStatus, LastSearchStatus, RuntimeStatusSnapshot,
+        TaskStatusCounts, write_runtime_status_atomic,
     },
     search::{
         LeafPath, PetaFilter, SearchError, increment_path_visits, merge_search_results,
@@ -90,6 +90,7 @@ pub struct NormalRuntimeOptions {
     pub status_path: PathBuf,
     pub status_interval_sec: f64,
     pub engine_fingerprint: String,
+    pub run_id: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -120,6 +121,8 @@ pub enum CoordinatorError {
 
 struct SharedState {
     book: OpeningBook,
+    run_id: String,
+    started_at: f64,
     inflight: HashSet<String>,
     searches: u64,
     total_nodes: u64,
@@ -135,6 +138,9 @@ struct SharedState {
     generation: u64,
     corpus_add_successes: i64,
     last_candidate: Option<LastCandidateStatus>,
+    lane_searches: BTreeMap<String, u64>,
+    lane_active: BTreeMap<String, usize>,
+    last_search: Option<LastSearchStatus>,
     last_book_save: Option<BookSaveStatus>,
     save_finished: bool,
     random: PythonRandom,
@@ -186,9 +192,17 @@ pub fn run_normal_extension(
         )?);
     }
     let stop_handles: Vec<StopHandle> = engines.iter().map(UsiEngine::stop_handle).collect();
+    let lane_searches: BTreeMap<String, u64> = options
+        .worker_roles
+        .iter()
+        .map(|role| (worker_role_label(role).to_owned(), 0))
+        .collect();
+    let lane_active = lane_searches.keys().map(|lane| (lane.clone(), 0)).collect();
     let shared = Arc::new((
         Mutex::new(SharedState {
             book,
+            run_id: options.run_id.clone(),
+            started_at: unix_time(),
             inflight: HashSet::new(),
             searches: 0,
             total_nodes: 0,
@@ -203,6 +217,9 @@ pub fn run_normal_extension(
             generation: 0,
             corpus_add_successes: 0,
             last_candidate: None,
+            lane_searches,
+            lane_active,
+            last_search: None,
             last_book_save: None,
             save_finished: false,
             random: PythonRandom::seeded(options.random_seed.unwrap_or_else(default_random_seed)),
@@ -324,16 +341,40 @@ pub fn run_normal_extension(
         let status_interval = std::time::Duration::from_secs_f64(options.status_interval_sec);
         let engine_fingerprint = options.engine_fingerprint.clone();
         thread::spawn(move || -> Result<(), CoordinatorError> {
+            let mut consecutive_failures = 0_u64;
             loop {
-                let (snapshot, workers_done) = {
+                let (snapshot_result, workers_done) = {
                     let state = shared.0.lock().map_err(|_| CoordinatorError::Poisoned)?;
                     (
-                        runtime_status_snapshot(&state, &engine_fingerprint)?,
+                        runtime_status_snapshot(&state, &engine_fingerprint),
                         state.running_workers == 0 && state.save_finished,
                     )
                 };
-                write_runtime_status_atomic(&status_path, &snapshot)
-                    .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
+                let write_result = snapshot_result.and_then(|snapshot| {
+                    write_runtime_status_atomic(&status_path, &snapshot)
+                        .map_err(|error| CoordinatorError::Worker(error.to_string()))
+                });
+                match write_result {
+                    Ok(()) => {
+                        if consecutive_failures > 0 {
+                            eprintln!(
+                                "[runtime-status] event=recovered failures={} path={}",
+                                consecutive_failures,
+                                status_path.display()
+                            );
+                        }
+                        consecutive_failures = 0;
+                    }
+                    Err(error) => {
+                        consecutive_failures += 1;
+                        eprintln!(
+                            "[runtime-status] event=write-failed failures={} path={} error={:?}",
+                            consecutive_failures,
+                            status_path.display(),
+                            error.to_string()
+                        );
+                    }
+                }
                 if workers_done {
                     return Ok(());
                 }
@@ -467,19 +508,31 @@ pub fn run_normal_extension(
                     &history_refs,
                     options.nodes,
                 );
+                let normal_elapsed_ms = search_started.elapsed().as_millis();
                 eprintln!(
                     "[search-finish] lane={} depth={} position_key={} status={} elapsed_ms={}",
                     worker_role_label(&role),
                     depth,
                     path.leaf_sfen,
                     if normal_result.is_ok() { "ok" } else { "error" },
-                    search_started.elapsed().as_millis()
+                    normal_elapsed_ms
                 );
 
                 let corpus_work = {
                     let (state_lock, wake) = &*shared;
                     let mut state = state_lock.lock().map_err(|_| CoordinatorError::Poisoned)?;
                     state.inflight.remove(&path.leaf_sfen);
+                    let lane = worker_role_label(&role).to_owned();
+                    if let Some(active) = state.lane_active.get_mut(&lane) {
+                        *active = active.saturating_sub(1);
+                    }
+                    state.last_search = Some(LastSearchStatus {
+                        lane,
+                        depth,
+                        position_key: path.leaf_sfen.clone(),
+                        status: if normal_result.is_ok() { "ok" } else { "error" }.to_owned(),
+                        elapsed_ms: normal_elapsed_ms,
+                    });
                     match normal_result {
                         Ok(results) if !state.discard_results => {
                             if !results.is_empty() {
@@ -876,6 +929,9 @@ fn reserve_normal_work(
         };
         match selected {
             Some(path) => {
+                let lane = worker_role_label(role).to_owned();
+                *state.lane_searches.entry(lane.clone()).or_default() += 1;
+                *state.lane_active.entry(lane).or_default() += 1;
                 state.searches += 1;
                 state.total_nodes += options.nodes;
                 state.generation += 1;
@@ -1287,7 +1343,18 @@ fn runtime_status_snapshot(
         )
     };
     Ok(RuntimeStatusSnapshot {
+        run_id: state.run_id.clone(),
+        pid: std::process::id(),
+        started_at: state.started_at,
         updated_at: unix_time(),
+        searches: state.searches,
+        added_positions: state.added_positions,
+        total_nodes: state.total_nodes,
+        running_workers: state.running_workers,
+        corpus_active: state.corpus_active,
+        lane_searches: state.lane_searches.clone(),
+        lane_active: state.lane_active.clone(),
+        last_search: state.last_search.clone(),
         active_quality_band: frontier.active_quality_band,
         progressive_width: frontier.progressive_width,
         eligible_miss_count: frontier.eligible_miss_count,

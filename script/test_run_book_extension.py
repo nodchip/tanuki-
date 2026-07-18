@@ -90,17 +90,24 @@ class RustJenkinsWrapperTest(unittest.TestCase):
         text = wrapper.read_text(encoding="utf-8")
 
         self.assertIn("[string]$RuntimeExe", text)
-        self.assertIn("Start-Process -FilePath $RuntimeExe", text)
+        self.assertIn("[System.Diagnostics.ProcessStartInfo]::new()", text)
         self.assertLess(
             text.index("[System.IO.File]::WriteAllText($heartbeatPath"),
-            text.index("Start-Process -FilePath $RuntimeExe"),
+            text.index("$process.Start()"),
         )
         self.assertLess(
-            text.index("Start-Process -FilePath $RuntimeExe"),
-            text.index("$env:BUILD_ID = $previousBuildId"),
+            text.index("$startInfo.EnvironmentVariables['BUILD_ID'] = 'dontKillMe'"),
+            text.index("$process.Start()"),
         )
         self.assertNotIn("$PythonExe", text)
         self.assertNotIn("$ExtensionScript", text)
+        self.assertIn("[int]$ProgressIntervalSec = 60", text)
+        self.assertIn("[int]$LogRetentionCount = 5", text)
+        self.assertIn("$startInfo.RedirectStandardOutput = $true", text)
+        self.assertIn("$startInfo.RedirectStandardError = $true", text)
+        self.assertIn("'--run-id', $runId", text)
+        self.assertIn("[progress-warning]", text)
+        self.assertIn("Remove-OldRunLogs", text)
 
 if __name__ == "__main__":
     unittest.main()
