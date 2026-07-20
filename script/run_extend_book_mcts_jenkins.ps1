@@ -154,6 +154,8 @@ if ($LogRetentionCount -le 0) { throw 'LogRetentionCount must be positive' }
 $statePath = [System.IO.Path]::GetFullPath($StateDir)
 [System.IO.Directory]::CreateDirectory($statePath) | Out-Null
 $heartbeatPath = Join-Path $statePath 'jenkins.heartbeat'
+$heartbeatHelperPidPath = Join-Path $statePath 'jenkins-heartbeat-helper.pid'
+$heartbeatHelperPath = Join-Path $PSScriptRoot 'update_jenkins_heartbeat.ps1'
 $stopRequestPath = Join-Path $statePath 'stop.request'
 $lockPath = Join-Path $statePath 'book-extension.lock'
 $statusPath = Join-Path $statePath 'runtime-status.json'
@@ -175,7 +177,32 @@ if ($null -ne $RuntimeArgs) {
     $arguments += $RuntimeArgs
 }
 
+if (-not (Test-Path -LiteralPath $heartbeatHelperPath -PathType Leaf)) {
+    throw "Heartbeat helper not found: $heartbeatHelperPath"
+}
 [System.IO.File]::WriteAllText($heartbeatPath, [DateTimeOffset]::UtcNow.ToString('O'))
+$ownerProcess = [System.Diagnostics.Process]::GetCurrentProcess()
+$heartbeatArguments = @(
+    '-NoProfile'
+    '-ExecutionPolicy', 'Bypass'
+    '-File', $heartbeatHelperPath
+    '-HeartbeatPath', $heartbeatPath
+    '-OwnerProcessId', $ownerProcess.Id.ToString()
+    '-OwnerStartedAtTicks', $ownerProcess.StartTime.ToUniversalTime().Ticks.ToString()
+    '-PidPath', $heartbeatHelperPidPath
+    '-IntervalSec', $HeartbeatIntervalSec.ToString()
+)
+$heartbeatStartInfo = [System.Diagnostics.ProcessStartInfo]::new()
+$heartbeatStartInfo.FileName = 'powershell.exe'
+$heartbeatStartInfo.Arguments = (($heartbeatArguments | ForEach-Object { ConvertTo-CommandLineArgument $_ }) -join ' ')
+$heartbeatStartInfo.UseShellExecute = $false
+$heartbeatStartInfo.CreateNoWindow = $true
+$heartbeatProcess = [System.Diagnostics.Process]::new()
+$heartbeatProcess.StartInfo = $heartbeatStartInfo
+if (-not $heartbeatProcess.Start()) {
+    throw 'Failed to start Jenkins heartbeat helper'
+}
+
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
 $startInfo.FileName = $RuntimeExe
 $startInfo.Arguments = (($arguments | ForEach-Object { ConvertTo-CommandLineArgument $_ }) -join ' ')
@@ -223,7 +250,6 @@ try {
             -StdoutOffset ([ref]$stdoutOffset) `
             -StderrOffset ([ref]$stderrOffset)
         if ($process.HasExited) { break }
-        [System.IO.File]::WriteAllText($heartbeatPath, [DateTimeOffset]::UtcNow.ToString('O'))
         if ([DateTimeOffset]::UtcNow -ge $nextProgress) {
             Write-ProgressSummary `
                 -StatusPath $statusPath `
@@ -235,8 +261,8 @@ try {
     }
     $process.WaitForExit()
     $childExitCode = $process.ExitCode
-    $stdoutCopyTask.GetAwaiter().GetResult()
-    $stderrCopyTask.GetAwaiter().GetResult()
+    [void]$stdoutCopyTask.GetAwaiter().GetResult()
+    [void]$stderrCopyTask.GetAwaiter().GetResult()
     $stdoutWriteStream.Flush()
     $stderrWriteStream.Flush()
     Write-NewLogChunks `
@@ -248,6 +274,11 @@ try {
     exit $childExitCode
 }
 finally {
+    if ($null -ne $heartbeatProcess -and -not $heartbeatProcess.HasExited) {
+        Stop-Process -Id $heartbeatProcess.Id -Force -ErrorAction SilentlyContinue
+    }
+    if ($null -ne $heartbeatProcess) { $heartbeatProcess.Dispose() }
+    Remove-Item -LiteralPath $heartbeatHelperPidPath -Force -ErrorAction SilentlyContinue
     if ($processStarted -and -not $process.HasExited) {
         [System.IO.File]::WriteAllText($stopRequestPath, 'jenkins-wrapper-stopping')
         if (-not $process.WaitForExit($GracefulStopTimeoutSec * 1000)) {
@@ -256,10 +287,10 @@ finally {
         }
     }
     if ($null -ne $stdoutCopyTask -and -not $stdoutCopyTask.IsCompleted) {
-        $stdoutCopyTask.GetAwaiter().GetResult()
+        [void]$stdoutCopyTask.GetAwaiter().GetResult()
     }
     if ($null -ne $stderrCopyTask -and -not $stderrCopyTask.IsCompleted) {
-        $stderrCopyTask.GetAwaiter().GetResult()
+        [void]$stderrCopyTask.GetAwaiter().GetResult()
     }
     if ($null -ne $stdoutWriteStream) { $stdoutWriteStream.Flush() }
     if ($null -ne $stderrWriteStream) { $stderrWriteStream.Flush() }

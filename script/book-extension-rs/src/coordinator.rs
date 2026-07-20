@@ -540,6 +540,12 @@ pub fn run_normal_extension(
                             }
                         }
                         Ok(_) => {}
+                        Err(error) if state.discard_results => {
+                            eprintln!(
+                                "[engine-error] phase=search action=ignored-during-stop error={:?}",
+                                error.to_string()
+                            );
+                        }
                         Err(error) => {
                             state.error = Some(error.to_string());
                             state.stop_admission = true;
@@ -596,7 +602,21 @@ pub fn run_normal_extension(
                     break;
                 }
             }
-            engine.close()?;
+            let stopping = shared
+                .0
+                .lock()
+                .map_err(|_| CoordinatorError::Poisoned)?
+                .discard_results;
+            if let Err(error) = engine.close() {
+                if stopping {
+                    eprintln!(
+                        "[engine-error] phase=close action=ignored-during-stop error={:?}",
+                        error.to_string()
+                    );
+                } else {
+                    return Err(error.into());
+                }
+            }
             Ok(())
         }));
     }

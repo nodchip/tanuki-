@@ -1164,7 +1164,7 @@ usi_stop_timeout_sec = 5
     assert!(!std::fs::read_to_string(output).unwrap().contains("7g7f"));
 }
 #[test]
-fn unresponsive_engine_is_killed_after_usi_stop_timeout() {
+fn unresponsive_engine_is_killed_and_final_save_succeeds_after_stop_timeout() {
     use std::{
         thread,
         time::{Duration, Instant},
@@ -1231,15 +1231,21 @@ usi_stop_timeout_sec = 0.1
         panic!("unresponsive USI engine prevented Rust runtime shutdown");
     }
     let result = child.wait_with_output().unwrap();
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(result.status.success(), "stderr={stderr}");
     assert!(
-        !result.status.success(),
-        "forced engine EOF must be reported"
+        stderr.contains("[stop-usi] reason=max-runtime-sec forced=1"),
+        "stderr={stderr}"
     );
     assert!(
-        String::from_utf8_lossy(&result.stderr).contains("USI engine failed:"),
-        "stderr={}",
-        String::from_utf8_lossy(&result.stderr)
+        stderr.contains("[book_save]") && stderr.contains("status=success"),
+        "final save did not complete: {stderr}"
     );
+    assert!(
+        stderr.contains("[shutdown] phase=worker-join"),
+        "stderr={stderr}"
+    );
+    assert!(output.is_file(), "final output book was not written");
 }
 
 #[test]

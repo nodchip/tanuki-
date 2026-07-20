@@ -28,6 +28,20 @@ public static class FakeProgressRuntime
 
     public static int Main(string[] args)
     {
+        if (Array.IndexOf(args, "--flood-output") >= 0)
+        {
+            string floodHeartbeatPath = ValueAfter(args, "--heartbeat-path");
+            string statePath = Path.GetDirectoryName(floodHeartbeatPath);
+            File.WriteAllText(Path.Combine(statePath, "fake-runtime.pid"),
+                System.Diagnostics.Process.GetCurrentProcess().Id.ToString());
+            string payload = new string('x', 16384);
+            while (true)
+            {
+                Console.Error.WriteLine(payload);
+                Console.Error.Flush();
+                Thread.Sleep(1);
+            }
+        }
         Console.Out.WriteLine("fake-out-1");
         Console.Out.Flush();
         Console.Error.WriteLine("fake-err-1");
@@ -89,6 +103,7 @@ public static class FakeProgressRuntime
     Assert-True $capturedText.Contains('[progress-warning]') "missing progress warning`n$capturedText"
     Assert-True $capturedText.Contains('[progress]') "missing progress summary`n$capturedText"
     Assert-True $capturedText.Contains('searches=12') "progress summary did not use runtime status`n$capturedText"
+    Assert-True (-not $capturedText.Contains('System.Threading.Tasks.VoidTaskResult')) "async task result leaked to console`n$capturedText"
     Assert-True (Test-Path -LiteralPath (Join-Path $statePath 'jenkins.heartbeat')) 'heartbeat was not created'
 
     $stdoutLogs = @(Get-ChildItem -LiteralPath $logDirectory -Filter 'book-extender-*.stdout.log' -File)
@@ -98,7 +113,71 @@ public static class FakeProgressRuntime
     Assert-True (($stdoutLogs | Get-Content -Raw) -join "`n").Contains('fake-out-1') 'durable stdout log missing fake output'
     Assert-True (($stderrLogs | Get-Content -Raw) -join "`n").Contains('fake-err-2') 'durable stderr log missing final output'
 
-    Write-Output 'PASS: Jenkins wrapper durable log relay'
+    $blockedStatePath = Join-Path $temporaryRoot 'blocked-state'
+    [System.IO.Directory]::CreateDirectory($blockedStatePath) | Out-Null
+    $blockedStartInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $blockedStartInfo.FileName = 'powershell.exe'
+    $blockedStartInfo.Arguments = (
+        '-NoProfile -ExecutionPolicy Bypass -File "{0}" -RuntimeExe "{1}" ' +
+        '-StateDir "{2}" -HeartbeatIntervalSec 1 -GracefulStopTimeoutSec 1 ' +
+        '-ProgressIntervalSec 60 -LogRetentionCount 1 --flood-output'
+    ) -f $wrapperPath, $fakeRuntimePath, $blockedStatePath
+    $blockedStartInfo.UseShellExecute = $false
+    $blockedStartInfo.CreateNoWindow = $true
+    $blockedStartInfo.RedirectStandardOutput = $true
+    $blockedStartInfo.RedirectStandardError = $true
+    $blockedWrapper = [System.Diagnostics.Process]::new()
+    $blockedWrapper.StartInfo = $blockedStartInfo
+    try {
+        [void]$blockedWrapper.Start()
+        $blockedHeartbeatPath = Join-Path $blockedStatePath 'jenkins.heartbeat'
+        $deadline = [DateTime]::UtcNow.AddSeconds(5)
+        while (-not (Test-Path -LiteralPath $blockedHeartbeatPath) -and [DateTime]::UtcNow -lt $deadline) {
+            Start-Sleep -Milliseconds 50
+        }
+        Assert-True (Test-Path -LiteralPath $blockedHeartbeatPath) 'blocked-console heartbeat was not created'
+        Start-Sleep -Seconds 4
+        $heartbeatAgeSec = ([DateTime]::UtcNow - (Get-Item -LiteralPath $blockedHeartbeatPath).LastWriteTimeUtc).TotalSeconds
+        Assert-True ($heartbeatAgeSec -lt 2.5) "heartbeat stalled behind console relay: age=$heartbeatAgeSec"
+        $helperPidPath = Join-Path $blockedStatePath 'jenkins-heartbeat-helper.pid'
+        Assert-True (Test-Path -LiteralPath $helperPidPath) 'heartbeat helper pid was not recorded'
+        $helperProcessId = [int](Get-Content -LiteralPath $helperPidPath -Raw)
+        $blockedWrapper.Kill()
+        $blockedWrapper.WaitForExit()
+        $helperExitDeadline = [DateTime]::UtcNow.AddSeconds(4)
+        do {
+            try {
+                $helperProbe = [System.Diagnostics.Process]::GetProcessById($helperProcessId)
+                try {
+                    $helperStillRunning = -not $helperProbe.HasExited
+                }
+                finally {
+                    $helperProbe.Dispose()
+                }
+            }
+            catch [System.ArgumentException] {
+                $helperStillRunning = $false
+            }
+            if ($helperStillRunning) { Start-Sleep -Milliseconds 100 }
+        } while ($helperStillRunning -and [DateTime]::UtcNow -lt $helperExitDeadline)
+        Assert-True (-not $helperStillRunning) 'heartbeat helper survived its owner wrapper'
+    }
+    finally {
+        $fakePidPath = Join-Path $blockedStatePath 'fake-runtime.pid'
+        if (Test-Path -LiteralPath $fakePidPath) {
+            Stop-Process -Id ([int](Get-Content -LiteralPath $fakePidPath -Raw)) -Force -ErrorAction SilentlyContinue
+        }
+        $helperPidPath = Join-Path $blockedStatePath 'jenkins-heartbeat-helper.pid'
+        if (Test-Path -LiteralPath $helperPidPath) {
+            Stop-Process -Id ([int](Get-Content -LiteralPath $helperPidPath -Raw)) -Force -ErrorAction SilentlyContinue
+        }
+        if ($null -ne $blockedWrapper -and -not $blockedWrapper.HasExited) {
+            $blockedWrapper.Kill()
+        }
+        if ($null -ne $blockedWrapper) { $blockedWrapper.Dispose() }
+    }
+
+    Write-Output 'PASS: Jenkins wrapper durable log relay and independent heartbeat'
 }
 finally {
     if (Test-Path -LiteralPath $temporaryRoot) {

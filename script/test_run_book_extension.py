@@ -91,6 +91,8 @@ class RustJenkinsWrapperTest(unittest.TestCase):
 
         self.assertIn("[string]$RuntimeExe", text)
         self.assertIn("[System.Diagnostics.ProcessStartInfo]::new()", text)
+        self.assertIn("update_jenkins_heartbeat.ps1", text)
+        self.assertIn("$heartbeatProcess.Start()", text)
         self.assertLess(
             text.index("[System.IO.File]::WriteAllText($heartbeatPath"),
             text.index("$process.Start()"),
