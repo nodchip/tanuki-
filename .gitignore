@@ -252,6 +252,7 @@ ModelManifest.xml
 # Local shaping and spike documents
 docs/shaping/
 docs/spikes/
+docs/superpowers/
 # Book-extension runtime state and downloaded corpus archives
 book-extension-state/
 corpus-data/

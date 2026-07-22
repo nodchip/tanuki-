@@ -56,25 +56,43 @@ function Read-NewLogChunk {
     }
 }
 
+function Write-CompleteLogLines {
+    param([string]$Chunk, [ref]$Pending)
+    if ($Chunk.Length -eq 0) { return }
+    $combined = $Pending.Value + $Chunk
+    $lastLineFeed = $combined.LastIndexOf("`n")
+    if ($lastLineFeed -lt 0) {
+        $Pending.Value = $combined
+        return
+    }
+    [Console]::Out.Write($combined.Substring(0, $lastLineFeed + 1))
+    [Console]::Out.Flush()
+    $Pending.Value = $combined.Substring($lastLineFeed + 1)
+}
+
+function Flush-PendingLogLine {
+    param([ref]$Pending)
+    if ($Pending.Value.Length -eq 0) { return }
+    [Console]::Out.WriteLine($Pending.Value)
+    [Console]::Out.Flush()
+    $Pending.Value = ''
+}
+
 function Write-NewLogChunks {
     param(
         [string]$StdoutPath,
         [string]$StderrPath,
         [ref]$StdoutOffset,
-        [ref]$StderrOffset
+        [ref]$StderrOffset,
+        [ref]$StdoutPending,
+        [ref]$StderrPending
     )
     $stdoutChunk = Read-NewLogChunk -Path $StdoutPath -Offset $StdoutOffset.Value
     $StdoutOffset.Value = $stdoutChunk.Offset
-    if ($stdoutChunk.Text.Length -gt 0) {
-        [Console]::Out.Write($stdoutChunk.Text)
-        [Console]::Out.Flush()
-    }
+    Write-CompleteLogLines -Chunk $stdoutChunk.Text -Pending $StdoutPending
     $stderrChunk = Read-NewLogChunk -Path $StderrPath -Offset $StderrOffset.Value
     $StderrOffset.Value = $stderrChunk.Offset
-    if ($stderrChunk.Text.Length -gt 0) {
-        [Console]::Out.Write($stderrChunk.Text)
-        [Console]::Out.Flush()
-    }
+    Write-CompleteLogLines -Chunk $stderrChunk.Text -Pending $StderrPending
 }
 
 function Write-ProgressSummary {
@@ -222,6 +240,8 @@ $stdoutCopyTask = $null
 $stderrCopyTask = $null
 $stdoutOffset = 0L
 $stderrOffset = 0L
+$stdoutPending = ''
+$stderrPending = ''
 $nextProgress = [DateTimeOffset]::UtcNow.AddSeconds($ProgressIntervalSec)
 try {
     $stdoutWriteStream = [System.IO.File]::Open(
@@ -248,7 +268,9 @@ try {
             -StdoutPath $stdoutLogPath `
             -StderrPath $stderrLogPath `
             -StdoutOffset ([ref]$stdoutOffset) `
-            -StderrOffset ([ref]$stderrOffset)
+            -StderrOffset ([ref]$stderrOffset) `
+            -StdoutPending ([ref]$stdoutPending) `
+            -StderrPending ([ref]$stderrPending)
         if ($process.HasExited) { break }
         if ([DateTimeOffset]::UtcNow -ge $nextProgress) {
             Write-ProgressSummary `
@@ -269,7 +291,9 @@ try {
         -StdoutPath $stdoutLogPath `
         -StderrPath $stderrLogPath `
         -StdoutOffset ([ref]$stdoutOffset) `
-        -StderrOffset ([ref]$stderrOffset)
+        -StderrOffset ([ref]$stderrOffset) `
+        -StdoutPending ([ref]$stdoutPending) `
+        -StderrPending ([ref]$stderrPending)
     Remove-OldRunLogs -LogDirectory $logDirectory -RetentionCount $LogRetentionCount -ActiveRunId $runId
     exit $childExitCode
 }
@@ -298,7 +322,11 @@ finally {
         -StdoutPath $stdoutLogPath `
         -StderrPath $stderrLogPath `
         -StdoutOffset ([ref]$stdoutOffset) `
-        -StderrOffset ([ref]$stderrOffset)
+        -StderrOffset ([ref]$stderrOffset) `
+        -StdoutPending ([ref]$stdoutPending) `
+        -StderrPending ([ref]$stderrPending)
+    Flush-PendingLogLine -Pending ([ref]$stdoutPending)
+    Flush-PendingLogLine -Pending ([ref]$stderrPending)
     if ($null -ne $stdoutWriteStream) { $stdoutWriteStream.Dispose() }
     if ($null -ne $stderrWriteStream) { $stderrWriteStream.Dispose() }
     if ($null -ne $process) { $process.Dispose() }

@@ -57,8 +57,12 @@ public static class FakeProgressRuntime
             "\"active_quality_band\":0,\"progressive_width\":4," +
             "\"tasks\":{\"evaluated\":5},\"book_add_successes\":2,\"last_book_save\":null}";
         File.WriteAllText(statusPath, status);
-        Thread.Sleep(1200);
+        Console.Error.Write(new string('x', 16384) + "[search-finish] lane=normal de");
+        Console.Error.Flush();
+        Thread.Sleep(4000);
+        Console.Error.WriteLine("pth=32 status=ok");
         Console.Error.WriteLine("fake-err-2");
+        Console.Error.Write("tail-without-newline");
         Console.Out.WriteLine("args=" + String.Join("|", args));
         Console.Error.Flush();
         Console.Out.Flush();
@@ -99,10 +103,16 @@ public static class FakeProgressRuntime
     Assert-True $capturedText.Contains('fake-out-1') "stdout was not relayed`n$capturedText"
     Assert-True $capturedText.Contains('fake-err-1') "first stderr line was not relayed`n$capturedText"
     Assert-True $capturedText.Contains('fake-err-2') "final stderr line was not drained`n$capturedText"
+    Assert-True (@($capturedText -split "`r?`n") -contains 'tail-without-newline') "unterminated final stderr fragment was not relayed`n$capturedText"
     Assert-True $capturedText.Contains('--probe-value|value with spaces') "space-containing argument was corrupted`n$capturedText"
     Assert-True $capturedText.Contains('[progress-warning]') "missing progress warning`n$capturedText"
     Assert-True $capturedText.Contains('[progress]') "missing progress summary`n$capturedText"
     Assert-True $capturedText.Contains('searches=12') "progress summary did not use runtime status`n$capturedText"
+    Assert-True $capturedText.Contains('[search-finish] lane=normal depth=32 status=ok') "split runtime line was corrupted`n$capturedText"
+    Assert-True (-not $capturedText.Contains('de[progress]')) "progress was inserted into a runtime line`n$capturedText"
+    $progressLines = @(($capturedText -split "`r?`n") | Where-Object { $_.Contains('[progress]') })
+    Assert-True ($progressLines.Count -gt 0) "progress was not emitted`n$capturedText"
+    Assert-True (@($progressLines | Where-Object { -not $_.StartsWith('[progress] ') }).Count -eq 0) "progress was inserted into a runtime line`n$capturedText"
     Assert-True (-not $capturedText.Contains('System.Threading.Tasks.VoidTaskResult')) "async task result leaked to console`n$capturedText"
     Assert-True (Test-Path -LiteralPath (Join-Path $statePath 'jenkins.heartbeat')) 'heartbeat was not created'
 
@@ -112,6 +122,8 @@ public static class FakeProgressRuntime
     Assert-True ($stderrLogs.Count -eq 5) "expected five stderr logs, got $($stderrLogs.Count)"
     Assert-True (($stdoutLogs | Get-Content -Raw) -join "`n").Contains('fake-out-1') 'durable stdout log missing fake output'
     Assert-True (($stderrLogs | Get-Content -Raw) -join "`n").Contains('fake-err-2') 'durable stderr log missing final output'
+    Assert-True (($stderrLogs | Get-Content -Raw) -join "`n").Contains('tail-without-newline') 'durable stderr log lost unterminated final fragment'
+    Assert-True (($stderrLogs | Get-Content -Raw) -join "`n").Contains('[search-finish] lane=normal depth=32 status=ok') 'durable stderr log lost the split line'
 
     $blockedStatePath = Join-Path $temporaryRoot 'blocked-state'
     [System.IO.Directory]::CreateDirectory($blockedStatePath) | Out-Null
