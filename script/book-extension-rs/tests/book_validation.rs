@@ -1,6 +1,6 @@
 use book_extension_runtime::book::{BookEntry, OpeningBook};
 use book_extension_runtime::storage::{SaveError, save_validated_atomic};
-use book_extension_runtime::validation::{IssueKind, parse_position, validate_book};
+use book_extension_runtime::validation::{IssueKind, parse_position, validate_book, validate_file};
 use shogi_legality_lite::all_legal_moves_partial;
 
 const STARTPOS: &str = "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1";
@@ -29,6 +29,48 @@ fn ignore_ply_merges_positions_and_outputs_zero_ply() {
     let book = OpeningBook::from_text(&text, true).expect("book parses");
     assert_eq!(book.positions_len(), 1);
     assert!(book.to_text().contains(" b - 0\n"));
+}
+
+#[test]
+fn writes_position_groups_in_normalized_sfen_order() {
+    let first = "4k4/9/9/9/9/9/9/9/4K4 b - 7";
+    let second = "5k3/9/9/9/9/9/9/9/4K4 b - 42";
+    let text = format!(
+        "#YANEURAOU-DB2016 1.00\nsfen {second}\n5i5h none 20 2 22\nsfen {first}\n5i5h none 10 1 11\n"
+    );
+
+    let book = OpeningBook::from_text(&text, true).expect("book parses");
+
+    assert_eq!(
+        book.to_text(),
+        "#YANEURAOU-DB2016 1.00\
+\nsfen 4k4/9/9/9/9/9/9/9/4K4 b - 0\
+\n5i5h none 10 1 11\
+\nsfen 5k3/9/9/9/9/9/9/9/4K4 b - 0\
+\n5i5h none 20 2 22\n"
+    );
+}
+
+#[test]
+fn file_validator_rejects_non_increasing_sfen_groups() {
+    let directory = tempfile::tempdir().expect("temp directory");
+    let path = directory.path().join("unsorted.db");
+    std::fs::write(
+        &path,
+        "#YANEURAOU-DB2016 1.00\
+\nsfen 5k3/9/9/9/9/9/9/9/4K4 b - 0\
+\n5i5h none 20 2 22\
+\nsfen 4k4/9/9/9/9/9/9/9/4K4 b - 0\
+\n5i5h none 10 1 11\n",
+    )
+    .expect("write fixture");
+
+    let report = validate_file(&path).expect("validation runs");
+
+    assert!(!report.valid());
+    assert_eq!(report.issues.len(), 1);
+    assert_eq!(report.issues[0].kind, IssueKind::NonIncreasingSfen);
+    assert!(report.issues[0].detail.contains("strictly increasing"));
 }
 
 #[test]

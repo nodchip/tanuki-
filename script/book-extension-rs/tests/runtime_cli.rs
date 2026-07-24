@@ -2,6 +2,16 @@ use std::process::Command;
 
 use book_extension_runtime::{corpus::CorpusStore, storage::sha256_file};
 
+fn book_section<'a>(book: &'a str, sfen: &str) -> &'a str {
+    let marker = format!("sfen {sfen}\n");
+    book.split_once(&marker)
+        .unwrap_or_else(|| panic!("missing SFEN section: {sfen}"))
+        .1
+        .split("\nsfen ")
+        .next()
+        .expect("section exists after marker")
+}
+
 #[test]
 fn rust_runtime_extends_and_saves_one_normal_leaf_without_python() {
     let directory = tempfile::tempdir().unwrap();
@@ -362,7 +372,7 @@ usi_stop_timeout_sec = 5
         "{stderr}"
     );
     let saved = std::fs::read_to_string(&output).unwrap();
-    let root_section = saved.split("sfen ").nth(1).unwrap();
+    let root_section = book_section(&saved, book_extension_runtime::STARTPOS_SFEN);
     assert!(root_section.contains("2g2f 8c8d -25 1 1"), "{saved}");
     assert!(!root_section.contains("7g7f 3c3d 10 1 0"), "{saved}");
 }
@@ -1342,12 +1352,6 @@ usi_stop_timeout_sec = 5
         String::from_utf8_lossy(&result.stderr)
     );
     let saved = std::fs::read_to_string(&output).unwrap();
-    let root_section = saved
-        .split("sfen ")
-        .nth(1)
-        .unwrap()
-        .split("sfen ")
-        .next()
-        .unwrap();
+    let root_section = book_section(&saved, book_extension_runtime::STARTPOS_SFEN);
     assert!(root_section.contains("8g8f"), "{saved}");
 }

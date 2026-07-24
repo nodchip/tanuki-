@@ -15,6 +15,7 @@ use thiserror::Error;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IssueKind {
     InvalidSfen,
+    NonIncreasingSfen,
     DuplicateMove,
     IllegalMove,
     IllegalResponse,
@@ -45,6 +46,7 @@ impl IssueKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::InvalidSfen => "invalid-sfen",
+            Self::NonIncreasingSfen => "non-increasing-sfen",
             Self::DuplicateMove => "duplicate-move",
             Self::IllegalMove => "illegal-move",
             Self::IllegalResponse => "illegal-response",
@@ -69,6 +71,7 @@ pub fn validate_file(path: &Path) -> Result<ValidationReport, ValidationFileErro
         issues: Vec::new(),
     };
     let mut current_sfen: Option<String> = None;
+    let mut previous_sfen: Option<String> = None;
     let mut current_position: Option<PartialPosition> = None;
     let mut seen = HashSet::new();
     let mut order_index = 0;
@@ -84,6 +87,21 @@ pub fn validate_file(path: &Path) -> Result<ValidationReport, ValidationFileErro
         }
         if let Some(sfen) = line.strip_prefix("sfen ") {
             let sfen = sfen.trim().to_owned();
+            if previous_sfen
+                .as_ref()
+                .is_some_and(|previous| previous >= &sfen)
+            {
+                report.issues.push(ValidationIssue {
+                    sfen: sfen.clone(),
+                    move_usi: None,
+                    kind: IssueKind::NonIncreasingSfen,
+                    detail: format!(
+                        "SFEN groups must be strictly increasing; previous SFEN: {}",
+                        previous_sfen.as_deref().unwrap_or_default()
+                    ),
+                });
+            }
+            previous_sfen = Some(sfen.clone());
             current_position = parse_position(&sfen);
             if current_position.is_none() {
                 report.issues.push(ValidationIssue {

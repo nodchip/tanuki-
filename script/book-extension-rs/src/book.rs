@@ -225,7 +225,23 @@ impl OpeningBook {
         let mut output = String::new();
         output.push_str(&self.header);
         output.push('\n');
-        for position in &self.positions {
+        let mut positions: Vec<&BookPosition> = self.positions.iter().collect();
+        positions.sort_by(|left, right| {
+            let left_key = if self.ignore_ply {
+                strip_sfen_ply(&left.sfen)
+            } else {
+                &left.sfen
+            };
+            let right_key = if self.ignore_ply {
+                strip_sfen_ply(&right.sfen)
+            } else {
+                &right.sfen
+            };
+            left_key
+                .cmp(right_key)
+                .then_with(|| left.order_index.cmp(&right.order_index))
+        });
+        for position in positions {
             output.push_str("sfen ");
             output.push_str(&position.sfen);
             output.push('\n');
