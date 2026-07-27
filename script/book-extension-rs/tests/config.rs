@@ -17,10 +17,10 @@ fn loads_existing_pilot_configuration_and_expands_roles() {
     assert_eq!(
         config.workers.roles(),
         vec![
-            "vulnerability_black",
-            "vulnerability_black",
-            "vulnerability_white",
-            "vulnerability_white",
+            "fixed_black",
+            "fixed_black",
+            "fixed_white",
+            "fixed_white",
             "general",
             "general",
             "general",

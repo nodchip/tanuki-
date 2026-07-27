@@ -149,41 +149,6 @@ impl OpeningBook {
         Ok(&mut self.positions[index])
     }
 
-    pub fn ensure_external_entry(
-        &mut self,
-        sfen: &str,
-        source: &BookEntry,
-    ) -> Result<String, BookParseError> {
-        let key = self.position_key(sfen);
-        let existing = self
-            .position(&key)
-            .and_then(|position| position.find_entry(&source.move_usi))
-            .map(|entry| entry.move_usi.clone());
-        if let Some(move_usi) = existing {
-            let position = self.position_mut(&key).expect("position existed above");
-            let entry = position
-                .find_entry_mut(&move_usi)
-                .expect("entry existed above");
-            if entry.response.eq_ignore_ascii_case("none")
-                && !source.response.eq_ignore_ascii_case("none")
-            {
-                entry.response.clone_from(&source.response);
-            }
-            return Ok(move_usi);
-        }
-        let order = self.next_entry_order;
-        self.next_entry_order += 1;
-        let position = self.ensure_position(sfen)?;
-        position.entries.push(BookEntry::new(
-            &source.move_usi,
-            &source.response,
-            source.eval_cp,
-            source.depth,
-            0,
-            order,
-        ));
-        Ok(source.move_usi.clone())
-    }
     pub fn position(&self, sfen: &str) -> Option<&BookPosition> {
         let key = self.position_key(sfen);
         self.position_indexes

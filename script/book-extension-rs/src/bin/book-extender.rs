@@ -1,18 +1,16 @@
-use std::{collections::BTreeMap, path::PathBuf, process::ExitCode, sync::Arc};
+use std::{collections::BTreeMap, path::PathBuf, process::ExitCode};
 
 use book_extension_runtime::{
-    book::OpeningBook,
     config::ExtensionConfig,
     coordinator::{
         CorpusRuntimeOptions, NormalRuntimeOptions, PersistenceOptions, StopControlOptions,
         WorkerRole, run_normal_extension,
     },
-    disk_book::DiskOpeningBook,
     engine::EngineOptions,
     engine_fingerprint::{EngineFingerprintInput, compute_engine_fingerprint},
     runtime::BookFileLock,
+    sqlite_book::{SqliteOpeningBook, export_yaneuraou_atomic},
     storage::sha256_file,
-    validation::validate_book,
 };
 use clap::Parser;
 
@@ -25,8 +23,12 @@ struct Args {
     run_id: Option<String>,
     #[arg(long)]
     input: PathBuf,
+    #[arg(long = "import-book")]
+    import_books: Vec<PathBuf>,
     #[arg(long)]
     output: PathBuf,
+    #[arg(long)]
+    database: Option<PathBuf>,
     #[arg(long)]
     engine: PathBuf,
     #[arg(long)]
@@ -43,6 +45,8 @@ struct Args {
     eval_scale: f64,
     #[arg(long)]
     eval_diff: Option<i32>,
+    #[arg(long)]
+    min_eval_cp: Option<i32>,
     #[arg(long, default_value = "black")]
     book_side: String,
     #[arg(long, default_value_t = 200)]
@@ -95,50 +99,46 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(format!("cannot clear stale stop request: {error}").into()),
     }
-    let book = OpeningBook::load(&args.input, args.ignore_ply)?;
-    let report = validate_book(&book);
-    if !report.valid() {
-        return Err(format!("input book has {} validation issues", report.issues.len()).into());
+    let database_path = args.database.clone().unwrap_or_else(|| {
+        let output_name = args
+            .output
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy();
+        config
+            .runtime
+            .state_dir
+            .join(format!("{output_name}.sqlite"))
+    });
+    let mut book = SqliteOpeningBook::open(&database_path, args.ignore_ply)?;
+    let input_report = book.import_yaneuraou_compatible(&args.input)?;
+    eprintln!(
+        "[book_import] source={} sha256={} already_imported={} positions={} moves={}",
+        args.input.display(),
+        input_report.input_sha256,
+        input_report.already_imported,
+        input_report.inserted_positions,
+        input_report.inserted_moves
+    );
+    for target in args.import_books.iter().chain(
+        [&args.black_target, &args.white_target]
+            .into_iter()
+            .flatten(),
+    ) {
+        let report = book.import_yaneuraou(target)?;
+        eprintln!(
+            "[book_import] source={} sha256={} already_imported={} positions={} moves={}",
+            target.display(),
+            report.input_sha256,
+            report.already_imported,
+            report.inserted_positions,
+            report.inserted_moves
+        );
     }
-    let black_target = match (&args.black_target, config.workers.vulnerability_black) {
-        (Some(path), count) if count > 0 => {
-            Some(Arc::new(DiskOpeningBook::open(path, args.ignore_ply)?))
-        }
-        (None, count) if count > 0 => {
-            return Err("vulnerability_black workers require --black-target".into());
-        }
-        _ => None,
-    };
-    let white_target = match (&args.white_target, config.workers.vulnerability_white) {
-        (Some(path), count) if count > 0 => {
-            if args.black_target.as_ref() == Some(path) {
-                black_target.clone()
-            } else {
-                Some(Arc::new(DiskOpeningBook::open(path, args.ignore_ply)?))
-            }
-        }
-        (None, count) if count > 0 => {
-            return Err("vulnerability_white workers require --white-target".into());
-        }
-        _ => None,
-    };
+    export_yaneuraou_atomic(&database_path, &args.output, config.runtime.backup_count)?;
     let mut worker_roles = Vec::with_capacity(config.workers.engine_count);
-    if let Some(target_book) = black_target {
-        worker_roles.extend((0..config.workers.vulnerability_black).map(|_| {
-            WorkerRole::Vulnerability {
-                target_book: Arc::clone(&target_book),
-                target_side: "black",
-            }
-        }));
-    }
-    if let Some(target_book) = white_target {
-        worker_roles.extend((0..config.workers.vulnerability_white).map(|_| {
-            WorkerRole::Vulnerability {
-                target_book: Arc::clone(&target_book),
-                target_side: "white",
-            }
-        }));
-    }
+    worker_roles.extend((0..config.workers.fixed_black).map(|_| WorkerRole::FixedBlack));
+    worker_roles.extend((0..config.workers.fixed_white).map(|_| WorkerRole::FixedWhite));
     worker_roles.extend((0..config.workers.general).map(|_| WorkerRole::General));
     let mut corpus = if config.corpus.enabled {
         let database_path = args
@@ -162,7 +162,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             nodes: corpus_nodes,
             max_concurrent: config.corpus.max_concurrent_searches,
             saturation_window: config.corpus.saturation_window as i64,
-            input_book_hash: sha256_file(&args.input)?,
+            input_book_hash: sha256_file(&args.output)?,
             site_weights: [
                 config.corpus.wcsc_weight as i64,
                 config.corpus.denryu_weight as i64,
@@ -240,6 +240,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         eval_scale: args.eval_scale,
         book_side,
         eval_diff: args.eval_diff,
+        min_eval_cp: args.min_eval_cp,
         root_sfen: args.root_sfen.clone(),
         search_timeout_sec: args.usi_search_timeout_sec,
         random_seed: args.random_seed.map(i64::unsigned_abs),

@@ -57,7 +57,7 @@ pub fn backup_path(path: &Path, index: usize) -> PathBuf {
     path.with_file_name(format!("{name}.{index:03}.bak"))
 }
 
-fn rotate_backups(path: &Path, backup_count: usize) -> Result<(), std::io::Error> {
+pub(crate) fn rotate_backups(path: &Path, backup_count: usize) -> Result<(), std::io::Error> {
     if backup_count == 0 || !path.exists() {
         return Ok(());
     }

@@ -1,8 +1,8 @@
 [workers]
 engine_count = 8
 threads_per_engine = 1
-vulnerability_black = 2
-vulnerability_white = 2
+fixed_black = 2
+fixed_white = 2
 general = 4
 
 [corpus]

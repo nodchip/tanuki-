@@ -129,25 +129,29 @@ Rust版`corpus-builder.exe`はprofileに固定されたmetadataを自動投入�
 長時間稼働する定跡延長、MCTS、USIプロセス管理、corpus lane、保存・停止・再開はRust版`book-extender.exe`が担当する。固定manifestの取得、archive列挙、CSA/KIF解析、取り込み、ranking/rating、initial coverage、検証、公開はRust版`corpus-builder.exe`が担当する。Python/cshogiは通常運用に使わず、manifest更新候補の調査、旧版差分、可視化など本番経路外の補助だけに残す。
 
 ```powershell
-cargo build --manifest-path script\book-extension-rs\Cargo.toml --release --bin book-extender
+cargo build --manifest-path script\book-extension-rs\Cargo.toml --release --bin book-extender --bin book-sqlite
 $runtime = Resolve-Path script\book-extension-rs\target\release\book-extender.exe
+$bookSqlite = Resolve-Path script\book-extension-rs\target\release\book-sqlite.exe
+$bookDb = 'C:\book-extension-state\pilot\opening-book.sqlite'
+& $bookSqlite import --database $bookDb --input C:\book-extension-state\pilot\peta-shock.db
+& $bookSqlite import --database $bookDb --input C:\book-extension-state\pilot\tanuki-.2026-07-24.2.db
 & $runtime `
   --config config\book-extension-pilot.toml `
-  --input C:\book-extension-state\pilot\input-book.db `
+  --database $bookDb `
+  --input C:\book-extension-state\pilot\peta-shock.db `
   --output C:\book-extension-state\pilot\output-book.db `
   --engine C:\engine\YaneuraOu.exe `
   --nodes 3000000 --multipv 4 `
-  --black-target C:\book-extension-state\pilot\peta-shock.db `
-  --white-target C:\book-extension-state\pilot\peta-shock.db `
+  --min-eval-cp -200 `
   --corpus-db C:\book-extension-state\pilot\corpus.sqlite `
   --max-runtime-sec 600
 ```
 
-24時間pilotは同じコマンドの`--max-runtime-sec`を`86400`へ変更する。元DBを直接変更せず、入力コピーと専用state dirを使う。Rust runtimeは設定したworker数、仮想敵先手・後手・general、corpus同時数を使用する。`position startpos moves ...`または任意rootの`position sfen ... moves ...`で履歴を渡し、停止時の探索結果は破棄する。 各USI探索には既定3,600秒のwatchdogがあり、`--usi-search-timeout-sec`で変更できる。timeout時は`stop`、設定済みUSI stop timeout後の強制終了、engine再起動、最大3回再試行を行う。
+24時間pilotは同じコマンドの`--max-runtime-sec`を`86400`へ変更する。SQLiteを定跡の正本とし、`--output`のやねうら王形式はエンジン配布・検証用のexport成果物とする。Rust runtimeは設定したworker数、先手固定・後手固定・general、corpus同時数を使用する。固定側の手番では登録済み指し手の最大評価値を選び、反対側では`--min-eval-cp`の絶対下限を適用する。互換用の`--eval-diff`も併用でき、両方を指定した場合は厳しい方の下限を使う。`position startpos moves ...`または任意rootの`position sfen ... moves ...`で履歴を渡し、停止時の探索結果は破棄する。 各USI探索には既定3,600秒のwatchdogがあり、`--usi-search-timeout-sec`で変更できる。timeout時は`stop`、設定済みUSI stop timeout後の強制終了、engine再起動、最大3回再試行を行う。
 
-`--black-target`と`--white-target`の仮想敵定跡は、起動時に低メモリのストリーミング検証を行い、探索時はSFENでファイルを二分探索する。全局面・全指し手をメモリへ展開しない。同じパスを両方へ指定した場合は1個を共有する。対象DBは検索キー（通常は完全なSFEN、`--ignore-ply`時は手数を除いたSFEN）で厳密に昇順であり、重複キーや不正な指し手行を含んではならない。
+`book-sqlite import`は入力をストリーミングし、一定局面数ごとのtransactionで処理する。既存の`(局面, 指し手)`行は上書きせず、未登録局面と未登録指し手だけを追加するため、新ペタショック定跡の更新版を同じSQLiteへ順次取り込める。`book-extender --import-book <book>`を複数指定して起動時に同じ処理を行うこともできる。探索結果は同じ行の評価値、深さ、応手、visitsを更新する。`--black-target`と`--white-target`は旧コマンドラインとの互換性のため受理するが、敵対探索は行わず、指定ファイルを同じ追加専用規則で取り込む。
 
-保存は設定した間隔（本番・pilotは3600秒）で行う。ロック内では定跡snapshotとSQLite task watermarkだけを取得し、全件検証とファイル書き込みはロック外で行う。保存成功後、watermarkまでをbook hash付きcheckpointにする。終了時も最終世代を保存し、3世代backupを維持する。
+保存は設定した間隔（本番・pilotは3600秒）で行う。ロック内ではSQLiteパス、世代、task watermarkだけを取得し、別のread-only接続による一貫したsnapshotをストリームexportする。全件検証とファイル書き込みはロック外で行うため、定跡全体のメモリcloneは発生しない。保存成功後、watermarkまでをbook hash付きcheckpointにする。終了時も最終世代を保存し、3世代backupを維持する。明示的なexportだけを行う場合は`book-sqlite export --database <db> --output <book.db>`を使う。
 
 初期coverageは`corpus-builder.exe build`が生成し、全成果物検証後に`coverage-initial.json`として公開する。以下のPythonコマンドは旧版との比較・調査専用であり、固定manifestの本番作成経路には含めない。
 
@@ -169,12 +173,12 @@ powershell -ExecutionPolicy Bypass -File script\run_extend_book_mcts_jenkins.ps1
   -ProgressIntervalSec 60 `
   -LogRetentionCount 5 `
   --config C:\book-extension\book-extension-pilot.toml `
-  --input C:\book-extension-state\pilot\input-book.db `
+  --database C:\book-extension-state\pilot\opening-book.sqlite `
+  --input C:\book-extension-state\pilot\peta-shock.db `
   --output C:\book-extension-state\pilot\output-book.db `
   --engine C:\engine\YaneuraOu.exe `
   --nodes 3000000 --multipv 4 `
-  --black-target C:\book-extension-state\pilot\peta-shock.db `
-  --white-target C:\book-extension-state\pilot\peta-shock.db `
+  --min-eval-cp -200 `
   --corpus-db C:\book-extension-state\pilot\corpus.sqlite
 ```
 
@@ -204,12 +208,14 @@ Get-Content -Raw C:\book-extension-state\pilot\runtime-status.json | ConvertFrom
 停止後に bundle を作る。共有 registry は全延長マシンから同じパスに見える必要がある。
 
 ```powershell
-& $python script\manage_book_corpus.py bundle-create --book C:\book-extension-state\pilot\output-book.db --db C:\book-extension-state\pilot\corpus.sqlite --config config\book-extension-pilot.toml --vulnerability-book C:\book-extension-state\pilot\peta-shock.db --runtime-exe script\book-extension-rs\target\release\book-extender.exe --output C:\transfer\pilot.zip
+& $python script\manage_book_corpus.py bundle-create --book C:\book-extension-state\pilot\output-book.db --db C:\book-extension-state\pilot\corpus.sqlite --config config\book-extension-pilot.toml --runtime-exe script\book-extension-rs\target\release\book-extender.exe --output C:\transfer\pilot.zip
 & $python script\manage_book_corpus.py bundle-verify --bundle C:\transfer\pilot.zip --destination C:\book-extension-work\pilot
 & $python script\manage_book_corpus.py bundle-claim --bundle-id '<manifest bundle_id>' --registry \\server\book-extension-claims --machine-id $env:COMPUTERNAME
 ```
 
 同じ bundle ID の2台目は共有 registry の排他的 claim で拒否される。最新棋譜の追加時は延長を停止し、transactional ingest、coverage snapshot、bundle再作成、再開の順に行う。N は維持し、飽和 counter だけをリセットする。
+
+搬送先ではbundle内のやねうら王形式bookを`book-sqlite import`で新しいSQLite正本へ取り込む。評価値、深さ、応手、visitsはexportに含まれるため探索状態を復元できる。
 
 `peta_shock` はこの一連の処理から自動実行しない。保存済み DB に対し、利用者が任意の時点で手動実行する。
 

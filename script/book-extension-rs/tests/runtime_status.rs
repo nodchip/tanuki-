@@ -18,14 +18,8 @@ fn writes_complete_status_atomically_without_leaving_temp_file() {
         total_nodes: 900,
         running_workers: 3,
         corpus_active: 1,
-        lane_searches: BTreeMap::from([
-            ("normal".to_owned(), 5),
-            ("vulnerability-black".to_owned(), 4),
-        ]),
-        lane_active: BTreeMap::from([
-            ("normal".to_owned(), 2),
-            ("vulnerability-black".to_owned(), 1),
-        ]),
+        lane_searches: BTreeMap::from([("normal".to_owned(), 5), ("fixed-black".to_owned(), 4)]),
+        lane_active: BTreeMap::from([("normal".to_owned(), 2), ("fixed-black".to_owned(), 1)]),
         last_search: Some(LastSearchStatus {
             lane: "normal".to_owned(),
             depth: 83,

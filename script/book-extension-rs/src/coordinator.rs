@@ -9,7 +9,6 @@ use std::{
 use thiserror::Error;
 
 use crate::{
-    book::OpeningBook,
     corpus::{
         CandidateChoice, CorpusCandidate, CorpusStore, FrontierTransition, RolloutObservation,
         SearchCompletion, SearchTaskStatus, SourceSite,
@@ -22,21 +21,17 @@ use crate::{
         BookSaveStatus, LastCandidateStatus, LastSearchStatus, RuntimeStatusSnapshot,
         TaskStatusCounts, write_runtime_status_atomic,
     },
-    search::{
-        LeafPath, PetaFilter, SearchError, increment_path_visits, merge_search_results,
-        propagate_minimax, reserve_leaf_path_with_filter_and_random,
-    },
-    storage::{save_validated_atomic, sha256_file},
+    search::{LeafPath, PetaFilter, SearchError, reserve_leaf_path_with_filter_and_random},
+    sqlite_book::{SqliteOpeningBook, export_yaneuraou_atomic},
+    storage::sha256_file,
     usi::PositionRoot,
 };
 
 #[derive(Clone, Debug)]
 pub enum WorkerRole {
     General,
-    Vulnerability {
-        target_book: Arc<crate::disk_book::DiskOpeningBook>,
-        target_side: &'static str,
-    },
+    FixedBlack,
+    FixedWhite,
 }
 
 #[derive(Clone, Debug)]
@@ -81,6 +76,7 @@ pub struct NormalRuntimeOptions {
     pub eval_scale: f64,
     pub book_side: &'static str,
     pub eval_diff: Option<i32>,
+    pub min_eval_cp: Option<i32>,
     pub root_sfen: String,
     pub search_timeout_sec: f64,
     pub random_seed: Option<u64>,
@@ -120,7 +116,7 @@ pub enum CoordinatorError {
 }
 
 struct SharedState {
-    book: OpeningBook,
+    book: SqliteOpeningBook,
     run_id: String,
     started_at: f64,
     inflight: HashSet<String>,
@@ -154,10 +150,10 @@ struct CorpusWork {
 }
 
 pub fn run_normal_extension(
-    mut book: OpeningBook,
+    mut book: SqliteOpeningBook,
     engine_path: &Path,
     options: &NormalRuntimeOptions,
-) -> Result<(OpeningBook, NormalRuntimeReport), CoordinatorError> {
+) -> Result<(SqliteOpeningBook, NormalRuntimeReport), CoordinatorError> {
     let runtime_started = std::time::Instant::now();
     if options.worker_roles.is_empty()
         || options.nodes == 0
@@ -243,7 +239,7 @@ pub fn run_normal_extension(
             let mut last_saved = None;
             let mut next_save = std::time::Instant::now() + interval;
             'save_loop: loop {
-                let (snapshot, generation, through_task, workers_done) = {
+                let (database_path, generation, through_task, workers_done) = {
                     let (state_lock, wake) = &*shared;
                     let mut state = state_lock.lock().map_err(|_| CoordinatorError::Poisoned)?;
                     while state.running_workers != 0 && std::time::Instant::now() < next_save {
@@ -269,15 +265,15 @@ pub fn run_normal_extension(
                         .map_err(|error| CoordinatorError::Worker(error.to_string()))?
                         .flatten();
                     (
-                        state.book.clone(),
+                        state.book.path().to_path_buf(),
                         state.generation,
                         through_task,
                         state.running_workers == 0,
                     )
                 };
                 let save_started = std::time::Instant::now();
-                if let Err(error) = save_validated_atomic(
-                    &snapshot,
+                if let Err(error) = export_yaneuraou_atomic(
+                    &database_path,
                     &persistence.output_path,
                     persistence.backup_count,
                 ) {
@@ -388,6 +384,23 @@ pub fn run_normal_extension(
             }
         })
     };
+    if let Some(control) = &options.stop_control
+        && let Some(heartbeat_path) = control.heartbeat_path.as_deref()
+    {
+        let monitor = HeartbeatMonitor::new(
+            heartbeat_path,
+            control.heartbeat_timeout_sec,
+            unix_time(),
+            control.stop_request_path.clone(),
+        )
+        .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
+        if let Some(reason) = monitor.stop_reason(unix_time()) {
+            let mut state = shared.0.lock().map_err(|_| CoordinatorError::Poisoned)?;
+            state.stop_admission = true;
+            state.discard_results = true;
+            state.stop_reason = Some(reason.to_owned());
+        }
+    }
     let monitor_handle = options.stop_control.clone().map(|control| {
         let shared = Arc::clone(&shared);
         thread::spawn(move || -> Result<(), CoordinatorError> {
@@ -798,15 +811,8 @@ fn search_with_retries(
 fn worker_role_label(role: &WorkerRole) -> &'static str {
     match role {
         WorkerRole::General => "normal",
-        WorkerRole::Vulnerability {
-            target_side: "black",
-            ..
-        } => "vulnerability-black",
-        WorkerRole::Vulnerability {
-            target_side: "white",
-            ..
-        } => "vulnerability-white",
-        WorkerRole::Vulnerability { .. } => "vulnerability-invalid",
+        WorkerRole::FixedBlack => "fixed-black",
+        WorkerRole::FixedWhite => "fixed-white",
     }
 }
 struct WorkerDoneGuard(Arc<(Mutex<SharedState>, Condvar)>);
@@ -821,7 +827,7 @@ impl Drop for WorkerDoneGuard {
 }
 
 pub fn replay_corpus_results(
-    book: &mut OpeningBook,
+    book: &mut SqliteOpeningBook,
     store: &CorpusStore,
     book_hash: &str,
 ) -> Result<usize, CoordinatorError> {
@@ -830,23 +836,20 @@ pub fn replay_corpus_results(
         .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
     let mut added = 0;
     for stored in results {
-        let position = book
-            .ensure_position(&stored.position_key)
-            .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
-        if position.find_entry(&stored.move_usi).is_some() {
-            continue;
+        if book
+            .add_result_if_absent(
+                &stored.position_key,
+                &crate::search::SearchResult::new(
+                    stored.move_usi,
+                    stored.response,
+                    stored.eval_cp,
+                    stored.depth,
+                ),
+            )
+            .map_err(|error| CoordinatorError::Worker(error.to_string()))?
+        {
+            added += 1;
         }
-        merge_search_results(
-            position,
-            &[crate::search::SearchResult::new(
-                stored.move_usi,
-                stored.response,
-                stored.eval_cp,
-                stored.depth,
-            )],
-            None,
-        );
-        added += 1;
     }
     Ok(added)
 }
@@ -892,61 +895,39 @@ fn reserve_normal_work(
             random,
             ..
         } = &mut *state;
-        let selected = match role {
-            WorkerRole::General => {
-                let filter = options.eval_diff.and_then(|eval_diff| {
-                    book.position(&options.root_sfen)
-                        .and_then(|position| {
-                            position.entries.iter().map(|entry| entry.eval_cp).max()
-                        })
-                        .map(|root_best_eval| PetaFilter {
-                            book_side: options.book_side,
-                            root_best_eval,
-                            eval_diff,
-                        })
-                });
-                reserve_leaf_path_with_filter_and_random(
-                    book,
-                    &options.root_sfen,
-                    options.multipv,
-                    options.c_puct,
-                    options.eval_scale,
-                    inflight,
-                    options.max_ply,
-                    filter.as_ref(),
-                    Some(random),
-                )?
-            }
-            WorkerRole::Vulnerability {
-                target_book,
-                target_side,
-            } => {
-                let filter = options.eval_diff.and_then(|eval_diff| {
-                    book.position(&options.root_sfen)
-                        .and_then(|position| {
-                            position.entries.iter().map(|entry| entry.eval_cp).max()
-                        })
-                        .map(|root_best_eval| PetaFilter {
-                            book_side: target_side,
-                            root_best_eval,
-                            eval_diff,
-                        })
-                });
-                crate::search::reserve_vulnerability_leaf_path_with_filter_and_random(
-                    book,
-                    target_book.as_ref(),
-                    &options.root_sfen,
-                    target_side,
-                    options.multipv,
-                    options.c_puct,
-                    options.eval_scale,
-                    inflight,
-                    options.max_ply,
-                    filter.as_ref(),
-                    Some(random),
-                )?
-            }
+        let book_side = match role {
+            WorkerRole::FixedBlack => Some("black"),
+            WorkerRole::FixedWhite => Some("white"),
+            WorkerRole::General if options.eval_diff.is_some() => Some(options.book_side),
+            WorkerRole::General => None,
         };
+        let filter = if book_side.is_some()
+            || options.eval_diff.is_some()
+            || options.min_eval_cp.is_some()
+        {
+            book.position(&options.root_sfen)
+                .map_err(|error| CoordinatorError::Worker(error.to_string()))?
+                .and_then(|position| position.entries.iter().map(|entry| entry.eval_cp).max())
+                .map(|root_best_eval| PetaFilter {
+                    book_side,
+                    root_best_eval,
+                    eval_diff: options.eval_diff,
+                    min_eval_cp: options.min_eval_cp,
+                })
+        } else {
+            None
+        };
+        let selected = reserve_leaf_path_with_filter_and_random(
+            book,
+            &options.root_sfen,
+            options.multipv,
+            options.c_puct,
+            options.eval_scale,
+            inflight,
+            options.max_ply,
+            filter.as_ref(),
+            Some(random),
+        )?;
         match selected {
             Some(path) => {
                 let lane = worker_role_label(role).to_owned();
@@ -974,16 +955,11 @@ fn apply_normal_results(
     path: &LeafPath,
     results: &[crate::search::SearchResult],
 ) -> Result<(), CoordinatorError> {
-    let existed = state.book.position(&path.leaf_sfen).is_some();
-    let selected_move = path.steps.last().map(|step| step.move_usi.as_str());
-    let position = state
+    let added_position = state
         .book
-        .ensure_position(&path.leaf_sfen)
+        .apply_search_results(path, results)
         .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
-    merge_search_results(position, results, selected_move);
-    increment_path_visits(&mut state.book, path)?;
-    propagate_minimax(&mut state.book, path)?;
-    if !existed {
+    if added_position {
         state.added_positions += 1;
     }
     state.generation += 1;
@@ -1055,15 +1031,10 @@ fn reserve_corpus_work(
         for (visit_index, (sfen, visit_history, visit_path)) in visited.iter().enumerate() {
             let excluded: HashSet<String> = state
                 .book
-                .position(sfen)
-                .map(|position| {
-                    position
-                        .entries
-                        .iter()
-                        .map(|entry| entry.move_usi.clone())
-                        .collect()
-                })
-                .unwrap_or_default();
+                .move_usis(sfen)
+                .map_err(|error| CoordinatorError::Worker(error.to_string()))?
+                .into_iter()
+                .collect();
             for (site_rank, site_name) in site_order.iter().enumerate() {
                 let site = SourceSite::from_name(site_name);
                 let probe = state
@@ -1247,14 +1218,14 @@ fn apply_corpus_result(
     }
     match result {
         Ok(result) => {
-            let position = state
+            let added = state
                 .book
-                .ensure_position(&work.sfen)
+                .add_result_if_absent(&work.sfen, &result)
                 .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
-            let added = position.find_entry(&result.move_usi).is_none();
-            merge_search_results(position, std::slice::from_ref(&result), None);
-            increment_path_visits(&mut state.book, &work.path)?;
-            propagate_minimax(&mut state.book, &work.path)?;
+            state
+                .book
+                .apply_search_results(&work.path, std::slice::from_ref(&result))
+                .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
             state
                 .corpus_store
                 .as_mut()

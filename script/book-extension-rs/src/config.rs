@@ -20,22 +20,18 @@ pub enum ConfigError {
 pub struct WorkerConfig {
     pub engine_count: usize,
     pub threads_per_engine: usize,
-    pub vulnerability_black: usize,
-    pub vulnerability_white: usize,
+    #[serde(alias = "vulnerability_black")]
+    pub fixed_black: usize,
+    #[serde(alias = "vulnerability_white")]
+    pub fixed_white: usize,
     pub general: usize,
 }
 
 impl WorkerConfig {
     pub fn roles(&self) -> Vec<&'static str> {
         let mut roles = Vec::with_capacity(self.engine_count);
-        roles.extend(std::iter::repeat_n(
-            "vulnerability_black",
-            self.vulnerability_black,
-        ));
-        roles.extend(std::iter::repeat_n(
-            "vulnerability_white",
-            self.vulnerability_white,
-        ));
+        roles.extend(std::iter::repeat_n("fixed_black", self.fixed_black));
+        roles.extend(std::iter::repeat_n("fixed_white", self.fixed_white));
         roles.extend(std::iter::repeat_n("general", self.general));
         roles
     }
@@ -47,10 +43,10 @@ impl WorkerConfig {
         if self.threads_per_engine < 1 {
             return invalid("threads_per_engine must be at least 1");
         }
-        let assigned = self.vulnerability_black + self.vulnerability_white + self.general;
+        let assigned = self.fixed_black + self.fixed_white + self.general;
         if assigned != self.engine_count {
             return invalid(format!(
-                "engine_count must equal vulnerability_black + vulnerability_white + general ({assigned})"
+                "engine_count must equal fixed_black + fixed_white + general ({assigned})"
             ));
         }
         Ok(())

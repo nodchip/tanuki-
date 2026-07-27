@@ -1,12 +1,10 @@
 use book_extension_runtime::{
     book::{BookEntry, OpeningBook},
-    disk_book::DiskOpeningBook,
     python_random::PythonRandom,
     search::{
         LeafPath, PathStep, PetaFilter, SearchResult, calculate_ucb, merge_search_results,
         propagate_minimax, reserve_leaf_path, reserve_leaf_path_with_filter,
-        reserve_vulnerability_leaf_path, reserve_vulnerability_leaf_path_with_filter,
-        reserve_vulnerability_leaf_path_with_filter_and_random, score_to_winrate,
+        reserve_leaf_path_with_filter_and_random, score_to_winrate,
     },
 };
 
@@ -125,88 +123,29 @@ fn incomplete_distinct_legal_multipv_stops_at_current_position() {
 }
 
 #[test]
-fn vulnerability_selection_forces_target_book_bestmove_on_target_side() {
-    let mut book = OpeningBook::new(false);
-    let mut target = OpeningBook::new(false);
-    target.ensure_position(STARTPOS).unwrap().entries = vec![
-        BookEntry::new("2g2f", "8c8d", 10, 1, 8, 0),
-        BookEntry::new("7g7f", "3c3d", 100, 7, 9, 1),
-    ];
-    let mut inflight = Default::default();
-
-    let path = reserve_vulnerability_leaf_path(
-        &mut book,
-        &target,
-        STARTPOS,
-        "black",
-        4,
-        1.4,
-        600.0,
-        &mut inflight,
-        Some(10),
-    )
-    .unwrap()
-    .expect("target leaf selected");
-
-    assert_eq!(path.steps, vec![PathStep::new(STARTPOS, "7g7f")]);
-    assert_eq!(path.leaf_sfen, AFTER_7G7F);
-    assert_eq!(
-        book.position(STARTPOS).unwrap().entries,
-        vec![BookEntry::new("7g7f", "3c3d", 100, 7, 0, 0)]
-    );
-}
-
-#[test]
-fn vulnerability_selection_reads_the_target_position_from_disk() {
-    let directory = tempfile::tempdir().unwrap();
-    let target_path = directory.path().join("target.db");
-    std::fs::write(
-        &target_path,
-        format!("#YANEURAOU-DB2016 1.00\nsfen {STARTPOS}\n2g2f 8c8d 10 1 0\n7g7f 3c3d 100 7 0\n"),
-    )
-    .unwrap();
-    let target = DiskOpeningBook::open(&target_path, false).unwrap();
-    let mut book = OpeningBook::new(false);
-
-    let path = reserve_vulnerability_leaf_path(
-        &mut book,
-        &target,
-        STARTPOS,
-        "black",
-        4,
-        1.4,
-        600.0,
-        &mut Default::default(),
-        Some(10),
-    )
-    .unwrap()
-    .expect("target leaf selected");
-
-    assert_eq!(path.steps, vec![PathStep::new(STARTPOS, "7g7f")]);
-    assert_eq!(path.leaf_sfen, AFTER_7G7F);
-}
-
-#[test]
 fn fixed_seed_tie_break_matches_python_random_choice() {
     let mut book = OpeningBook::new(false);
-    let mut target = OpeningBook::new(false);
-    target.ensure_position(STARTPOS).unwrap().entries = vec![
+    book.ensure_position(STARTPOS).unwrap().entries = vec![
         BookEntry::new("7g7f", "3c3d", 100, 1, 0, 0),
         BookEntry::new("2g2f", "8c8d", 100, 1, 0, 1),
     ];
     let mut random = PythonRandom::seeded(0);
+    let filter = PetaFilter {
+        book_side: Some("black"),
+        root_best_eval: 100,
+        eval_diff: None,
+        min_eval_cp: None,
+    };
 
-    let path = reserve_vulnerability_leaf_path_with_filter_and_random(
-        &mut book,
-        &target,
+    let path = reserve_leaf_path_with_filter_and_random(
+        &book,
         STARTPOS,
-        "black",
         2,
         1.4,
         600.0,
         &mut Default::default(),
         Some(10),
-        None,
+        Some(&filter),
         Some(&mut random),
     )
     .unwrap()
@@ -224,9 +163,10 @@ fn peta_filter_forces_best_eval_on_book_side_even_when_other_move_has_higher_ucb
     ];
     let mut inflight = Default::default();
     let filter = PetaFilter {
-        book_side: "black",
+        book_side: Some("black"),
         root_best_eval: 100,
-        eval_diff: 50,
+        eval_diff: Some(50),
+        min_eval_cp: None,
     };
 
     let path = reserve_leaf_path_with_filter(
@@ -254,9 +194,10 @@ fn peta_filter_removes_attack_side_move_below_root_threshold() {
     ];
     let mut inflight = Default::default();
     let filter = PetaFilter {
-        book_side: "black",
+        book_side: Some("black"),
         root_best_eval: 100,
-        eval_diff: 50,
+        eval_diff: Some(50),
+        min_eval_cp: None,
     };
 
     let path = reserve_leaf_path_with_filter(
@@ -276,25 +217,23 @@ fn peta_filter_removes_attack_side_move_below_root_threshold() {
 }
 
 #[test]
-fn vulnerability_attack_side_filters_moves_below_root_threshold() {
+fn absolute_eval_floor_filters_moves_without_root_relative_threshold() {
     let mut book = OpeningBook::new(false);
     book.ensure_position(AFTER_7G7F).unwrap().entries = vec![
         BookEntry::new("3c3d", "none", 40, 1, 0, 0),
         BookEntry::new("8c8d", "none", 70, 1, 100, 1),
     ];
-    let target = OpeningBook::new(false);
     let filter = PetaFilter {
-        book_side: "black",
-        root_best_eval: 100,
-        eval_diff: 50,
+        book_side: None,
+        root_best_eval: 500,
+        eval_diff: None,
+        min_eval_cp: Some(50),
     };
     let mut inflight = Default::default();
 
-    let path = reserve_vulnerability_leaf_path_with_filter(
-        &mut book,
-        &target,
+    let path = reserve_leaf_path_with_filter(
+        &book,
         AFTER_7G7F,
-        "black",
         2,
         10.0,
         600.0,

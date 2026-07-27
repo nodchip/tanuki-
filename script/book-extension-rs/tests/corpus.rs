@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 
 use book_extension_runtime::{
-    book::OpeningBook,
     coordinator::replay_corpus_results,
     corpus::{
         CorpusStore, FailureClass, FrontierTransition, RolloutObservation, SearchCompletion,
         SearchTaskStatus, SourceSite,
     },
+    sqlite_book::SqliteOpeningBook,
 };
 
 #[test]
@@ -242,8 +242,7 @@ fn replay_applies_evaluated_unpersisted_result_to_memory_book_once() {
             },
         )
         .unwrap();
-    let mut book = OpeningBook::new(false);
-    book.ensure_position(root).unwrap();
+    let mut book = SqliteOpeningBook::open(&directory.path().join("book.sqlite"), false).unwrap();
 
     assert_eq!(
         replay_corpus_results(&mut book, &store, "unknown").unwrap(),
@@ -253,8 +252,11 @@ fn replay_applies_evaluated_unpersisted_result_to_memory_book_once() {
         replay_corpus_results(&mut book, &store, "unknown").unwrap(),
         0
     );
-    assert_eq!(book.position(root).unwrap().entries[0].move_usi, "8g8f");
-    assert_eq!(book.position(root).unwrap().entries[0].eval_cp, 66);
+    assert_eq!(
+        book.position(root).unwrap().unwrap().entries[0].move_usi,
+        "8g8f"
+    );
+    assert_eq!(book.position(root).unwrap().unwrap().entries[0].eval_cp, 66);
 }
 
 #[test]

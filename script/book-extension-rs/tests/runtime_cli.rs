@@ -296,7 +296,7 @@ usi_stop_timeout_sec = 5
     );
 }
 #[test]
-fn configured_vulnerability_black_worker_forces_target_book_move() {
+fn configured_fixed_black_worker_uses_best_imported_move() {
     let directory = tempfile::tempdir().unwrap();
     let input = directory.path().join("input.db");
     let target = directory.path().join("target.db");
@@ -364,21 +364,21 @@ usi_stop_timeout_sec = 5
     );
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert!(
-        stderr.contains("[search-start] lane=vulnerability-black depth=1"),
+        stderr.contains("[search-start] lane=fixed-black depth=1"),
         "{stderr}"
     );
     assert!(
-        stderr.contains("[search-finish] lane=vulnerability-black depth=1"),
+        stderr.contains("[search-finish] lane=fixed-black depth=1"),
         "{stderr}"
     );
     let saved = std::fs::read_to_string(&output).unwrap();
     let root_section = book_section(&saved, book_extension_runtime::STARTPOS_SFEN);
     assert!(root_section.contains("2g2f 8c8d -25 1 1"), "{saved}");
-    assert!(!root_section.contains("7g7f 3c3d 10 1 0"), "{saved}");
+    assert!(root_section.contains("7g7f 3c3d 10 1 0"), "{saved}");
 }
 
 #[test]
-fn configured_vulnerability_worker_rejects_an_unsorted_target_book() {
+fn legacy_target_option_rejects_an_unsorted_book() {
     let directory = tempfile::tempdir().unwrap();
     let input = directory.path().join("input.db");
     let target = directory.path().join("target.db");

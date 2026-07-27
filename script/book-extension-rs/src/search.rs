@@ -5,7 +5,6 @@ use thiserror::Error;
 
 use crate::{
     book::{BookEntry, BookPosition, OpeningBook},
-    disk_book::TargetBook,
     python_random::PythonRandom,
     validation::{legal_distinct_entry_count, parse_move, parse_position},
 };
@@ -67,8 +66,23 @@ pub enum SearchError {
     InvalidSfen(String),
     #[error("illegal move {move_usi} in {sfen}")]
     IllegalMove { sfen: String, move_usi: String },
-    #[error("target book lookup failed: {0}")]
-    TargetBook(String),
+    #[error("book lookup failed: {0}")]
+    Book(String),
+}
+
+pub trait SearchBook {
+    fn search_position(&self, sfen: &str) -> Result<Option<BookPosition>, SearchError>;
+    fn search_position_key(&self, sfen: &str) -> String;
+}
+
+impl SearchBook for OpeningBook {
+    fn search_position(&self, sfen: &str) -> Result<Option<BookPosition>, SearchError> {
+        Ok(self.position(sfen).cloned())
+    }
+
+    fn search_position_key(&self, sfen: &str) -> String {
+        self.position_key(sfen)
+    }
 }
 
 pub fn score_to_winrate(eval_cp: i32, eval_scale: f64) -> Result<f64, SearchError> {
@@ -174,13 +188,14 @@ fn is_no_response(response: &str) -> bool {
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PetaFilter {
-    pub book_side: &'static str,
+    pub book_side: Option<&'static str>,
     pub root_best_eval: i32,
-    pub eval_diff: i32,
+    pub eval_diff: Option<i32>,
+    pub min_eval_cp: Option<i32>,
 }
 
-pub fn reserve_leaf_path(
-    book: &OpeningBook,
+pub fn reserve_leaf_path<B: SearchBook + ?Sized>(
+    book: &B,
     root_sfen: &str,
     multipv: usize,
     c_puct: f64,
@@ -194,8 +209,8 @@ pub fn reserve_leaf_path(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn reserve_leaf_path_with_filter(
-    book: &OpeningBook,
+pub fn reserve_leaf_path_with_filter<B: SearchBook + ?Sized>(
+    book: &B,
     root_sfen: &str,
     multipv: usize,
     c_puct: f64,
@@ -209,8 +224,8 @@ pub fn reserve_leaf_path_with_filter(
     )
 }
 #[allow(clippy::too_many_arguments)]
-pub fn reserve_leaf_path_with_filter_and_random(
-    book: &OpeningBook,
+pub fn reserve_leaf_path_with_filter_and_random<B: SearchBook + ?Sized>(
+    book: &B,
     root_sfen: &str,
     multipv: usize,
     c_puct: f64,
@@ -220,7 +235,7 @@ pub fn reserve_leaf_path_with_filter_and_random(
     filter: Option<&PetaFilter>,
     random: Option<&mut PythonRandom>,
 ) -> Result<Option<LeafPath>, SearchError> {
-    let root_key = book.position_key(root_sfen);
+    let root_key = book.search_position_key(root_sfen);
     let mut visiting = HashSet::new();
     let mut dead = HashSet::new();
     let path = select_available_leaf(
@@ -244,8 +259,8 @@ pub fn reserve_leaf_path_with_filter_and_random(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn select_available_leaf(
-    book: &OpeningBook,
+fn select_available_leaf<B: SearchBook + ?Sized>(
+    book: &B,
     sfen: &str,
     multipv: usize,
     c_puct: f64,
@@ -267,7 +282,7 @@ fn select_available_leaf(
     if visiting.contains(sfen) || dead.contains(sfen) {
         return Ok(None);
     }
-    let Some(position) = book.position(sfen) else {
+    let Some(position) = book.search_position(sfen)? else {
         return Ok((!inflight.contains(sfen)).then(|| LeafPath {
             steps: Vec::new(),
             leaf_sfen: sfen.to_owned(),
@@ -293,13 +308,21 @@ fn select_available_leaf(
         shogi_core::Color::White => "white",
     };
     let filtered: Vec<&BookEntry> = match filter {
-        Some(filter) if turn == filter.book_side => {
+        Some(filter) if filter.book_side == Some(turn) => {
             best_eval_entry(&position.entries, random.as_deref_mut())
                 .into_iter()
                 .collect()
         }
         Some(filter) => {
-            let threshold = filter.root_best_eval - filter.eval_diff;
+            let relative_threshold = filter
+                .eval_diff
+                .map(|eval_diff| filter.root_best_eval.saturating_sub(eval_diff));
+            let threshold = match (relative_threshold, filter.min_eval_cp) {
+                (Some(relative), Some(absolute)) => relative.max(absolute),
+                (Some(relative), None) => relative,
+                (None, Some(absolute)) => absolute,
+                (None, None) => i32::MIN,
+            };
             position
                 .entries
                 .iter()
@@ -356,245 +379,6 @@ fn select_available_leaf(
     dead.insert(sfen.to_owned());
     Ok(None)
 }
-#[allow(clippy::too_many_arguments)]
-pub fn reserve_vulnerability_leaf_path<T: TargetBook + ?Sized>(
-    book: &mut OpeningBook,
-    target_book: &T,
-    root_sfen: &str,
-    target_side: &str,
-    multipv: usize,
-    c_puct: f64,
-    eval_scale: f64,
-    inflight: &mut HashSet<String>,
-    max_ply: Option<usize>,
-) -> Result<Option<LeafPath>, SearchError> {
-    reserve_vulnerability_leaf_path_with_filter(
-        book,
-        target_book,
-        root_sfen,
-        target_side,
-        multipv,
-        c_puct,
-        eval_scale,
-        inflight,
-        max_ply,
-        None,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn reserve_vulnerability_leaf_path_with_filter<T: TargetBook + ?Sized>(
-    book: &mut OpeningBook,
-    target_book: &T,
-    root_sfen: &str,
-    target_side: &str,
-    multipv: usize,
-    c_puct: f64,
-    eval_scale: f64,
-    inflight: &mut HashSet<String>,
-    max_ply: Option<usize>,
-    filter: Option<&PetaFilter>,
-) -> Result<Option<LeafPath>, SearchError> {
-    reserve_vulnerability_leaf_path_with_filter_and_random(
-        book,
-        target_book,
-        root_sfen,
-        target_side,
-        multipv,
-        c_puct,
-        eval_scale,
-        inflight,
-        max_ply,
-        filter,
-        None,
-    )
-}
-#[allow(clippy::too_many_arguments)]
-pub fn reserve_vulnerability_leaf_path_with_filter_and_random<T: TargetBook + ?Sized>(
-    book: &mut OpeningBook,
-    target_book: &T,
-    root_sfen: &str,
-    target_side: &str,
-    multipv: usize,
-    c_puct: f64,
-    eval_scale: f64,
-    inflight: &mut HashSet<String>,
-    max_ply: Option<usize>,
-    filter: Option<&PetaFilter>,
-    random: Option<&mut PythonRandom>,
-) -> Result<Option<LeafPath>, SearchError> {
-    let root_key = book.position_key(root_sfen);
-    let mut visiting = HashSet::new();
-    let mut dead = HashSet::new();
-    let path = select_vulnerability_leaf(
-        book,
-        target_book,
-        &root_key,
-        target_side,
-        multipv,
-        c_puct,
-        eval_scale,
-        inflight,
-        max_ply,
-        filter,
-        random,
-        0,
-        &mut visiting,
-        &mut dead,
-    )?;
-    if let Some(path) = &path {
-        inflight.insert(path.leaf_sfen.clone());
-    }
-    Ok(path)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn select_vulnerability_leaf<T: TargetBook + ?Sized>(
-    book: &mut OpeningBook,
-    target_book: &T,
-    sfen: &str,
-    target_side: &str,
-    multipv: usize,
-    c_puct: f64,
-    eval_scale: f64,
-    inflight: &HashSet<String>,
-    max_ply: Option<usize>,
-    filter: Option<&PetaFilter>,
-    mut random: Option<&mut PythonRandom>,
-    depth: usize,
-    visiting: &mut HashSet<String>,
-    dead: &mut HashSet<String>,
-) -> Result<Option<LeafPath>, SearchError> {
-    if max_ply.is_some_and(|limit| depth >= limit) {
-        return Ok((!inflight.contains(sfen)).then(|| LeafPath {
-            steps: Vec::new(),
-            leaf_sfen: sfen.to_owned(),
-        }));
-    }
-    if visiting.contains(sfen) || dead.contains(sfen) {
-        return Ok(None);
-    }
-    let parsed = parse_position(sfen).ok_or_else(|| SearchError::InvalidSfen(sfen.to_owned()))?;
-    let turn = match parsed.side_to_move() {
-        shogi_core::Color::Black => "black",
-        shogi_core::Color::White => "white",
-    };
-    if turn == target_side {
-        let target_entries = target_book
-            .lookup(sfen)
-            .map_err(|error| SearchError::TargetBook(error.to_string()))?;
-        if let Some(source) = best_eval_entry(&target_entries, random.as_deref_mut()).cloned() {
-            let move_usi = book
-                .ensure_external_entry(sfen, &source)
-                .map_err(|error| SearchError::MissingPosition(error.to_string()))?;
-            let child_sfen = child_sfen(book, sfen, &move_usi)?;
-            visiting.insert(sfen.to_owned());
-            let child = select_vulnerability_leaf(
-                book,
-                target_book,
-                &child_sfen,
-                target_side,
-                multipv,
-                c_puct,
-                eval_scale,
-                inflight,
-                max_ply,
-                filter,
-                random.as_deref_mut(),
-                depth + 1,
-                visiting,
-                dead,
-            )?;
-            visiting.remove(sfen);
-            if let Some(mut child) = child {
-                child.steps.insert(0, PathStep::new(sfen, move_usi));
-                return Ok(Some(child));
-            }
-            dead.insert(sfen.to_owned());
-            return Ok(None);
-        }
-    }
-
-    let Some(position) = book.position(sfen) else {
-        return Ok((!inflight.contains(sfen)).then(|| LeafPath {
-            steps: Vec::new(),
-            leaf_sfen: sfen.to_owned(),
-        }));
-    };
-    if position.entries.is_empty() {
-        return Ok((!inflight.contains(sfen)).then(|| LeafPath {
-            steps: Vec::new(),
-            leaf_sfen: sfen.to_owned(),
-        }));
-    }
-    let required = multipv.min(all_legal_moves_partial(&parsed).len());
-    if legal_distinct_entry_count(sfen, &position.entries) < required {
-        return Ok((!inflight.contains(sfen)).then(|| LeafPath {
-            steps: Vec::new(),
-            leaf_sfen: sfen.to_owned(),
-        }));
-    }
-    let parent_visits = position.entries.iter().map(|entry| entry.visits).sum();
-    let mut candidates: Vec<(f64, usize, String)> = if turn == target_side {
-        let best = best_eval_entry(&position.entries, random.as_deref_mut())
-            .expect("entries checked above");
-        vec![(0.0, best.order_index, best.move_usi.clone())]
-    } else {
-        let threshold = filter.map(|filter| filter.root_best_eval - filter.eval_diff);
-        position
-            .entries
-            .iter()
-            .filter(|entry| threshold.is_none_or(|threshold| entry.eval_cp >= threshold))
-            .map(|entry| {
-                Ok((
-                    calculate_ucb(
-                        entry.eval_cp,
-                        entry.visits,
-                        parent_visits,
-                        c_puct,
-                        eval_scale,
-                    )?,
-                    entry.order_index,
-                    entry.move_usi.clone(),
-                ))
-            })
-            .collect::<Result<Vec<_>, SearchError>>()?
-    };
-    candidates.sort_by(|left, right| {
-        right
-            .0
-            .total_cmp(&left.0)
-            .then_with(|| left.1.cmp(&right.1))
-    });
-    visiting.insert(sfen.to_owned());
-    for (_, _, move_usi) in candidates {
-        let child_sfen = child_sfen(book, sfen, &move_usi)?;
-        if let Some(mut child) = select_vulnerability_leaf(
-            book,
-            target_book,
-            &child_sfen,
-            target_side,
-            multipv,
-            c_puct,
-            eval_scale,
-            inflight,
-            max_ply,
-            filter,
-            random.as_deref_mut(),
-            depth + 1,
-            visiting,
-            dead,
-        )? {
-            visiting.remove(sfen);
-            child.steps.insert(0, PathStep::new(sfen, move_usi));
-            return Ok(Some(child));
-        }
-    }
-    visiting.remove(sfen);
-    dead.insert(sfen.to_owned());
-    Ok(None)
-}
-
 fn best_eval_entry<'a>(
     entries: &'a [BookEntry],
     random: Option<&mut PythonRandom>,
@@ -609,7 +393,11 @@ fn best_eval_entry<'a>(
         .unwrap_or(0);
     tied.get(index).copied()
 }
-fn child_sfen(book: &OpeningBook, sfen: &str, move_usi: &str) -> Result<String, SearchError> {
+fn child_sfen<B: SearchBook + ?Sized>(
+    book: &B,
+    sfen: &str,
+    move_usi: &str,
+) -> Result<String, SearchError> {
     let parsed = parse_position(sfen).ok_or_else(|| SearchError::InvalidSfen(sfen.to_owned()))?;
     let move_value =
         parse_move(move_usi, parsed.side_to_move()).ok_or_else(|| SearchError::IllegalMove {
@@ -629,5 +417,5 @@ fn child_sfen(book: &OpeningBook, sfen: &str, move_usi: &str) -> Result<String, 
             sfen: sfen.to_owned(),
             move_usi: move_usi.to_owned(),
         })?;
-    Ok(book.position_key(&child.to_sfen_owned()))
+    Ok(book.search_position_key(&child.to_sfen_owned()))
 }
