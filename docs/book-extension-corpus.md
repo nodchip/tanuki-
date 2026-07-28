@@ -133,21 +133,20 @@ cargo build --manifest-path script\book-extension-rs\Cargo.toml --release --bin 
 $runtime = Resolve-Path script\book-extension-rs\target\release\book-extender.exe
 $bookSqlite = Resolve-Path script\book-extension-rs\target\release\book-sqlite.exe
 $bookDb = 'C:\book-extension-state\pilot\opening-book.sqlite'
-& $bookSqlite import --database $bookDb --input C:\book-extension-state\pilot\peta-shock.db
-& $bookSqlite import --database $bookDb --input C:\book-extension-state\pilot\tanuki-.2026-07-24.2.db
+& $bookSqlite import --database $bookDb --input C:\book-extension-state\pilot\peta-shock.db --allow-unsorted
+& $bookSqlite import --database $bookDb --input C:\book-extension-state\pilot\tanuki-.2026-07-24.2.db --allow-unsorted
 & $runtime `
   --config config\book-extension-pilot.toml `
   --database $bookDb `
-  --input C:\book-extension-state\pilot\peta-shock.db `
   --output C:\book-extension-state\pilot\output-book.db `
   --engine C:\engine\YaneuraOu.exe `
   --nodes 3000000 --multipv 4 `
-  --min-eval-cp -200 `
+  --min-eval-cp=-200 `
   --corpus-db C:\book-extension-state\pilot\corpus.sqlite `
   --max-runtime-sec 600
 ```
 
-24時間pilotは同じコマンドの`--max-runtime-sec`を`86400`へ変更する。SQLiteを定跡の正本とし、`--output`のやねうら王形式はエンジン配布・検証用のexport成果物とする。Rust runtimeは設定したworker数、先手固定・後手固定・general、corpus同時数を使用する。固定側の手番では登録済み指し手の最大評価値を選び、反対側では`--min-eval-cp`の絶対下限を適用する。互換用の`--eval-diff`も併用でき、両方を指定した場合は厳しい方の下限を使う。`position startpos moves ...`または任意rootの`position sfen ... moves ...`で履歴を渡し、停止時の探索結果は破棄する。 各USI探索には既定3,600秒のwatchdogがあり、`--usi-search-timeout-sec`で変更できる。timeout時は`stop`、設定済みUSI stop timeout後の強制終了、engine再起動、最大3回再試行を行う。
+24時間pilotは同じコマンドの`--max-runtime-sec`を`86400`へ変更する。SQLiteを定跡の正本とし、`--output`のやねうら王形式はエンジン配布・検証用のexport成果物とする。変換済みSQLiteだけから起動する場合、`--database`は必須で`--input`は省略する。指定したSQLiteが存在しない、必要なテーブルがない、または局面が0件の場合は、新しいDBを作らず起動を拒否する。従来どおりテキスト定跡を起動時に取り込む場合だけ`--input <book>`を指定でき、その場合はSQLiteの新規作成も許可する。Rust runtimeは設定したworker数、先手固定・後手固定・general、corpus同時数を使用する。固定側の手番では登録済み指し手の最大評価値を選び、反対側では`--min-eval-cp`の絶対下限を適用する。互換用の`--eval-diff`も併用でき、両方を指定した場合は厳しい方の下限を使う。`position startpos moves ...`または任意rootの`position sfen ... moves ...`で履歴を渡し、停止時の探索結果は破棄する。 各USI探索には既定3,600秒のwatchdogがあり、`--usi-search-timeout-sec`で変更できる。timeout時は`stop`、設定済みUSI stop timeout後の強制終了、engine再起動、最大3回再試行を行う。
 
 `book-sqlite import`は入力をストリーミングし、一定局面数ごとのtransactionで処理する。既存の`(局面, 指し手)`行は上書きせず、未登録局面と未登録指し手だけを追加するため、新ペタショック定跡の更新版を同じSQLiteへ順次取り込める。`book-extender --import-book <book>`を複数指定して起動時に同じ処理を行うこともできる。探索結果は同じ行の評価値、深さ、応手、visitsを更新する。`--black-target`と`--white-target`は旧コマンドラインとの互換性のため受理するが、敵対探索は行わず、指定ファイルを同じ追加専用規則で取り込む。
 
@@ -174,11 +173,10 @@ powershell -ExecutionPolicy Bypass -File script\run_extend_book_mcts_jenkins.ps1
   -LogRetentionCount 5 `
   --config C:\book-extension\book-extension-pilot.toml `
   --database C:\book-extension-state\pilot\opening-book.sqlite `
-  --input C:\book-extension-state\pilot\peta-shock.db `
   --output C:\book-extension-state\pilot\output-book.db `
   --engine C:\engine\YaneuraOu.exe `
   --nodes 3000000 --multipv 4 `
-  --min-eval-cp -200 `
+  --min-eval-cp=-200 `
   --corpus-db C:\book-extension-state\pilot\corpus.sqlite
 ```
 

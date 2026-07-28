@@ -50,6 +50,12 @@ pub enum SqliteBookError {
     IgnorePlyMismatch { actual: bool, requested: bool },
     #[error("SQLite book schema version {actual} is not supported (expected {expected})")]
     SchemaVersion { actual: i64, expected: i64 },
+    #[error("existing SQLite opening book does not exist: {}", .0.display())]
+    MissingDatabase(PathBuf),
+    #[error("existing SQLite opening book is not initialized: {}", .0.display())]
+    UninitializedDatabase(PathBuf),
+    #[error("existing SQLite opening book has no positions: {}", .0.display())]
+    EmptyDatabase(PathBuf),
     #[error("path position is missing: {0}")]
     MissingPosition(String),
     #[error("path move is missing: {sfen} {move_usi}")]
@@ -72,23 +78,39 @@ impl SqliteOpeningBook {
         let connection = Connection::open(path)?;
         configure_connection(&connection)?;
         create_schema(&connection, ignore_ply)?;
-        let (schema_version, stored_ignore_ply): (i64, i64) = connection.query_row(
-            "SELECT schema_version, ignore_ply FROM book_meta WHERE singleton = 1",
+        validate_metadata(&connection, ignore_ply)?;
+        Ok(Self {
+            path: path.to_path_buf(),
+            connection,
+            ignore_ply,
+        })
+    }
+
+    pub fn open_existing(path: &Path, ignore_ply: bool) -> Result<Self, SqliteBookError> {
+        if !path.is_file() {
+            return Err(SqliteBookError::MissingDatabase(path.to_path_buf()));
+        }
+        let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        connection.busy_timeout(Duration::from_secs(30))?;
+        let required_tables: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE type = 'table'
+               AND name IN ('book_meta', 'import_history', 'position', 'move')",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| row.get(0),
         )?;
-        if schema_version != SCHEMA_VERSION {
-            return Err(SqliteBookError::SchemaVersion {
-                actual: schema_version,
-                expected: SCHEMA_VERSION,
-            });
+        if required_tables != 4 {
+            return Err(SqliteBookError::UninitializedDatabase(path.to_path_buf()));
         }
-        if stored_ignore_ply != i64::from(ignore_ply) {
-            return Err(SqliteBookError::IgnorePlyMismatch {
-                actual: stored_ignore_ply != 0,
-                requested: ignore_ply,
-            });
+        validate_metadata(&connection, ignore_ply)?;
+        let has_positions: bool =
+            connection.query_row("SELECT EXISTS(SELECT 1 FROM position LIMIT 1)", [], |row| {
+                row.get(0)
+            })?;
+        if !has_positions {
+            return Err(SqliteBookError::EmptyDatabase(path.to_path_buf()));
         }
+        configure_connection(&connection)?;
         Ok(Self {
             path: path.to_path_buf(),
             connection,
@@ -552,6 +574,27 @@ fn canonical_sfen(sfen: &str, ignore_ply: bool) -> String {
     } else {
         sfen.to_owned()
     }
+}
+
+fn validate_metadata(connection: &Connection, ignore_ply: bool) -> Result<(), SqliteBookError> {
+    let (schema_version, stored_ignore_ply): (i64, i64) = connection.query_row(
+        "SELECT schema_version, ignore_ply FROM book_meta WHERE singleton = 1",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    if schema_version != SCHEMA_VERSION {
+        return Err(SqliteBookError::SchemaVersion {
+            actual: schema_version,
+            expected: SCHEMA_VERSION,
+        });
+    }
+    if stored_ignore_ply != i64::from(ignore_ply) {
+        return Err(SqliteBookError::IgnorePlyMismatch {
+            actual: stored_ignore_ply != 0,
+            requested: ignore_ply,
+        });
+    }
+    Ok(())
 }
 
 fn create_schema(connection: &Connection, ignore_ply: bool) -> Result<(), rusqlite::Error> {

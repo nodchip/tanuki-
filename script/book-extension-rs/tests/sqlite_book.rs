@@ -93,7 +93,7 @@ fn opening_existing_database_rejects_ignore_ply_mismatch() {
     let database = directory.path().join("book.sqlite");
     drop(SqliteOpeningBook::open(&database, true).unwrap());
 
-    let error = SqliteOpeningBook::open(&database, false)
+    let error = SqliteOpeningBook::open_existing(&database, false)
         .err()
         .expect("mismatched mode rejected");
     assert!(error.to_string().contains("ignore_ply=true"));

@@ -21,13 +21,19 @@ struct Args {
     config: PathBuf,
     #[arg(long)]
     run_id: Option<String>,
-    #[arg(long)]
-    input: PathBuf,
+    #[arg(
+        long,
+        help = "YaneuraOu text book to import; omit to use an existing nonempty SQLite book"
+    )]
+    input: Option<PathBuf>,
     #[arg(long = "import-book")]
     import_books: Vec<PathBuf>,
     #[arg(long)]
     output: PathBuf,
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Canonical SQLite opening book; required when --input is omitted"
+    )]
     database: Option<PathBuf>,
     #[arg(long)]
     engine: PathBuf,
@@ -85,6 +91,9 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     if args.nodes == 0 || args.multipv == 0 || args.usi_search_timeout_sec <= 0.0 {
         return Err("nodes, multipv, and usi-search-timeout-sec must be positive".into());
     }
+    if args.input.is_none() && args.database.is_none() {
+        return Err("--database is required when --input is omitted".into());
+    }
     let config = ExtensionConfig::load(&args.config)?;
     let lock_path = args
         .lock_path
@@ -110,16 +119,24 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             .state_dir
             .join(format!("{output_name}.sqlite"))
     });
-    let mut book = SqliteOpeningBook::open(&database_path, args.ignore_ply)?;
-    let input_report = book.import_yaneuraou_compatible(&args.input)?;
-    eprintln!(
-        "[book_import] source={} sha256={} already_imported={} positions={} moves={}",
-        args.input.display(),
-        input_report.input_sha256,
-        input_report.already_imported,
-        input_report.inserted_positions,
-        input_report.inserted_moves
-    );
+    let mut book = if args.input.is_some() {
+        SqliteOpeningBook::open(&database_path, args.ignore_ply)?
+    } else {
+        SqliteOpeningBook::open_existing(&database_path, args.ignore_ply)?
+    };
+    if let Some(input) = &args.input {
+        let input_report = book.import_yaneuraou_compatible(input)?;
+        eprintln!(
+            "[book_import] source={} sha256={} already_imported={} positions={} moves={}",
+            input.display(),
+            input_report.input_sha256,
+            input_report.already_imported,
+            input_report.inserted_positions,
+            input_report.inserted_moves
+        );
+    } else {
+        eprintln!("[book_open] database={}", database_path.display());
+    }
     for target in args.import_books.iter().chain(
         [&args.black_target, &args.white_target]
             .into_iter()
