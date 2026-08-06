@@ -16,6 +16,7 @@ use crate::{
         BookEntry, BookParseError, BookPosition, DEFAULT_HEADER, parse_book_entry_line,
         replace_sfen_ply,
     },
+    depth_histogram::{self, DepthHistogramReport, DepthHistogramSeries, record_in_transaction},
     search::{LeafPath, SearchBook, SearchError, SearchResult},
     storage::{rotate_backups, sha256_file},
     validation::{IssueKind, ValidationFileError, ValidationReport, validate_file},
@@ -30,6 +31,13 @@ pub struct ImportReport {
     pub already_imported: bool,
     pub inserted_positions: u64,
     pub inserted_moves: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ApplySearchOutcome {
+    pub new_position: bool,
+    pub inserted_moves: u64,
+    pub updated_moves: u64,
 }
 
 #[derive(Debug, Error)]
@@ -111,6 +119,7 @@ impl SqliteOpeningBook {
             return Err(SqliteBookError::EmptyDatabase(path.to_path_buf()));
         }
         configure_connection(&connection)?;
+        create_schema(&connection, ignore_ply)?;
         Ok(Self {
             path: path.to_path_buf(),
             connection,
@@ -392,6 +401,27 @@ impl SqliteOpeningBook {
         path: &LeafPath,
         results: &[SearchResult],
     ) -> Result<bool, SqliteBookError> {
+        Ok(self
+            .apply_search_results_internal(path, results, None)?
+            .new_position)
+    }
+
+    pub fn apply_search_results_tracked(
+        &mut self,
+        path: &LeafPath,
+        results: &[SearchResult],
+        lane: &str,
+        depth: usize,
+    ) -> Result<ApplySearchOutcome, SqliteBookError> {
+        self.apply_search_results_internal(path, results, Some((lane, depth)))
+    }
+
+    fn apply_search_results_internal(
+        &mut self,
+        path: &LeafPath,
+        results: &[SearchResult],
+        histogram: Option<(&str, usize)>,
+    ) -> Result<ApplySearchOutcome, SqliteBookError> {
         let leaf_key = self.position_key(&path.leaf_sfen);
         let transaction = self
             .connection
@@ -403,6 +433,8 @@ impl SqliteOpeningBook {
             [leaf_id],
             |row| row.get(0),
         )?;
+        let mut inserted_moves = 0_u64;
+        let mut updated_moves = 0_u64;
         for result in results {
             let updated = transaction.execute(
                 "UPDATE move
@@ -435,6 +467,9 @@ impl SqliteOpeningBook {
                     ],
                 )?;
                 next_order += 1;
+                inserted_moves += 1;
+            } else {
+                updated_moves += 1;
             }
         }
         for step in &path.steps {
@@ -473,8 +508,40 @@ impl SqliteOpeningBook {
             current_value = node_value(&transaction, id)?;
         }
         bump_revision(&transaction)?;
+        if let Some((lane, depth)) = histogram {
+            record_in_transaction(&transaction, lane, "search", depth)?;
+            let event_kind = if !existed {
+                "new-position"
+            } else if inserted_moves > 0 {
+                "new-move"
+            } else {
+                "reevaluated"
+            };
+            record_in_transaction(&transaction, lane, event_kind, depth)?;
+        }
         transaction.commit()?;
-        Ok(!existed)
+        Ok(ApplySearchOutcome {
+            new_position: !existed,
+            inserted_moves,
+            updated_moves,
+        })
+    }
+
+    pub fn record_depth_search(&mut self, lane: &str, depth: usize) -> Result<(), SqliteBookError> {
+        depth_histogram::record(&mut self.connection, lane, "search", depth)?;
+        Ok(())
+    }
+
+    pub fn flush_depth_histogram(
+        &mut self,
+        run_id: &str,
+        now: f64,
+    ) -> Result<Option<DepthHistogramReport>, SqliteBookError> {
+        Ok(depth_histogram::flush(&mut self.connection, run_id, now)?)
+    }
+
+    pub fn depth_histogram_totals(&self) -> Result<Vec<DepthHistogramSeries>, SqliteBookError> {
+        Ok(depth_histogram::totals(&self.connection)?)
     }
 
     pub fn move_usis(&self, sfen: &str) -> Result<Vec<String>, SqliteBookError> {
@@ -634,6 +701,7 @@ fn create_schema(connection: &Connection, ignore_ply: bool) -> Result<(), rusqli
          ) VALUES (1, ?1, ?2, ?3, 0)",
         params![SCHEMA_VERSION, DEFAULT_HEADER, i64::from(ignore_ply)],
     )?;
+    depth_histogram::create_schema(connection)?;
     Ok(())
 }
 

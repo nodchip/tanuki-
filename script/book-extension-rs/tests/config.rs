@@ -29,7 +29,41 @@ fn loads_existing_pilot_configuration_and_expands_roles() {
     );
     assert_eq!(config.corpus.max_concurrent_searches, 1);
     assert_eq!(config.runtime.backup_count, 3);
+    assert_eq!(config.runtime.depth_histogram_interval_sec, 3600.0);
     assert!(config.runtime.state_dir.is_absolute());
+}
+
+#[test]
+fn rejects_non_positive_depth_histogram_interval() {
+    let error = ExtensionConfig::from_toml(
+        r#"
+[workers]
+engine_count = 1
+threads_per_engine = 1
+fixed_black = 0
+fixed_white = 0
+general = 1
+[corpus]
+enabled = false
+max_concurrent_searches = 0
+general_pool_node_share = 0.0
+[runtime]
+state_dir = "C:/state"
+save_interval_sec = 3600
+backup_count = 3
+heartbeat_timeout_sec = 10
+usi_stop_timeout_sec = 60
+depth_histogram_interval_sec = 0
+"#,
+        Path::new("C:/config/book.toml"),
+    )
+    .expect_err("zero histogram interval rejected");
+
+    assert!(
+        error
+            .to_string()
+            .contains("depth_histogram_interval_sec must be positive")
+    );
 }
 
 #[test]

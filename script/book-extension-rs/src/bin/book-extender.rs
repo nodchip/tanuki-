@@ -264,6 +264,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         corpus,
         status_path: config.runtime.state_dir.join("runtime-status.json"),
         status_interval_sec: config.runtime.status_interval_sec,
+        depth_histogram_interval_sec: config.runtime.depth_histogram_interval_sec,
         engine_fingerprint: fingerprint,
         persistence: PersistenceOptions {
             output_path: args.output.clone(),

@@ -116,6 +116,8 @@ pub struct RuntimeConfig {
     pub usi_stop_timeout_sec: f64,
     #[serde(default = "default_status_interval_sec")]
     pub status_interval_sec: f64,
+    #[serde(default = "default_depth_histogram_interval_sec")]
+    pub depth_histogram_interval_sec: f64,
     #[serde(default = "default_engine_config_revision")]
     pub engine_config_revision: u64,
 }
@@ -133,6 +135,9 @@ impl RuntimeConfig {
         }
         if self.status_interval_sec <= 0.0 {
             return invalid("status_interval_sec must be positive");
+        }
+        if self.depth_histogram_interval_sec <= 0.0 {
+            return invalid("depth_histogram_interval_sec must be positive");
         }
         Ok(())
     }
@@ -174,6 +179,9 @@ fn invalid<T>(message: impl Into<String>) -> Result<T, ConfigError> {
 
 const fn default_status_interval_sec() -> f64 {
     60.0
+}
+const fn default_depth_histogram_interval_sec() -> f64 {
+    3600.0
 }
 const fn default_engine_config_revision() -> u64 {
     1

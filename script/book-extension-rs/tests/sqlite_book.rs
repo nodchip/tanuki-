@@ -126,3 +126,79 @@ fn ignore_ply_merges_keys_and_exports_a_zero_ply_sfen() {
     )));
     assert_eq!(text.matches("sfen ").count(), 1);
 }
+
+#[test]
+fn tracked_searches_persist_delta_and_cumulative_depth_histograms() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = directory.path().join("book.sqlite");
+    let input = directory.path().join("input.db");
+    std::fs::write(
+        &input,
+        format!("#YANEURAOU-DB2016 1.00\nsfen {STARTPOS}\n7g7f 3c3d 100 4 11\n"),
+    )
+    .unwrap();
+    let mut book = SqliteOpeningBook::open(&database, false).unwrap();
+    book.import_yaneuraou(&input).unwrap();
+    let path = LeafPath {
+        steps: vec![PathStep::new(STARTPOS, "7g7f")],
+        leaf_sfen: AFTER_7G7F.to_owned(),
+    };
+
+    let outcome = book
+        .apply_search_results_tracked(
+            &path,
+            &[SearchResult::new("3c3d", "2g2f", 80, 9)],
+            "fixed-white",
+            17,
+        )
+        .unwrap();
+    assert!(outcome.new_position);
+    assert_eq!(outcome.inserted_moves, 1);
+
+    let report = book.flush_depth_histogram("run-1", 200.0).unwrap().unwrap();
+    assert_eq!(report.series.len(), 2);
+    assert_eq!(report.series[0].event_kind, "new-position");
+    assert_eq!(report.series[0].format_bins(), "10-19:1");
+    assert_eq!(report.series[1].event_kind, "search");
+    assert_eq!(report.series[1].max_depth(), 17);
+    assert!(
+        book.flush_depth_histogram("run-1", 201.0)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(book.depth_histogram_totals().unwrap(), report.series);
+}
+
+#[test]
+fn opening_legacy_database_adds_histogram_tables_without_rebuilding_the_book() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = directory.path().join("book.sqlite");
+    let input = directory.path().join("input.db");
+    std::fs::write(
+        &input,
+        format!("#YANEURAOU-DB2016 1.00\nsfen {STARTPOS}\n7g7f 3c3d 100 4 11\n"),
+    )
+    .unwrap();
+    let mut book = SqliteOpeningBook::open(&database, false).unwrap();
+    book.import_yaneuraou(&input).unwrap();
+    drop(book);
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    connection
+        .execute_batch(
+            "DROP TABLE extension_depth_report_bin;
+             DROP TABLE extension_depth_report;
+             DROP TABLE extension_depth_counter;
+             DROP TABLE extension_depth_state;",
+        )
+        .unwrap();
+    drop(connection);
+
+    let mut reopened = SqliteOpeningBook::open_existing(&database, false).unwrap();
+    reopened.record_depth_search("normal", 3).unwrap();
+    let report = reopened
+        .flush_depth_histogram("run-legacy", 300.0)
+        .unwrap()
+        .unwrap();
+    assert_eq!(report.series[0].format_bins(), "0-9:1");
+    assert_eq!(reopened.positions_len().unwrap(), 1);
+}

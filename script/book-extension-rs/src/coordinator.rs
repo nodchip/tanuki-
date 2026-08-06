@@ -13,6 +13,7 @@ use crate::{
         CandidateChoice, CorpusCandidate, CorpusStore, FrontierTransition, RolloutObservation,
         SearchCompletion, SearchTaskStatus, SourceSite,
     },
+    depth_histogram::{DepthHistogramBin, DepthHistogramReport, DepthHistogramSeries},
     engine::{EngineError, EngineOptions, StopHandle, UsiEngine},
     priority::SiteNodeBudget,
     python_random::PythonRandom,
@@ -85,6 +86,7 @@ pub struct NormalRuntimeOptions {
     pub persistence: PersistenceOptions,
     pub status_path: PathBuf,
     pub status_interval_sec: f64,
+    pub depth_histogram_interval_sec: f64,
     pub engine_fingerprint: String,
     pub run_id: String,
 }
@@ -144,7 +146,6 @@ struct SharedState {
 
 struct CorpusWork {
     candidate: CorpusCandidate,
-    sfen: String,
     history: Vec<String>,
     path: LeafPath,
 }
@@ -230,6 +231,17 @@ pub fn run_normal_extension(
         }),
         Condvar::new(),
     ));
+
+    {
+        let state = shared.0.lock().map_err(|_| CoordinatorError::Poisoned)?;
+        match state.book.depth_histogram_totals() {
+            Ok(series) => log_depth_histogram_totals("startup", &series),
+            Err(error) => eprintln!(
+                "[depth-histogram] scope=cumulative phase=startup status=error error={:?}",
+                error.to_string()
+            ),
+        }
+    }
 
     let saver_handle = {
         let shared = Arc::clone(&shared);
@@ -335,17 +347,53 @@ pub fn run_normal_extension(
         let shared = Arc::clone(&shared);
         let status_path = options.status_path.clone();
         let status_interval = std::time::Duration::from_secs_f64(options.status_interval_sec);
+        let histogram_interval =
+            std::time::Duration::from_secs_f64(options.depth_histogram_interval_sec);
         let engine_fingerprint = options.engine_fingerprint.clone();
         thread::spawn(move || -> Result<(), CoordinatorError> {
             let mut consecutive_failures = 0_u64;
+            let mut next_histogram = std::time::Instant::now() + histogram_interval;
             loop {
-                let (snapshot_result, workers_done) = {
-                    let state = shared.0.lock().map_err(|_| CoordinatorError::Poisoned)?;
+                let histogram_due = std::time::Instant::now() >= next_histogram;
+                let (snapshot_result, workers_done, histogram_report, final_totals) = {
+                    let mut state = shared.0.lock().map_err(|_| CoordinatorError::Poisoned)?;
+                    let workers_done = state.running_workers == 0 && state.save_finished;
+                    let histogram_report = if histogram_due || workers_done {
+                        let run_id = state.run_id.clone();
+                        Some(state.book.flush_depth_histogram(&run_id, unix_time()))
+                    } else {
+                        None
+                    };
+                    let final_totals = workers_done.then(|| state.book.depth_histogram_totals());
                     (
                         runtime_status_snapshot(&state, &engine_fingerprint),
-                        state.running_workers == 0 && state.save_finished,
+                        workers_done,
+                        histogram_report,
+                        final_totals,
                     )
                 };
+                if histogram_due {
+                    next_histogram = std::time::Instant::now() + histogram_interval;
+                }
+                if let Some(report) = histogram_report {
+                    match report {
+                        Ok(Some(report)) => log_depth_histogram_report(&report),
+                        Ok(None) => {}
+                        Err(error) => eprintln!(
+                            "[depth-histogram] scope=delta status=error error={:?}",
+                            error.to_string()
+                        ),
+                    }
+                }
+                if let Some(totals) = final_totals {
+                    match totals {
+                        Ok(series) => log_depth_histogram_totals("shutdown", &series),
+                        Err(error) => eprintln!(
+                            "[depth-histogram] scope=cumulative phase=shutdown status=error error={:?}",
+                            error.to_string()
+                        ),
+                    }
+                }
                 let write_result = snapshot_result.and_then(|snapshot| {
                     write_runtime_status_atomic(&status_path, &snapshot)
                         .map_err(|error| CoordinatorError::Worker(error.to_string()))
@@ -376,9 +424,11 @@ pub fn run_normal_extension(
                 }
                 let state = shared.0.lock().map_err(|_| CoordinatorError::Poisoned)?;
                 if state.running_workers != 0 {
+                    let wait = status_interval
+                        .min(next_histogram.saturating_duration_since(std::time::Instant::now()));
                     let _ = shared
                         .1
-                        .wait_timeout(state, status_interval)
+                        .wait_timeout(state, wait)
                         .map_err(|_| CoordinatorError::Poisoned)?;
                 }
             }
@@ -540,7 +590,7 @@ pub fn run_normal_extension(
                         *active = active.saturating_sub(1);
                     }
                     state.last_search = Some(LastSearchStatus {
-                        lane,
+                        lane: lane.clone(),
                         depth,
                         position_key: path.leaf_sfen.clone(),
                         status: if normal_result.is_ok() { "ok" } else { "error" }.to_owned(),
@@ -549,17 +599,21 @@ pub fn run_normal_extension(
                     match normal_result {
                         Ok(results) if !state.discard_results => {
                             if !results.is_empty() {
-                                apply_normal_results(&mut state, &path, &results)?;
+                                apply_normal_results(&mut state, &path, &results, &lane)?;
+                            } else {
+                                record_depth_search(&mut state, &lane, depth)?;
                             }
                         }
-                        Ok(_) => {}
+                        Ok(_) => record_depth_search(&mut state, &lane, depth)?,
                         Err(error) if state.discard_results => {
+                            record_depth_search(&mut state, &lane, depth)?;
                             eprintln!(
                                 "[engine-error] phase=search action=ignored-during-stop error={:?}",
                                 error.to_string()
                             );
                         }
                         Err(error) => {
+                            record_depth_search(&mut state, &lane, depth)?;
                             state.error = Some(error.to_string());
                             state.stop_admission = true;
                         }
@@ -954,21 +1008,32 @@ fn apply_normal_results(
     state: &mut SharedState,
     path: &LeafPath,
     results: &[crate::search::SearchResult],
+    lane: &str,
 ) -> Result<(), CoordinatorError> {
-    let added_position = state
+    let outcome = state
         .book
-        .apply_search_results(path, results)
+        .apply_search_results_tracked(path, results, lane, path.steps.len())
         .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
-    if added_position {
+    if outcome.new_position {
         state.added_positions += 1;
     }
     state.generation += 1;
     Ok(())
 }
 
+fn record_depth_search(
+    state: &mut SharedState,
+    lane: &str,
+    depth: usize,
+) -> Result<(), CoordinatorError> {
+    state
+        .book
+        .record_depth_search(lane, depth)
+        .map_err(|error| CoordinatorError::Worker(error.to_string()))
+}
+
 struct PathCorpusChoice {
     choice: CandidateChoice,
-    sfen: String,
     history: Vec<String>,
     path: LeafPath,
     site_rank: usize,
@@ -1058,7 +1123,6 @@ fn reserve_corpus_work(
                 }
                 choices.extend(probe.choices.into_iter().map(|choice| PathCorpusChoice {
                     choice,
-                    sfen: sfen.clone(),
                     history: visit_history.clone(),
                     path: visit_path.clone(),
                     site_rank,
@@ -1143,7 +1207,6 @@ fn reserve_corpus_work(
                 .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
             return Ok(Some(CorpusWork {
                 candidate,
-                sfen: state.book.output_sfen(&selected.sfen),
                 history: selected.history,
                 path: selected.path,
             }));
@@ -1208,6 +1271,7 @@ fn apply_corpus_result(
 ) -> Result<(), CoordinatorError> {
     let corpus_options = options.corpus.as_ref().expect("work requires corpus");
     if state.discard_results {
+        record_depth_search(state, "corpus", work.history.len())?;
         state
             .corpus_store
             .as_mut()
@@ -1218,14 +1282,16 @@ fn apply_corpus_result(
     }
     match result {
         Ok(result) => {
-            let added = state
+            let outcome = state
                 .book
-                .add_result_if_absent(&work.sfen, &result)
+                .apply_search_results_tracked(
+                    &work.path,
+                    std::slice::from_ref(&result),
+                    "corpus",
+                    work.history.len(),
+                )
                 .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
-            state
-                .book
-                .apply_search_results(&work.path, std::slice::from_ref(&result))
-                .map_err(|error| CoordinatorError::Worker(error.to_string()))?;
+            let added = outcome.inserted_moves > 0;
             state
                 .corpus_store
                 .as_mut()
@@ -1263,6 +1329,7 @@ fn apply_corpus_result(
             state.generation += 1;
         }
         Err(error) => {
+            record_depth_search(state, "corpus", work.history.len())?;
             if let Some(last) = state.last_candidate.as_mut()
                 && last.candidate_id == work.candidate.id
             {
@@ -1358,6 +1425,95 @@ fn runtime_status_snapshot(
         engine_fingerprint: engine_fingerprint.to_owned(),
         last_book_save: state.last_book_save.clone(),
     })
+}
+
+fn log_depth_histogram_report(report: &DepthHistogramReport) {
+    if report.series.is_empty() {
+        return;
+    }
+    for series in depth_histogram_overview(&report.series)
+        .iter()
+        .chain(&report.series)
+    {
+        log_depth_histogram_series(
+            "delta",
+            &format!(
+                "report_id={} from_revision={} to_revision={} started_at={:.3} finished_at={:.3}",
+                report.report_id,
+                report.from_book_revision,
+                report.to_book_revision,
+                report.started_at_unix,
+                report.finished_at_unix
+            ),
+            series,
+        );
+    }
+}
+
+fn log_depth_histogram_totals(phase: &str, series: &[DepthHistogramSeries]) {
+    if series.is_empty() {
+        eprintln!(
+            "[depth-histogram] scope=cumulative phase={} status=empty count=0",
+            phase
+        );
+        return;
+    }
+    for item in depth_histogram_overview(series).iter().chain(series) {
+        log_depth_histogram_series("cumulative", &format!("phase={phase}"), item);
+    }
+}
+
+fn depth_histogram_overview(series: &[DepthHistogramSeries]) -> Vec<DepthHistogramSeries> {
+    let mut grouped: BTreeMap<String, BTreeMap<usize, DepthHistogramBin>> = BTreeMap::new();
+    for item in series {
+        let kind = if item.event_kind == "search" {
+            "search"
+        } else {
+            "changed"
+        };
+        let bins = grouped.entry(kind.to_owned()).or_default();
+        for bin in &item.bins {
+            let combined = bins.entry(bin.bucket_start).or_insert(DepthHistogramBin {
+                bucket_start: bin.bucket_start,
+                count: 0,
+                depth_sum: 0,
+                max_depth: 0,
+            });
+            combined.count += bin.count;
+            combined.depth_sum += bin.depth_sum;
+            combined.max_depth = combined.max_depth.max(bin.max_depth);
+        }
+    }
+    grouped
+        .into_iter()
+        .map(|(event_kind, bins)| DepthHistogramSeries {
+            lane: "all".to_owned(),
+            event_kind,
+            bins: bins.into_values().collect(),
+        })
+        .collect()
+}
+
+fn log_depth_histogram_series(scope: &str, metadata: &str, series: &DepthHistogramSeries) {
+    let percentile = |value| {
+        series.percentile_bucket(value).map_or_else(
+            || "none".to_owned(),
+            |start| format!("{start}-{}", start + 9),
+        )
+    };
+    eprintln!(
+        "[depth-histogram] scope={} {} lane={} kind={} count={} average={:.2} p50_bucket={} p90_bucket={} max={} bins={}",
+        scope,
+        metadata,
+        series.lane,
+        series.event_kind,
+        series.count(),
+        series.average_depth(),
+        percentile(50),
+        percentile(90),
+        series.max_depth(),
+        series.format_bins()
+    );
 }
 fn position_root(root_sfen: &str) -> PositionRoot {
     if root_sfen == crate::STARTPOS_SFEN {

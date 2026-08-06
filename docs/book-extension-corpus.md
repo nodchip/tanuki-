@@ -268,3 +268,11 @@ schema v6では候補に`quality_band`、`source_site`、`recent_occurrences`、
 7. 必要な場合だけ、保存済み定跡DBへ`peta_shock`を手動実行する。
 
 `peta_shock`は自動実行しない。24時間pilotと実Jenkins停止ボタン試験は、4エンジン4時間pilot合格後に別マシンで行う後続ゲートである。
+
+## 延長深さヒストグラム
+
+`book-extender`はroot局面からの探索経路長を10手幅で集計し、`[depth-histogram]`として出力する。`scope=delta`は前回の出力後に完了した探索だけ、`scope=cumulative`はヒストグラム機能を有効にした後の累積である。`lane=all kind=search`は全探索、`lane=all kind=changed`は定跡DBを変更した探索の全体像を示す。詳細行は`normal`、`fixed-black`、`fixed-white`、`corpus`と、`new-position`、`new-move`、`reevaluated`に分かれる。SFEN末尾の手数ではなくrootからの距離なので、任意rootや`ignore_ply`でも比較できる。
+
+差分は`[runtime] depth_histogram_interval_sec`秒ごとと正常終了時に確定し、既定値は3600秒である。調査中だけ600秒程度へ短縮できる。探索ごとの明細行は保存せず、SQLite定跡DB内の`extension_depth_counter`へ10手幅の件数・深さ合計・最大深さを集約する。確定した差分は`extension_depth_report`と`extension_depth_report_bin`へ保存するため、再起動をまたいだ未出力差分と累積を維持する。
+
+既存SQLiteを新しいbinaryで初めて開くと、上記の小さな追加テーブルを`CREATE TABLE IF NOT EXISTS`で作成する。既存の`position`、`move`、訪問回数、corpus task、frontierは変更せず、VACUUMや定跡の再importも行わない。稼働中の旧binaryと同時にDBを開かず、通常の停止と最終保存を確認してから新しいbinaryで再開する。

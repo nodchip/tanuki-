@@ -79,6 +79,16 @@ usi_stop_timeout_sec = 5
     let saved = std::fs::read_to_string(&output).unwrap();
     assert!(saved.contains("7g7f 3c3d 25 10 0"), "{saved}");
     assert!(saved.contains("2g2f 8c8d 10 9 0"), "{saved}");
+    let stderr = String::from_utf8(result.stderr).unwrap();
+    assert!(stderr.contains("[depth-histogram] scope=delta"), "{stderr}");
+    assert!(stderr.contains("lane=all kind=search"), "{stderr}");
+    assert!(stderr.contains("lane=all kind=changed"), "{stderr}");
+    assert!(stderr.contains("lane=normal kind=search"), "{stderr}");
+    assert!(stderr.contains("kind=new-move"), "{stderr}");
+    assert!(
+        stderr.contains("scope=cumulative phase=shutdown"),
+        "{stderr}"
+    );
 }
 
 #[test]
