@@ -1,4 +1,5 @@
-﻿#include <sstream>
+﻿#include <cstdlib>
+#include <sstream>
 #include <queue>
 
 #include "types.h"
@@ -23,11 +24,7 @@ namespace YaneuraOu {
 // benchmark用のコマンドその2
 constexpr auto BenchmarkCommand = "speedtest";
 
-#if STOCKFISH
-// 初期局面
-// 📝 やねうら王では、 types.h で定義しているStartSFENがそれ。
-constexpr auto StartFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-#else
+#if !STOCKFISH
 
 // Engine開発者が用いる"test"コマンド。
 namespace Test {
@@ -101,6 +98,10 @@ UCIEngine::UCIEngine(int argc, char** argv) :
 void USIEngine::set_engine(IEngine& _engine) {
     engine.set_engine(_engine);
 
+    // "engine_option_profile.txt"で、どのオプション群を生やすかを決める。
+    // これは"usi"応答より前に反映される必要がある。
+    engine.get_options().read_engine_option_profile("engine_option_profile.txt");
+
     // ⚠ やねうら王では、Engineのコンストラクタではoptionを生やさない設計に変更した。
     //     よって、派生classのadd_options()をここで明示的に呼び出してoptionを生やす必要がある。
     engine.add_options();
@@ -141,8 +142,8 @@ void USIEngine::init_search_update_listeners() {
 // USI応答部ループ
 void USIEngine::loop()
 {
-	// コマンドラインと"startup.txt"に書かれているUSIコマンドをstd_inputに積む。
-	//enqueue_startup_command();
+    // 起動時コマンドは、マルチインスタンス時に注入先を選べるよう、
+    // 選択されたEngineのentry point側からstd_inputへ積む。
 
 #if !defined(__EMSCRIPTEN__)
 
@@ -372,7 +373,7 @@ bool USIEngine::usi_cmdexec(const std::string& cmd) {
                         "\nStockfish is normally used with a graphical user interface (GUI) and implements"
                         "\nthe Universal Chess Interface (UCI) protocol to communicate with a GUI, an API, etc."
                         "\nFor any further information, visit https://github.com/official-stockfish/Stockfish#readme"
-                        "\nor read the corresponding README.md and Copying.txt files distributed along with this program.\n"
+                        "\nor read the corresponding README.md and LICENSE files distributed along with this program.\n"
                     << sync_endl;
 
     else if (!token.empty() && token[0] != '#')
@@ -406,6 +407,10 @@ bool USIEngine::usi_cmdexec(const std::string& cmd) {
     // config.hで設定した値などについて出力する。
     else if (token == "config")
         sync_cout << config_info() << sync_endl;
+
+    // .psv(PsvRecord列)の局面をqsearch PVのleafに置換する。
+    else if (token == "qsearch_psv")
+        qsearch_psv(is);
 
 #if defined(ENABLE_MAKEBOOK_CMD)
 	// 定跡コマンド
@@ -809,7 +814,7 @@ void USIEngine::benchmark(std::istream& args) {
     ss = std::istringstream("name UCI_Chess960 value false");
     setoption(ss);
 #else
-    ss = std::istringstream("name Hash value " + std::to_string(setup.ttSize));
+    ss = std::istringstream("name USI_Hash value " + std::to_string(setup.ttSize));
     setoption(ss);
 #endif
 
@@ -954,6 +959,8 @@ std::uint64_t USIEngine::perft(const Search::LimitsType& limits) {
 
 // "position"コマンドのhandler
 void USIEngine::position(std::istringstream& is) {
+    const std::string fullCommand = is.str();
+
 	std::string token, sfen;
 
     is >> token;
@@ -995,7 +1002,11 @@ void USIEngine::position(std::istringstream& is) {
         moves.push_back(token);
 	}
 
-    engine.set_position(sfen, moves);
+    auto err = engine.set_position(sfen, moves);
+    if (err.has_value())
+    {
+        terminate_on_critical_error(fullCommand, err->what());
+    }
 }
 
 #if STOCKFISH
@@ -1332,6 +1343,14 @@ void USIEngine::on_bestmove(std::string_view bestmove, std::string_view ponder) 
     std::cout << sync_endl;
 }
 
+void USIEngine::terminate_on_critical_error(const std::string& fullCommand,
+                                            const std::string& message) {
+    sync_cout << "info string CRITICAL ERROR: Command `" << fullCommand
+              << "` failed. Reason: " << message << '\n'
+              << sync_endl;
+    std::exit(1);
+}
+
 void USIEngine::on_update_string(std::string_view info) { sync_cout << "info string " << info << sync_endl; }
 
 
@@ -1384,24 +1403,51 @@ void USIEngine::getoption(std::istringstream& is) {
     sync_cout << options.get_option(option_name) << sync_endl;
 }
 
+// USI拡張コマンド "qsearch_psv" のhandler。
+// input.psvの各PsvRecord局面をqsearchのPV leaf nodeで置換し、
+// output.psvへ同じPSV形式で書き出す処理をEngine側へ委譲する。
+void USIEngine::qsearch_psv(std::istringstream& is) {
+    std::string inputPath, outputPath;
+    size_t      workerCount = 0;
+
+    is >> inputPath >> outputPath;
+    if (!(is >> workerCount))
+        workerCount = 0;
+
+    std::string message;
+    const bool  ok = engine.qsearch_psv(inputPath, outputPath, workerCount, message);
+
+    if (!message.empty())
+        sync_cout << "info string " << message << sync_endl;
+
+    if (!ok)
+        sync_cout << "info string qsearch_psv failed" << sync_endl;
+}
+
 // "unittest"コマンドのhandler
 void USIEngine::unittest(std::istringstream& is) { Test::UnitTest(is, engine); }
 
 
-// コマンドラインと"startup.txt"に書かれているUSIコマンドをstd_inputに積む。
-void USIEngine::enqueue_startup_command() {
+// コマンドラインに書かれているUSIコマンドをstd_inputに積む。
+void USIEngine::enqueue_command_line_commands(const CommandLine& cli) {
     // コマンドラインから積まれたコマンドをstd_inputに積んでやる。
-    std_input.parse_args(CommandLine::g);
+    std_input.parse_args(cli);
+}
 
-    // "startup.txt"というファイルがあれば、この内容を実行してやる。
-    // そのため、std_inputにそこに書かれているコマンドを積んでやる。
-    const std::string   startup = "startup.txt";
+// startup.txtなどのファイルに書かれているUSIコマンドをstd_inputに積む。
+void USIEngine::enqueue_startup_file_commands(const std::string& filename) {
     std::vector<std::string> lines;
-    if (SystemIO::ReadAllLines(startup, lines).is_ok())
+    if (SystemIO::ReadAllLines(filename, lines).is_ok())
     {
         for (auto& line : lines)
             std_input.push(line);
     }
+}
+
+// 単一エンジン起動用に、コマンドラインとstartup.txtのUSIコマンドをstd_inputに積む。
+void USIEngine::enqueue_startup_commands(const CommandLine& cli) {
+    enqueue_command_line_commands(cli);
+    enqueue_startup_file_commands("startup.txt");
 }
 
 // ファイルからUSIコマンドをstd_inputに積む。
@@ -1525,35 +1571,6 @@ void mate_cmd(Position& pos, std::istream& is);
 #endif
 
 
-// ----------------------------------
-//      USI拡張コマンド "learn"
-// ----------------------------------
-
-// 棋譜を自動生成するコマンド
-#if defined (EVAL_LEARN)
-namespace Learner
-{
-  // 教師局面の自動生成
-  void gen_sfen(Position& pos, istringstream& is);
-
-  // 生成した棋譜からの学習
-  void learn(Position& pos, istringstream& is);
-
-#if defined(GENSFEN2019)
-  // 開発中の教師局面の自動生成コマンド
-  void gen_sfen2019(Position& pos, istringstream& is);
-#endif
-
-  // 読み筋と評価値のペア。Learner::search(),Learner::qsearch()が返す。
-  typedef std::pair<Value, std::vector<Move> > ValuePV;
-
-  ValuePV qsearch(Position& pos);
-  ValuePV search(Position& pos, int depth_, size_t multiPV = 1 , u64 nodesLimit = 0 );
-
-}
-#endif
-
-
 // "gameover"コマンドに対するハンドラ
 #if defined(USE_GAMEOVER_HANDLER) || defined(YANEURAOU_ENGINE_DEEP)
 void gameover_handler(const string& cmd);
@@ -1597,42 +1614,6 @@ bool parse_ponderhit(istringstream& is, Search::LimitsType& limits)
 	}
 	return token_processed;
 }
-
-
-#if defined(EVAL_LEARN)
-void qsearch_cmd(Position& pos)
-{
-	cout << "qsearch : ";
-	auto pv = Learner::qsearch(pos);
-	cout << "Value = " << pv.first << " , PV = ";
-	for (auto m : pv.second)
-		cout << m << " ";
-	cout << endl;
-}
-
-void search_cmd(Position& pos, istringstream& is)
-{
-	string token;
-	int depth = 1;
-	int multi_pv = (int)Options["MultiPV"];
-	while (is >> token)
-	{
-		if (token == "depth")
-			is >> depth;
-		if (token == "multipv")
-			is >> multi_pv;
-	}
-
-	cout << "search depth = " << depth << " , multi_pv = " << multi_pv << " : ";
-	auto pv = Learner::search(pos, depth, multi_pv);
-	cout << "Value = " << pv.first << " , PV = ";
-	for (auto m : pv.second)
-		cout << m << " ";
-	cout << endl;
-}
-
-#endif
-
 
 
 // --------------------
@@ -1710,7 +1691,7 @@ void USIEngine::isready()
 	// --- Keep Alive的な処理ここまで ---
 #endif
 
-	// スレッドを先に生成しないとHashで確保したメモリクリアの並列化が行われなくて困る。
+	// スレッドを先に生成しないとUSI_Hashで確保したメモリクリアの並列化が行われなくて困る。
 
 #if defined(YANEURAOU_ENGINE_DEEP)
 
@@ -1754,7 +1735,7 @@ void USIEngine::isready()
 #if defined(YANEURAOU_ENGINE_DEEP)
 	// ふかうら王では置換表は用いない。
 #else
-	//TT.resize(size_t(options["Hash"]));
+	//TT.resize(size_t(options["USI_Hash"]));
 #endif
 
 	//Search::clear();

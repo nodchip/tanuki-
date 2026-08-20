@@ -1,4 +1,5 @@
 // Definition of layer ClippedReLUExplicit of NNUE evaluation function
+// 📝 このheaderはSFNNで使う新しい仕様のaffine_transform.h
 
 #ifndef NNUE_LAYERS_CLIPPED_RELU_EXPLICIT_H_INCLUDED
 #define NNUE_LAYERS_CLIPPED_RELU_EXPLICIT_H_INCLUDED
@@ -172,10 +173,11 @@ class ClippedReLUExplicit {
       output[i] = static_cast<OutputType>(
           std::max(0, std::min(127, input[i] >> kWeightScaleBits)));
     }
+    if constexpr (PaddedOutputDimensions > kOutputDimensions) {
+      std::fill(output + kOutputDimensions, output + PaddedOutputDimensions, OutputType{0});
+    }
   }
 
- private:
-   friend class Trainer<ClippedReLUExplicit>;
 };
 
 }  // namespace Eval::NNUE::Layers

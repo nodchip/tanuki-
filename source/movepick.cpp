@@ -124,8 +124,8 @@ MovePicker::MovePicker(const Position&              p,
                        const LowPlyHistory*         lph,
                        const CapturePieceToHistory* cph,
                        const PieceToHistory**       ch,
-                       const PawnHistory* ph,
-                       int pl
+                       const SharedHistories*       sh,
+                       int                          pl
 #if !STOCKFISH
                        ,bool generate_all_legal_moves
 #endif
@@ -135,7 +135,7 @@ MovePicker::MovePicker(const Position&              p,
     lowPlyHistory(lph),
     captureHistory(cph),
     continuationHistory(ch),
-    pawnHistory(ph),
+    sharedHistory(sh),
     ttMove(ttm),
     depth(d),
     ply(pl)
@@ -263,7 +263,7 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
 
 // QUIETS、EVASIONS、CAPTURESの指し手のオーダリングのためのスコアリング。似た処理なので一本化。
 template<GenType Type>
-ExtMove* MovePicker::score(MoveList<Type>& ml) {
+ExtMove* MovePicker::score(const MoveList<Type>& ml) {
 
 #if STOCKFISH
 	static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
@@ -290,7 +290,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
         threatByLesser[ROOK] =
           pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatByLesser[KNIGHT];
         threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
-        threatByLesser[KING]  = pos.attacks_by<QUEEN>(~us) | threatByLesser[QUEEN];
+        threatByLesser[KING]  = 0;
 
 #else
 
@@ -360,7 +360,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 			//    駒を成るような指し手はどうせevaluate()で大きな値がつくからそっちを先に探索することになる。
 
 			m.value  =  2 * (*mainHistory)[us][m.raw()];
-            m.value +=  2 * (*pawnHistory)[pawn_history_index(pos)][pc][to];
+            m.value +=  2 * sharedHistory->pawn_entry(pos)[pc][to];
 			m.value +=      (*continuationHistory[0])[pc][to];
 			m.value +=      (*continuationHistory[1])[pc][to];
 			m.value +=      (*continuationHistory[2])[pc][to];
@@ -368,7 +368,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 			m.value +=      (*continuationHistory[5])[pc][to];
 
 			// bonus for checks
-			m.value += (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75)) * 16384;
+			m.value += ((pos.check_squares(pt) & to) && pos.see_ge(m, -75)) * 16384;
 			// これ、効果があるのか検証したほうが良さげ。
 
 #if STOCKFISH
@@ -381,7 +381,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 			//  📓 移動元の駒が安い駒で当たりになっている場合、
 			//      移動させることでそれを回避できるなら価値を上げておく。
 
-            int v = threatByLesser[pt] & to ? -19 : 20 * bool(threatByLesser[pt] & from);
+            int v = 20 * (bool(threatByLesser[pt] & from) - bool(threatByLesser[pt] & to));
             m.value += PieceValue[pt] * v;
 
 			// → Stockfishのコードそのままは書けない。
@@ -417,12 +417,8 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 			*/
 
 			else
-			{
 				// それ以外の指し手に関してはhistoryの値の順番
 				m.value = (*mainHistory)[us][m.raw()] + (*continuationHistory[0])[pc][to];
-				if (ply < LOW_PLY_HISTORY_SIZE)
-                    m.value += (*lowPlyHistory)[ply][m.raw()];
-			}
 		}
 	}
     return it;
