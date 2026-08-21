@@ -7,6 +7,7 @@
 #include "../../position.h"
 #include "../../usi.h"
 #include "../../thread.h"
+#include "../../misc.h"
 
 #include "dlshogi_searcher.h"
 #include "UctSearch.h"
@@ -47,7 +48,11 @@ void FukauraOuEngine::add_nn_options()
     options.add("DNN_Model", Option(R"(model.onnx)"));
 #endif
 
-#if defined(TENSOR_RT) || defined(ORT_TRT)
+    options.add("ModelArchitecture",
+                Option(Eval::dlshogi::model_architecture_names(),
+                       Eval::dlshogi::DEFAULT_MODEL_ARCHITECTURE));
+
+#if defined(TENSOR_RT)
     // 通常時の推奨128 , 検討の時は推奨256。
     options.add("DNN_Batch_Size", Option(128, 1, 1024));
 #elif defined(ONNXRUNTIME)
@@ -131,6 +136,19 @@ void FukauraOuEngine::init_gpu() {
     auto abs_eval_path = Path::Combine(Directory::GetBinaryFolder(), eval_dir);
     auto model_name    = options["DNN_Model"];
     auto model_path    = Path::Combine(abs_eval_path, model_name);
+    std::string model_architecture = options["ModelArchitecture"];
+
+    if (!Eval::dlshogi::set_model_architecture(model_architecture))
+    {
+        sync_cout << "Error! : unknown ModelArchitecture = " << model_architecture << sync_endl;
+        Tools::exit();
+    }
+
+    const auto& input_spec = Eval::dlshogi::input_feature_spec();
+    sync_cout << "info string ModelArchitecture = " << input_spec.architecture
+              << ", input1 = " << input_spec.features1_channels
+              << ", input2 = " << input_spec.features2_channels
+              << sync_endl;
 
     // modelファイルが存在することは事前に確認しておく。
     if (!Path::Exists(model_path))
@@ -139,7 +157,7 @@ void FukauraOuEngine::init_gpu() {
         Tools::exit();
     }
 
-    searcher.InitGPU(model_path, thread_settings, dnn_batch_size);
+    searcher.InitGPU(model_path, model_architecture, thread_settings, dnn_batch_size);
 }
 
 
@@ -200,13 +218,11 @@ std::string FukauraOuEngine::get_engine_author() const { return "Tadao Yamaoka ,
 
 // 🌈 やねうら王フレームワークと、dlshogiの橋渡しを行うコード 🌈
 
-FukauraOuWorker::FukauraOuWorker(OptionsMap&               options,
-                                 ThreadPool&               threads,
-                                 size_t                    threadIdx,
-                                 NumaReplicatedAccessToken numaAccessToken,
-                                 DlshogiSearcher&          searcher,
-                                 FukauraOuEngine&          engine) :
-    Worker(options, threads, threadIdx, numaAccessToken),
+FukauraOuWorker::FukauraOuWorker(Search::SharedState&     sharedState,
+                                const Search::ThreadIds& ids,
+                                DlshogiSearcher&          searcher,
+                                FukauraOuEngine&          engine) :
+    Worker(sharedState, ids),
     searcher(searcher),
     engine(engine) {}
 
@@ -504,6 +520,7 @@ void engine_main() {
     // USIコマンドの応答部
 	auto usi = std::make_unique<USIEngine>();
     usi->set_engine(*engine);  // エンジン実装を差し替える。
+    usi->enqueue_startup_commands(CommandLine::g);
 
     // USIコマンドの応答のためのループ
     usi->loop();

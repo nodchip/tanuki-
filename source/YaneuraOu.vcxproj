@@ -1,8 +1,12 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="..\packages\Microsoft.ML.OnnxRuntime.1.23.0\build\native\Microsoft.ML.OnnxRuntime.props" Condition="Exists('..\packages\Microsoft.ML.OnnxRuntime.1.23.0\build\native\Microsoft.ML.OnnxRuntime.props')" />
-  <Import Project="..\packages\Microsoft.ML.OnnxRuntime.DirectML.1.23.0\build\native\Microsoft.ML.OnnxRuntime.DirectML.props" Condition="Exists('..\packages\Microsoft.ML.OnnxRuntime.DirectML.1.23.0\build\native\Microsoft.ML.OnnxRuntime.DirectML.props')" />
-  <Import Project="..\packages\Microsoft.AI.DirectML.1.15.4\build\Microsoft.AI.DirectML.props" Condition="Exists('..\packages\Microsoft.AI.DirectML.1.15.4\build\Microsoft.AI.DirectML.props')" />
+  <PropertyGroup>
+    <YaneuraOuUseOnnxRuntimeNuGetPackage Condition="'$(Configuration)'=='Debug-Deep-ORT-CPU' Or '$(Configuration)'=='Debug-Deep-ORT-DML' Or '$(Configuration)'=='Release-Deep-ORT-CPU' Or '$(Configuration)'=='Release-Deep-ORT-DML'">true</YaneuraOuUseOnnxRuntimeNuGetPackage>
+    <YaneuraOuUseDirectMLNuGetPackages Condition="'$(Configuration)'=='Debug-Deep-ORT-DML' Or '$(Configuration)'=='Release-Deep-ORT-DML'">true</YaneuraOuUseDirectMLNuGetPackages>
+  </PropertyGroup>
+  <Import Project="..\packages\Microsoft.ML.OnnxRuntime.1.23.0\build\native\Microsoft.ML.OnnxRuntime.props" Condition="'$(YaneuraOuUseOnnxRuntimeNuGetPackage)'=='true' And Exists('..\packages\Microsoft.ML.OnnxRuntime.1.23.0\build\native\Microsoft.ML.OnnxRuntime.props')" />
+  <Import Project="..\packages\Microsoft.ML.OnnxRuntime.DirectML.1.23.0\build\native\Microsoft.ML.OnnxRuntime.DirectML.props" Condition="'$(YaneuraOuUseDirectMLNuGetPackages)'=='true' And Exists('..\packages\Microsoft.ML.OnnxRuntime.DirectML.1.23.0\build\native\Microsoft.ML.OnnxRuntime.DirectML.props')" />
+  <Import Project="..\packages\Microsoft.AI.DirectML.1.15.4\build\Microsoft.AI.DirectML.props" Condition="'$(YaneuraOuUseDirectMLNuGetPackages)'=='true' And Exists('..\packages\Microsoft.AI.DirectML.1.15.4\build\Microsoft.AI.DirectML.props')" />
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug-Deep-ORT-CPU|x64">
       <Configuration>Debug-Deep-ORT-CPU</Configuration>
@@ -10,10 +14,6 @@
     </ProjectConfiguration>
     <ProjectConfiguration Include="Debug-Deep-ORT-DML|x64">
       <Configuration>Debug-Deep-ORT-DML</Configuration>
-      <Platform>x64</Platform>
-    </ProjectConfiguration>
-    <ProjectConfiguration Include="Debug-Deep-ORT-TRT|x64">
-      <Configuration>Debug-Deep-ORT-TRT</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
     <ProjectConfiguration Include="Debug-Deep-TensorRT|x64">
@@ -26,10 +26,6 @@
     </ProjectConfiguration>
     <ProjectConfiguration Include="Debug-tanuki-mate|x64">
       <Configuration>Debug-tanuki-mate</Configuration>
-      <Platform>x64</Platform>
-    </ProjectConfiguration>
-    <ProjectConfiguration Include="Debug-NNUE-LEARN|x64">
-      <Configuration>Debug-NNUE-LEARN</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
     <ProjectConfiguration Include="Debug-NNUE|x64">
@@ -52,10 +48,6 @@
       <Configuration>Release-Deep-ORT-DML</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
-    <ProjectConfiguration Include="Release-Deep-ORT-TRT|x64">
-      <Configuration>Release-Deep-ORT-TRT</Configuration>
-      <Platform>x64</Platform>
-    </ProjectConfiguration>
     <ProjectConfiguration Include="Release-Deep-TensorRT|x64">
       <Configuration>Release-Deep-TensorRT</Configuration>
       <Platform>x64</Platform>
@@ -70,10 +62,6 @@
     </ProjectConfiguration>
     <ProjectConfiguration Include="Release-Material|x64">
       <Configuration>Release-Material</Configuration>
-      <Platform>x64</Platform>
-    </ProjectConfiguration>
-    <ProjectConfiguration Include="Release-NNUE-LEARN|x64">
-      <Configuration>Release-NNUE-LEARN</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
     <ProjectConfiguration Include="Release-NNUE-sse42|x64">
@@ -212,9 +200,6 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-Deep-ORT-DML|x64'" Label="Configuration">
     <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-Deep-ORT-TRT|x64'" Label="Configuration">
-    <PlatformToolset>v143</PlatformToolset>
-  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-Deep-TensorRT|x64'" Label="Configuration">
     <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
@@ -224,16 +209,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release-Deep-ORT-DML|x64'" Label="Configuration">
     <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release-Deep-ORT-TRT|x64'" Label="Configuration">
-    <PlatformToolset>v143</PlatformToolset>
-  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release-Deep-TensorRT|x64'" Label="Configuration">
-    <PlatformToolset>v143</PlatformToolset>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release-NNUE-LEARN|x64'" Label="Configuration">
-    <PlatformToolset>v143</PlatformToolset>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-NNUE-LEARN|x64'" Label="Configuration">
     <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -351,17 +327,11 @@
     <Import Project="props\YaneuraOuCpu-x64-avx2.props" />
     <Import Project="props\YaneuraOuEdition-Deep-ORT-DML.props" />
   </ImportGroup>
-  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug-Deep-ORT-TRT|x64'" Label="PropertySheets">
-    <Import Project="props\YaneuraOu-common.props" />
-    <Import Project="props\YaneuraOuSolution-debug-x64.props" />
-    <Import Project="props\YaneuraOuCpu-x64-avx2.props" />
-    <Import Project="props\YaneuraOuEdition-Deep-ORT-TRT.props" />
-  </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug-Deep-TensorRT|x64'" Label="PropertySheets">
     <Import Project="props\YaneuraOu-common.props" />
     <Import Project="props\YaneuraOuSolution-debug-x64.props" />
     <Import Project="props\YaneuraOuCpu-x64-avx2.props" />
-    <Import Project="$(CUDA_PATH_V12_8)\extras\visual_studio_integration\MSBuildExtensions\CUDA 12.8.props" />
+    <Import Project="$(CUDA_PATH_V13_1)\extras\visual_studio_integration\MSBuildExtensions\CUDA 13.1.props" />
     <Import Project="props\YaneuraOuEdition-Deep-TensorRT.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release-Deep-ORT-CPU|x64'" Label="PropertySheets">
@@ -376,40 +346,16 @@
     <Import Project="props\YaneuraOuCpu-x64-avx2.props" />
     <Import Project="props\YaneuraOuEdition-Deep-ORT-DML.props" />
   </ImportGroup>
-  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release-Deep-ORT-TRT|x64'" Label="PropertySheets">
-    <Import Project="props\YaneuraOu-common.props" />
-    <Import Project="props\YaneuraOuSolution-release-x64.props" />
-    <Import Project="props\YaneuraOuCpu-x64-avx2.props" />
-    <Import Project="props\YaneuraOuEdition-Deep-ORT-TRT.props" />
-  </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release-Deep-TensorRT|x64'" Label="PropertySheets">
     <Import Project="props\YaneuraOu-common.props" />
     <Import Project="props\YaneuraOuSolution-release-x64.props" />
     <Import Project="props\YaneuraOuCpu-x64-avx2.props" />
-    <Import Project="$(CUDA_PATH_V12_8)\extras\visual_studio_integration\MSBuildExtensions\CUDA 12.8.props" />
+    <Import Project="$(CUDA_PATH_V13_1)\extras\visual_studio_integration\MSBuildExtensions\CUDA 13.1.props" />
     <Import Project="props\YaneuraOuEdition-Deep-TensorRT.props" />
-  </ImportGroup>
-  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release-NNUE-LEARN|x64'" Label="PropertySheets">
-    <Import Project="props\YaneuraOu-common.props" />
-    <Import Project="props\YaneuraOuSolution-release-x64.props" />
-    <Import Project="props\YaneuraOuCpu-x64-avx2.props" />
-    <Import Project="props\YaneuraOu-EvalLearn.props" />
-    <Import Project="props\YaneuraOuEdition-NNUE.props" />
-    <Import Project="..\packages\OpenBLAS.0.2.14.1\build\native\openblas.targets" Condition="Exists('..\packages\OpenBLAS.0.2.14.1\build\native\openblas.targets')" />
-  </ImportGroup>
-  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug-NNUE-LEARN|x64'" Label="PropertySheets">
-    <Import Project="props\YaneuraOu-common.props" />
-    <Import Project="props\YaneuraOuSolution-debug-x64.props" />
-    <Import Project="props\YaneuraOuCpu-x64-avx2.props" />
-    <Import Project="props\YaneuraOu-EvalLearn.props" />
-    <Import Project="props\YaneuraOuEdition-NNUE.props" />
-    <Import Project="..\packages\OpenBLAS.0.2.14.1\build\native\openblas.targets" Condition="Exists('..\packages\OpenBLAS.0.2.14.1\build\native\openblas.targets')" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug-tanuki-mate|x64'">
     <ClCompile>
-      <OpenMPSupport>
-      </OpenMPSupport>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -418,8 +364,6 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug-YaneuraOu-mate|x64'">
     <ClCompile>
-      <OpenMPSupport>
-      </OpenMPSupport>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -428,8 +372,6 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug-NNUE|x64'">
     <ClCompile>
-      <OpenMPSupport>
-      </OpenMPSupport>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -438,8 +380,6 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug-user|x64'">
     <ClCompile>
-      <OpenMPSupport>
-      </OpenMPSupport>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -448,9 +388,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release-NNUE|x64'">
     <ClCompile>
-      <OpenMPSupport>
-      </OpenMPSupport>
-      <PreprocessorDefinitions>YANEURAOU_ENGINE_NNUE_SFNNwoP1536;USE_AVX2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>USE_AVX2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -459,9 +397,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release-KPPT|x64'">
     <ClCompile>
-      <OpenMPSupport>
-      </OpenMPSupport>
-      <PreprocessorDefinitions>USE_AVX2;USE_GENSFEN2018;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>USE_AVX2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -470,8 +406,6 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release-KPP_KKPT|x64'">
     <ClCompile>
-      <OpenMPSupport>
-      </OpenMPSupport>
       <PreprocessorDefinitions>USE_AVX2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
@@ -481,8 +415,6 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release-NNUE-sse42|x64'">
     <ClCompile>
-      <OpenMPSupport>
-      </OpenMPSupport>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -491,8 +423,6 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release-tanuki-mate|x64'">
     <ClCompile>
-      <OpenMPSupport>
-      </OpenMPSupport>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -501,8 +431,6 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release-YaneuraOu-mate|x64'">
     <ClCompile>
-      <OpenMPSupport>
-      </OpenMPSupport>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -511,8 +439,6 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release-Material|x64'">
     <ClCompile>
-      <OpenMPSupport>
-      </OpenMPSupport>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -521,8 +447,6 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug-Material|x64'">
     <ClCompile>
-      <OpenMPSupport>
-      </OpenMPSupport>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -531,8 +455,6 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release-mate-sse42|x64'">
     <ClCompile>
-      <OpenMPSupport>
-      </OpenMPSupport>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -541,8 +463,6 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release-user|x64'">
     <ClCompile>
-      <OpenMPSupport>
-      </OpenMPSupport>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -551,29 +471,16 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release-user-sse42|x64'">
     <ClCompile>
-      <OpenMPSupport>
-      </OpenMPSupport>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release-NNUE-LEARN|x64'">
-    <ClCompile>
-      <PreprocessorDefinitions>_CONSOLE;_UNICODE;UNICODE;%(PreprocessorDefinitions);USE_BLAS</PreprocessorDefinitions>
-    </ClCompile>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug-NNUE-LEARN|x64'">
-    <ClCompile>
-      <PreprocessorDefinitions>_CONSOLE;_UNICODE;UNICODE;%(PreprocessorDefinitions);USE_BLAS</PreprocessorDefinitions>
-    </ClCompile>
-  </ItemDefinitionGroup>
   <ItemDefinitionGroup>
     <ClCompile>
       <AdditionalOptions>/source-charset:utf-8 /execution-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
       <RuntimeLibrary Condition="'$(Configuration)|$(Platform)'=='Debug-Deep-TensorRT|x64'">MultiThreadedDebug</RuntimeLibrary>
-      <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug-NNUE|x64'">YANEURAOU_ENGINE_NNUE_SFNNwoP1536;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -613,12 +520,14 @@
     <ClInclude Include="eval\nnue\architectures\halfkp_512x2-16-32.h" />
     <ClInclude Include="eval\nnue\architectures\halfkpvm_256x2-32-32.h" />
     <ClInclude Include="eval\nnue\architectures\kp_256x2-32-32.h" />
-    <ClInclude Include="eval\nnue\architectures\sfnnwop-1536.h" />
+    <ClInclude Include="eval\nnue\architectures\sfnn-1536.h" />
     <ClInclude Include="eval\nnue\evaluate_nnue.h" />
-    <ClInclude Include="eval\nnue\evaluate_nnue_learner.h" />
     <ClInclude Include="eval\nnue\features\features_common.h" />
     <ClInclude Include="eval\nnue\features\feature_set.h" />
-    <ClInclude Include="eval\nnue\features\half_ka_hm.h" />
+    <ClInclude Include="eval\nnue\features\half_ka1.h" />
+    <ClInclude Include="eval\nnue\features\half_ka2.h" />
+    <ClInclude Include="eval\nnue\features\half_ka_hm1.h" />
+    <ClInclude Include="eval\nnue\features\half_ka_hm2.h" />
     <ClInclude Include="eval\nnue\features\half_kp.h" />
     <ClInclude Include="eval\nnue\features\half_kpe9.h" />
     <ClInclude Include="eval\nnue\features\half_kp_vm.h" />
@@ -628,8 +537,11 @@
     <ClInclude Include="eval\nnue\features\p.h" />
     <ClInclude Include="eval\nnue\features\pe9.h" />
     <ClInclude Include="eval\nnue\layers\affine_transform.h" />
+    <ClInclude Include="eval\nnue\layers\affine_transform_explicit.h" />
     <ClInclude Include="eval\nnue\layers\affine_transform_sparse_input.h" />
+    <ClInclude Include="eval\nnue\layers\affine_transform_sparse_input_explicit.h" />
     <ClInclude Include="eval\nnue\layers\clipped_relu.h" />
+    <ClInclude Include="eval\nnue\layers\clipped_relu_explicit.h" />
     <ClInclude Include="eval\nnue\layers\input_slice.h" />
     <ClInclude Include="eval\nnue\layers\simd.h" />
     <ClInclude Include="eval\nnue\layers\sum.h" />
@@ -638,39 +550,12 @@
     <ClInclude Include="eval\nnue\nnue_common.h" />
     <ClInclude Include="eval\nnue\nnue_feature_transformer.h" />
     <ClInclude Include="eval\nnue\nnue_test_command.h" />
-    <ClInclude Include="eval\nnue\trainer\features\factorizer.h" />
-    <ClInclude Include="eval\nnue\trainer\features\factorizer_feature_set.h" />
-    <ClInclude Include="eval\nnue\trainer\features\factorizer_half_kp.h" />
-    <ClInclude Include="eval\nnue\trainer\features\factorizer_half_kpe9.h" />
-    <ClInclude Include="eval\nnue\trainer\trainer.h" />
-    <ClInclude Include="eval\nnue\trainer\trainer_affine_transform.h" />
-    <ClInclude Include="eval\nnue\trainer\trainer_affine_transform_sparse_input.h" />
-    <ClInclude Include="eval\nnue\trainer\trainer_clipped_relu.h" />
-    <ClInclude Include="eval\nnue\trainer\trainer_feature_transformer.h" />
-    <ClInclude Include="eval\nnue\trainer\trainer_input_slice.h" />
-    <ClInclude Include="eval\nnue\trainer\trainer_sum.h" />
-    <ClInclude Include="eval\sfnn\features\half_ka_v2_hm.h" />
-    <ClInclude Include="eval\sfnn\layers\affine_transform.h" />
-    <ClInclude Include="eval\sfnn\layers\affine_transform_sparse_input.h" />
-    <ClInclude Include="eval\sfnn\layers\clipped_relu.h" />
-    <ClInclude Include="eval\sfnn\layers\sqr_clipped_relu.h" />
-    <ClInclude Include="eval\sfnn\network.h" />
-    <ClInclude Include="eval\sfnn\nnue_accumulator.h" />
-    <ClInclude Include="eval\sfnn\nnue_architecture.h" />
-    <ClInclude Include="eval\sfnn\nnue_common.h" />
-    <ClInclude Include="eval\sfnn\nnue_feature_transformer.h" />
-    <ClInclude Include="eval\sfnn\nnue_misc.h" />
-    <ClInclude Include="eval\sfnn\simd.h" />
     <ClInclude Include="extra\all.h" />
     <ClInclude Include="extra\bitop.h" />
     <ClInclude Include="extra\key128.h" />
     <ClInclude Include="extra\long_effect.h" />
     <ClInclude Include="extra\macros.h" />
     <ClInclude Include="history.h" />
-    <ClInclude Include="learn\half_float.h" />
-    <ClInclude Include="learn\learn.h" />
-    <ClInclude Include="learn\learning_tools.h" />
-    <ClInclude Include="learn\multi_think.h" />
     <ClInclude Include="mate\mate.h" />
     <ClInclude Include="mate\mate_move_picker.h" />
     <ClInclude Include="memory.h" />
@@ -691,7 +576,6 @@
     <ClInclude Include="types.h" />
     <ClInclude Include="position.h" />
     <ClInclude Include="thread.h" />
-    <ClInclude Include="tanuki_progress.h" />
     <ClInclude Include="tt.h" />
     <ClInclude Include="usi.h" />
     <ClInclude Include="usioption.h" />
@@ -702,7 +586,6 @@
     <ClCompile Include="book\apery_book.cpp" />
     <ClCompile Include="book\book.cpp" />
     <ClCompile Include="book\makebook.cpp" />
-    <ClCompile Include="book\makebook2015.cpp" />
     <ClCompile Include="book\makebook2025.cpp" />
     <ClCompile Include="book\policybook.cpp" />
     <ClCompile Include="engine.cpp" />
@@ -726,13 +609,13 @@
     <ClCompile Include="eval\evaluate.cpp" />
     <ClCompile Include="eval\evaluate_mir_inv_tools.cpp" />
     <ClCompile Include="eval\kppt\evaluate_kppt.cpp" />
-    <ClCompile Include="eval\kppt\evaluate_kppt_learner.cpp" />
     <ClCompile Include="eval\kpp_kkpt\evaluate_kpp_kkpt.cpp" />
-    <ClCompile Include="eval\kpp_kkpt\evaluate_kpp_kkpt_learner.cpp" />
     <ClCompile Include="eval\material\evaluate_material.cpp" />
     <ClCompile Include="eval\nnue\evaluate_nnue.cpp" />
-    <ClCompile Include="eval\nnue\evaluate_nnue_learner.cpp" />
-    <ClCompile Include="eval\nnue\features\half_ka_hm.cpp" />
+    <ClCompile Include="eval\nnue\features\half_ka1.cpp" />
+    <ClCompile Include="eval\nnue\features\half_ka2.cpp" />
+    <ClCompile Include="eval\nnue\features\half_ka_hm1.cpp" />
+    <ClCompile Include="eval\nnue\features\half_ka_hm2.cpp" />
     <ClCompile Include="eval\nnue\features\half_kp.cpp" />
     <ClCompile Include="eval\nnue\features\half_kpe9.cpp" />
     <ClCompile Include="eval\nnue\features\half_kp_vm.cpp" />
@@ -741,16 +624,9 @@
     <ClCompile Include="eval\nnue\features\p.cpp" />
     <ClCompile Include="eval\nnue\features\pe9.cpp" />
     <ClCompile Include="eval\nnue\nnue_test_command.cpp" />
-    <ClCompile Include="eval\sfnn\features\half_ka_v2_hm.cpp" />
-    <ClCompile Include="eval\sfnn\network.cpp" />
-    <ClCompile Include="eval\sfnn\nnue_accumulator.cpp" />
-    <ClCompile Include="eval\sfnn\nnue_misc.cpp" />
     <ClCompile Include="extra\bitop.cpp" />
     <ClCompile Include="extra\long_effect.cpp" />
     <ClCompile Include="extra\sfen_packer.cpp" />
-    <ClCompile Include="learn\learner.cpp" />
-    <ClCompile Include="learn\learning_tools.cpp" />
-    <ClCompile Include="learn\multi_think.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="mate\mate.cpp" />
     <ClCompile Include="mate\mate1ply_without_effect.cpp" />
@@ -763,7 +639,6 @@
     <ClCompile Include="movepick.cpp" />
     <ClCompile Include="score.cpp" />
     <ClCompile Include="search.cpp" />
-    <ClCompile Include="tanuki_progress.cpp" />
     <ClCompile Include="testcmd\mate_test_cmd.cpp" />
     <ClCompile Include="testcmd\normal_test_cmd.cpp" />
     <ClCompile Include="testcmd\unit_test.cpp" />
@@ -791,9 +666,9 @@
     <None Include="..\script\engine_invoker5.py" />
     <CustomBuild Include="eval\deep\unpack.cu">
       <FileType>Document</FileType>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Release-Deep-TensorRT|x64'">"$(CUDA_PATH_V12_8)\bin\nvcc.exe" --use-local-env -ccbin "$(VC_ExecutablePath_x64)" -std=c++17 -x cu --keep-dir ..\$(Platform)\$(Configuration)\obj\$(YaneuraOuDbgPrefix)$(YaneuraOuCpuTarget) -maxrregcount=0 --machine 64 --compile -cudart static -DNDEBUG -D_CONSOLE -D_UNICODE -DUNICODE -DYANEURAOU_ENGINE_DEEP -DTENSOR_RT -Xcompiler "/EHsc /W3 /nologo /O2 /Fd..\$(Platform)\$(Configuration)\obj\$(YaneuraOuDbgPrefix)$(YaneuraOuCpuTarget)\vc143.pdb /FS /MT" -o "..\$(Platform)\$(Configuration)\obj\$(YaneuraOuDbgPrefix)$(YaneuraOuCpuTarget)\%(Filename)%(Extension).obj" "%(FullPath)"</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release-Deep-TensorRT|x64'">"$(CUDA_PATH_V13_1)\bin\nvcc.exe" --use-local-env -std=c++17 -x cu --keep-dir ..\$(Platform)\$(Configuration)\obj\$(YaneuraOuDbgPrefix)$(YaneuraOuCpuTarget) -maxrregcount=0 --machine 64 --compile -cudart static -DNDEBUG -D_CONSOLE -D_UNICODE -DUNICODE -DYANEURAOU_ENGINE_DEEP -DTENSOR_RT -Xcompiler "/utf-8 /EHsc /W3 /nologo /O2 /Fd..\$(Platform)\$(Configuration)\obj\$(YaneuraOuDbgPrefix)$(YaneuraOuCpuTarget)\vc143.pdb /FS /MT" -o "..\$(Platform)\$(Configuration)\obj\$(YaneuraOuDbgPrefix)$(YaneuraOuCpuTarget)\%(Filename)%(Extension).obj" "%(FullPath)"</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release-Deep-TensorRT|x64'">..\$(Platform)\$(Configuration)\obj\$(YaneuraOuDbgPrefix)$(YaneuraOuCpuTarget)\%(Filename)%(Extension).obj</Outputs>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug-Deep-TensorRT|x64'">"$(CUDA_PATH_V12_8)\bin\nvcc.exe" --use-local-env -ccbin "$(VC_ExecutablePath_x64)" -std=c++17 -x cu -G --keep-dir ..\$(Platform)\$(Configuration)\obj\$(YaneuraOuDbgPrefix)$(YaneuraOuCpuTarget) -maxrregcount=0 --machine 64 --compile -cudart static -g -D_DEBUG -D_CONSOLE -D_UNICODE -DUNICODE -DYANEURAOU_ENGINE_DEEP -DTENSOR_RT -Xcompiler "/EHsc /W3 /nologo /Od /Fd..\$(Platform)\$(Configuration)\obj\$(YaneuraOuDbgPrefix)$(YaneuraOuCpuTarget)\vc143.pdb /FS /Zi /RTC1 /MTd" -o "..\$(Platform)\$(Configuration)\obj\$(YaneuraOuDbgPrefix)$(YaneuraOuCpuTarget)\%(Filename)%(Extension).obj" "%(FullPath)"</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug-Deep-TensorRT|x64'">"$(CUDA_PATH_V13_1)\bin\nvcc.exe" --use-local-env -std=c++17 -x cu -G --keep-dir ..\$(Platform)\$(Configuration)\obj\$(YaneuraOuDbgPrefix)$(YaneuraOuCpuTarget) -maxrregcount=0 --machine 64 --compile -cudart static -g -D_DEBUG -D_CONSOLE -D_UNICODE -DUNICODE -DYANEURAOU_ENGINE_DEEP -DTENSOR_RT -Xcompiler "/utf-8 /EHsc /W3 /nologo /Od /Fd..\$(Platform)\$(Configuration)\obj\$(YaneuraOuDbgPrefix)$(YaneuraOuCpuTarget)\vc143.pdb /FS /Zi /RTC1 /MTd" -o "..\$(Platform)\$(Configuration)\obj\$(YaneuraOuDbgPrefix)$(YaneuraOuCpuTarget)\%(Filename)%(Extension).obj" "%(FullPath)"</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug-Deep-TensorRT|x64'">..\$(Platform)\$(Configuration)\obj\$(YaneuraOuDbgPrefix)$(YaneuraOuCpuTarget)\%(Filename)%(Extension).obj</Outputs>
     </CustomBuild>
     <None Include=".clang-format" />
@@ -805,20 +680,24 @@
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
-    <Import Project="..\packages\Microsoft.AI.DirectML.1.15.4\build\Microsoft.AI.DirectML.targets" Condition="Exists('..\packages\Microsoft.AI.DirectML.1.15.4\build\Microsoft.AI.DirectML.targets')" />
-    <Import Project="..\packages\Microsoft.ML.OnnxRuntime.DirectML.1.23.0\build\native\Microsoft.ML.OnnxRuntime.DirectML.targets" Condition="Exists('..\packages\Microsoft.ML.OnnxRuntime.DirectML.1.23.0\build\native\Microsoft.ML.OnnxRuntime.DirectML.targets')" />
-    <Import Project="..\packages\Microsoft.ML.OnnxRuntime.1.23.0\build\native\Microsoft.ML.OnnxRuntime.targets" Condition="Exists('..\packages\Microsoft.ML.OnnxRuntime.1.23.0\build\native\Microsoft.ML.OnnxRuntime.targets')" />
+    <Import Project="..\packages\Microsoft.AI.DirectML.1.15.4\build\Microsoft.AI.DirectML.targets" Condition="'$(YaneuraOuUseDirectMLNuGetPackages)'=='true' And Exists('..\packages\Microsoft.AI.DirectML.1.15.4\build\Microsoft.AI.DirectML.targets')" />
+    <Import Project="..\packages\Microsoft.ML.OnnxRuntime.DirectML.1.23.0\build\native\Microsoft.ML.OnnxRuntime.DirectML.targets" Condition="'$(YaneuraOuUseDirectMLNuGetPackages)'=='true' And Exists('..\packages\Microsoft.ML.OnnxRuntime.DirectML.1.23.0\build\native\Microsoft.ML.OnnxRuntime.DirectML.targets')" />
+    <Import Project="..\packages\Microsoft.ML.OnnxRuntime.1.23.0\build\native\Microsoft.ML.OnnxRuntime.targets" Condition="'$(YaneuraOuUseOnnxRuntimeNuGetPackage)'=='true' And Exists('..\packages\Microsoft.ML.OnnxRuntime.1.23.0\build\native\Microsoft.ML.OnnxRuntime.targets')" />
   </ImportGroup>
-  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+  <Target Name="EnsureOnnxRuntimeNuGetPackageBuildImports" BeforeTargets="PrepareForBuild" Condition="'$(YaneuraOuUseOnnxRuntimeNuGetPackage)'=='true'">
     <PropertyGroup>
       <ErrorText>このプロジェクトは、このコンピューター上にない NuGet パッケージを参照しています。それらのパッケージをダウンロードするには、[NuGet パッケージの復元] を使用します。詳細については、http://go.microsoft.com/fwlink/?LinkID=322105 を参照してください。見つからないファイルは {0} です。</ErrorText>
     </PropertyGroup>
-    <Error Condition="!Exists('..\packages\OpenBLAS.0.2.14.1\build\native\openblas.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\OpenBLAS.0.2.14.1\build\native\openblas.targets'))" />
+    <Error Condition="!Exists('..\packages\Microsoft.ML.OnnxRuntime.1.23.0\build\native\Microsoft.ML.OnnxRuntime.props')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Microsoft.ML.OnnxRuntime.1.23.0\build\native\Microsoft.ML.OnnxRuntime.props'))" />
+    <Error Condition="!Exists('..\packages\Microsoft.ML.OnnxRuntime.1.23.0\build\native\Microsoft.ML.OnnxRuntime.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Microsoft.ML.OnnxRuntime.1.23.0\build\native\Microsoft.ML.OnnxRuntime.targets'))" />
+  </Target>
+  <Target Name="EnsureDirectMLNuGetPackageBuildImports" BeforeTargets="PrepareForBuild" Condition="'$(YaneuraOuUseDirectMLNuGetPackages)'=='true'">
+    <PropertyGroup>
+      <ErrorText>このプロジェクトは、このコンピューター上にない NuGet パッケージを参照しています。それらのパッケージをダウンロードするには、[NuGet パッケージの復元] を使用します。詳細については、http://go.microsoft.com/fwlink/?LinkID=322105 を参照してください。見つからないファイルは {0} です。</ErrorText>
+    </PropertyGroup>
     <Error Condition="!Exists('..\packages\Microsoft.AI.DirectML.1.15.4\build\Microsoft.AI.DirectML.props')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Microsoft.AI.DirectML.1.15.4\build\Microsoft.AI.DirectML.props'))" />
     <Error Condition="!Exists('..\packages\Microsoft.AI.DirectML.1.15.4\build\Microsoft.AI.DirectML.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Microsoft.AI.DirectML.1.15.4\build\Microsoft.AI.DirectML.targets'))" />
     <Error Condition="!Exists('..\packages\Microsoft.ML.OnnxRuntime.DirectML.1.23.0\build\native\Microsoft.ML.OnnxRuntime.DirectML.props')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Microsoft.ML.OnnxRuntime.DirectML.1.23.0\build\native\Microsoft.ML.OnnxRuntime.DirectML.props'))" />
     <Error Condition="!Exists('..\packages\Microsoft.ML.OnnxRuntime.DirectML.1.23.0\build\native\Microsoft.ML.OnnxRuntime.DirectML.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Microsoft.ML.OnnxRuntime.DirectML.1.23.0\build\native\Microsoft.ML.OnnxRuntime.DirectML.targets'))" />
-    <Error Condition="!Exists('..\packages\Microsoft.ML.OnnxRuntime.1.23.0\build\native\Microsoft.ML.OnnxRuntime.props')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Microsoft.ML.OnnxRuntime.1.23.0\build\native\Microsoft.ML.OnnxRuntime.props'))" />
-    <Error Condition="!Exists('..\packages\Microsoft.ML.OnnxRuntime.1.23.0\build\native\Microsoft.ML.OnnxRuntime.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Microsoft.ML.OnnxRuntime.1.23.0\build\native\Microsoft.ML.OnnxRuntime.targets'))" />
   </Target>
 </Project>
