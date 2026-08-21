@@ -230,10 +230,10 @@ struct TranspositionTable {
 	}
 
 	// 置換表を確保する。
-	// 現在のOptions["Hash"]の値だけ確保する。
+	// 現在のOptions["USI_Hash"]の値だけ確保する。
 	void Resize(OptionsMap& option)
 	{
-		int64_t hash_size_mb = (int)option["Hash"];
+		int64_t hash_size_mb = (int)option["USI_Hash"];
 
 		// 作成するクラスターの数。2のべき乗にする。
 		int64_t new_num_clusters = 1LL << MSB64((hash_size_mb * 1024 * 1024) / sizeof(Cluster));
@@ -977,9 +977,11 @@ class TanukiMateWorker : public YaneuraOu::Search::Worker
 {
 public:
 
-	TanukiMateWorker(OptionsMap& options, ThreadPool& threads, size_t threadIdx, NumaReplicatedAccessToken numaAccessToken, TanukiMate::TanukiMateClass& mateClass) :
+	TanukiMateWorker(Search::SharedState& sharedState,
+					 const Search::ThreadIds& ids,
+					 TanukiMate::TanukiMateClass& mateClass) :
 		// 基底classのconstructorの呼び出し
-		Worker(options, threads, threadIdx, numaAccessToken), mateClass(mateClass) {
+		Worker(sharedState, ids), mateClass(mateClass) {
 			
 	}
 
@@ -1049,7 +1051,7 @@ public:
 
 		// 置換表のサイズ。[MB]で指定。
 		options.add(  //
-			"Hash", Option(1024, 1, MaxHashMB, [this](const Option& o) {
+			"USI_Hash", Option(1024, 1, MaxHashMB, [this](const Option& o) {
 				// set_tt_size();
 				// ⇨  どうせisready()で確保するので、handlerを呼び出して反映させる必要はない。
 				return std::nullopt;
@@ -1076,12 +1078,13 @@ public:
 
 		// 💡　難しいことは考えずにコピペして使ってください。"Search::UserWorker"と書いてあるところに、
 		//      あなたの作成したWorker派生classの名前を書きます。
-		auto worker_factory = [&](size_t threadIdx, NumaReplicatedAccessToken numaAccessToken)
+		auto worker_factory = [&](Search::SharedState& sharedState,
+								  const Search::ThreadIds& ids)
 		{
 
 			auto p = make_unique_large_page<TanukiMateWorker>(
 				// Worker基底classが渡して欲しいもの。
-				options, threads, threadIdx, numaAccessToken,
+                sharedState, ids,
 
 				// 📌 WorkerからEngine側の何かにアクセスしたい時は、コンストラクタで渡してしまうのが簡単だと思う。
 				//     TODO : あとで他の方法を考える。
@@ -1090,7 +1093,9 @@ public:
 
 			return LargePagePtr<Worker>(p.release());  // Worker* に upcast
 		};
-		threads.set(numaContext.get_numa_config(), options, options["Threads"], worker_factory);
+
+        threads.set(numaContext.get_numa_config(), {options, threads, tt, sharedHists /*, networks*/ },
+					updateContext, options["Threads"], worker_factory);
 
 		// 📌 NUMAの設定
 
@@ -1129,6 +1134,7 @@ namespace {
 		// USIコマンドの応答部
 		auto usi = std::make_unique<USIEngine>();
 		usi->set_engine(*engine);  // エンジン実装を差し替える。
+		usi->enqueue_startup_commands(CommandLine::g);
 
 		// USIコマンドの応答のためのループ
 		usi->loop();
