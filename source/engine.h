@@ -68,7 +68,7 @@ public:
 			この部分を変更することによって、生成するWorker派生classを変更することができる。
 
 		set_tt_size()
-			options["Hash"]などの置換表サイズに対して、それが変更された時に呼び出されるhandler。
+			options["USI_Hash"]などの置換表サイズに対して、それが変更された時に呼び出されるhandler。
 			置換表的なものを使用するときは、これをoverrideすると便利。
 
 		isready()
@@ -140,7 +140,7 @@ public:
     // 新しい局面を設定する。手はUCI形式で指定される
     // 💡 "position"コマンドの下請け。
     //      sfen文字列 + movesのあとに書かれていた(USIの)指し手文字列から、現在の局面を設定する。
-    virtual void set_position(const std::string& sfen, const std::vector<std::string>& moves) = 0;
+    virtual std::optional<PositionSetError> set_position(const std::string& sfen, const std::vector<std::string>& moves) = 0;
 
     // modifiers
 
@@ -158,7 +158,7 @@ public:
     //     また、USER_ENGINEの実装(user-engine.cpp)も参考にすること。
     virtual void resize_threads() = 0;
 
-	// options["Hash"]などの置換表サイズに対して、それが変更された時に呼び出されるhandler。
+	// options["USI_Hash"]などの置換表サイズに対して、それが変更された時に呼び出されるhandler。
     // 置換表的なものを使用するときは、これをoverrideすると便利。
 	virtual void set_tt_size(size_t mb) = 0;
 
@@ -257,6 +257,19 @@ public:
     virtual std::string thread_allocation_information_as_string() const { return ""; }
     virtual std::string thread_binding_information_as_string() const { return ""; }
 
+#if !STOCKFISH
+    // USI拡張コマンド "qsearch_psv" 用のhook。
+    // inputPathの.psv(PsvRecord列)を読み、各局面をqsearch PVのleaf nodeで置換して
+    // outputPathへ書き出す。対応していないEngine派生classではfalseを返す。
+    virtual bool qsearch_psv(const std::string& inputPath,
+                             const std::string& outputPath,
+                             size_t             workerCount,
+                             std::string&       message) {
+        message = "qsearch_psv is not supported by this engine.";
+        return false;
+    }
+#endif
+
 #if STOCKFISH
    private:
     const std::string binaryDirectory;
@@ -272,23 +285,16 @@ public:
 	// 📌 Properties
 
 #if STOCKFISH
-	// 📝 やねうら王では、これはEngineに持つ
-    OptionsMap options;
+	// 📝 やねうら王では、これらはすべてEngineに持つ。
 
-	// 📝 やねうら王では、これはEngineに持つ
-	ThreadPool threads;
+    OptionsMap                                         options;
+    ThreadPool                                         threads;
+    TranspositionTable                                 tt;
+    LazyNumaReplicatedSystemWide<Eval::NNUE::Networks> networks;
 
-	// 📝 やねうら王では、これはYaneuraOuEngineに持つ
-    TranspositionTable                       tt;
-
-	// 📝 やねうら王では、これはEngineに持つ
-    LazyNumaReplicated<Eval::NNUE::Networks> networks;
-
-	// 📝 やねうら王では、これはYaneuraOuEngineに持つ
     Search::SearchManager::UpdateContext  updateContext;
-
-	// TODO : あとで
     std::function<void(std::string_view)> onVerifyNetworks;
+    std::map<NumaIndex, SharedHistories>  sharedHists;
 #else
 	// スレッドプール(探索用スレッド)の取得
 	virtual ThreadPool& get_threads() = 0;
@@ -352,8 +358,8 @@ class Engine: public IEngine {
     virtual void stop() override;
 
     virtual void wait_for_search_finished() override;
-    virtual void set_position(const std::string&              sfen,
-                              const std::vector<std::string>& moves) override;
+    virtual std::optional<PositionSetError> set_position(const std::string&              sfen,
+                                                         const std::vector<std::string>& moves) override;
 
     virtual void set_numa_config_from_option(const std::string& o) override;
     virtual void resize_threads() override;
@@ -390,6 +396,18 @@ class Engine: public IEngine {
     virtual std::string thread_allocation_information_as_string() const override;
     virtual std::string thread_binding_information_as_string() const override;
 
+#if !STOCKFISH
+    // USI拡張コマンド "qsearch_psv" 用のhook。
+    // 標準Engine基底classは未対応扱いとし、標準探索部(YaneuraOuEngine)でoverrideする。
+    virtual bool qsearch_psv(const std::string& inputPath,
+                             const std::string& outputPath,
+                             size_t             workerCount,
+                             std::string&       message) override {
+        message = "qsearch_psv is not supported by this engine.";
+        return false;
+    }
+#endif
+
     virtual void              add_options() override;
     virtual ThreadPool&       get_threads() override { return threads; }
     virtual const ThreadPool& get_threads() const override { return threads; }
@@ -400,8 +418,8 @@ class Engine: public IEngine {
     virtual void usinewgame() override {};
     virtual void user(std::istringstream& is) override {};
 
-    virtual std::string get_engine_name() const override { return "tanuki-"; }
-    virtual std::string get_engine_author() const override { return "yaneurao, nodchip"; }
+    virtual std::string get_engine_name() const override { return "YaneuraOu"; }
+    virtual std::string get_engine_author() const override { return "yaneurao"; }
     virtual std::string get_engine_version() const override { return ENGINE_VERSION; }
     virtual std::string get_eval_name() const override { return EVAL_TYPE_NAME; }
 
@@ -439,9 +457,10 @@ class Engine: public IEngine {
     // スレッドプール(探索用スレッド)
     ThreadPool threads;
 
-    //TranspositionTable tt;
-    // 📝 やねうら王ではEngine基底classはTTを持たない。
-    //     (Engineが必ずStockfishのTTを必要とするわけではないので)
+	// 置換表
+	// 💡 ここに持たせないとSharedStateに渡せなくてStockfishとの差分が大きくなってしまう。
+	//     置換表を実際に確保しないなら、使用メモリは無視できると思うのでこうしておく。
+    TranspositionTable tt;
 
     //LazyNumaReplicated<Eval::NNUE::Networks> networks;
     // TODO : あとで検討する
@@ -451,6 +470,8 @@ class Engine: public IEngine {
 
     // TODO : あとで検討する
     std::function<void(std::string_view)> onVerifyNetworks;
+
+    std::map<NumaIndex, SharedHistories>  sharedHists;
 
     // 📌 エンジンで用いるヘルパー関数
 
@@ -497,9 +518,9 @@ class EngineWrapper: public IEngine {
     virtual void stop() override { engine->stop(); }
 
     virtual void wait_for_search_finished() override { engine->wait_for_search_finished(); }
-    virtual void set_position(const std::string&              sfen,
-                              const std::vector<std::string>& moves) override {
-        engine->set_position(sfen, moves);
+    virtual std::optional<PositionSetError> set_position(const std::string&              sfen,
+                                                         const std::vector<std::string>& moves) override {
+        return engine->set_position(sfen, moves);
     }
 
     virtual void set_numa_config_from_option(const std::string& o) override { engine->set_numa_config_from_option(o); }
@@ -562,6 +583,15 @@ class EngineWrapper: public IEngine {
     virtual std::string thread_binding_information_as_string() const override {
         return engine->thread_binding_information_as_string();
     }
+
+#if !STOCKFISH
+    virtual bool qsearch_psv(const std::string& inputPath,
+                             const std::string& outputPath,
+                             size_t             workerCount,
+                             std::string&       message) override {
+        return engine->qsearch_psv(inputPath, outputPath, workerCount, message);
+    }
+#endif
 
     virtual void              add_options() override { return engine->add_options(); }
     virtual ThreadPool&       get_threads() override { return engine->get_threads(); }

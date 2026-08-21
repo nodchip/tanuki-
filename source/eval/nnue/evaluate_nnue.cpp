@@ -4,7 +4,11 @@
 
 #if defined(EVAL_NNUE)
 
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <vector>
 
@@ -15,14 +19,17 @@
 #include "../../evaluate.h"
 #include "../../position.h"
 #include "../../memory.h"
-#include "../../tanuki_progress.h"
 #include "../../usi.h"
+#if defined(TANUKI_PROGRESS_LAYER_STACKS)
+#include "../../tanuki_progress.h"
+#endif
 
 #if defined(USE_EVAL_HASH)
 #include "../evalhash.h"
 #endif
 
 #include "evaluate_nnue.h"
+#include "nnue_common.h"
 
 namespace YaneuraOu::Eval::NNUE {
 extern int FV_SCALE;
@@ -61,15 +68,6 @@ std::string last_eval_dir = "None";
 // 📌 この評価関数で追加したいエンジンオプションはここで追加する。
 void add_options_(OptionsMap& options, ThreadPool& threads) {
 
-#if defined(EVAL_LEARN)
-    // isreadyタイミングで評価関数を読み込まれると、新しい評価関数の変換のために
-    // test evalconvertコマンドを叩きたいのに、その新しい評価関数がないがために
-    // このコマンドの実行前に異常終了してしまう。
-    // そこでこの隠しオプションでisready時の評価関数の読み込みを抑制して、
-    // test evalconvertコマンドを叩く。
-    Options("SkipLoadingEval", Option(false));
-#endif
-
 #if defined(NNUE_EMBEDDING_OFF)
     const char* default_eval_dir = "eval";
 #else
@@ -88,10 +86,11 @@ void add_options_(OptionsMap& options, ThreadPool& threads) {
                 }));
 
     // NNUEのFV_SCALEの値
-    Options.add("FV_SCALE", Option(24, 1, 128, [&](const Option& o) {
+    Options.add("FV_SCALE", Option(16, 1, 128, [&](const Option& o) {
                     YaneuraOu::Eval::NNUE::FV_SCALE = int(o);
                     return std::nullopt;
                 }));
+
 }
 #endif
 
@@ -113,7 +112,7 @@ void add_options_(OptionsMap& options, ThreadPool& threads) {
 // なお、この方法は Microsoft Visual Studio では動作しません。
 
 #if !defined(_MSC_VER) && !defined(NNUE_EMBEDDING_OFF)
-INCBIN(EmbeddedNNUE, EVALFILE);
+INCBIN(EmbeddedNNUE, EvalFileDefaultName);
 #else
 const unsigned char        gEmbeddedNNUEData[1] = { 0x0 };
 const unsigned char* const gEmbeddedNNUEEnd = &gEmbeddedNNUEData[1];
@@ -158,15 +157,97 @@ namespace NNUE {
 
 	int FV_SCALE = 16; // 水匠5では24がベストらしいのでエンジンオプション"FV_SCALE"で変更可能にした。
 
-    // 入力特徴量変換器
-	LargePagePtr<FeatureTransformer> feature_transformer;
+#if defined(SFNNwoPSQT) && NNUE_SFNN_PROGRESS_BUCKETS != 1
+namespace Progress {
+namespace {
 
-    // 評価関数
-#if defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536)
-    AlignedPtr<Network> network[kLayerStacks];
-#else
-    AlignedPtr<Network> network;
+	constexpr double kQ16Scale = 65536.0;
+	constexpr int kProgressThresholdCount = Parameters::kProgressValueCount - 1;
+
+	std::array<std::int64_t, kProgressThresholdCount> make_thresholds_q16() {
+		std::array<std::int64_t, kProgressThresholdCount> thresholds{};
+		for (int i = 1; i < Parameters::kProgressValueCount; ++i) {
+			const double p = double(i) / double(Parameters::kProgressValueCount);
+			const double scaled = std::round(std::log(p / (1.0 - p)) * kQ16Scale);
+			const double clamped = std::clamp(
+			    scaled,
+			    double((std::numeric_limits<std::int64_t>::min)()),
+			    double((std::numeric_limits<std::int64_t>::max)()));
+			thresholds[i - 1] = std::int64_t(clamped);
+		}
+		return thresholds;
+	}
+
+	const std::array<std::int64_t, kProgressThresholdCount>& thresholds_q16() {
+		static const auto thresholds = make_thresholds_q16();
+		return thresholds;
+	}
+
+	int progress_0_to_255_from_sum_q16(std::int64_t sum_q16) {
+		const auto& thresholds = thresholds_q16();
+		const auto it = std::upper_bound(thresholds.begin(), thresholds.end(), sum_q16);
+		return int(it - thresholds.begin());
+	}
+
+} // namespace
+
+Tools::Result Parameters::ReadParameters(std::istream& stream) {
+	bias_q16_ = read_little_endian<std::int32_t>(stream);
+	read_little_endian<std::int32_t>(stream, &weights_q16_[0][0], kWeightCount);
+	return !stream.fail() ? Tools::ResultCode::Ok : Tools::ResultCode::FileReadError;
+}
+
+bool Parameters::WriteParameters(std::ostream& stream) const {
+	stream.write(reinterpret_cast<const char*>(&bias_q16_), sizeof(bias_q16_));
+	stream.write(reinterpret_cast<const char*>(&weights_q16_[0][0]), sizeof(weights_q16_));
+	return !stream.fail();
+}
+
+int Parameters::Value0To255(const Position& pos) const {
+	const auto sq_bk = pos.square<KING>(BLACK);
+	const auto sq_wk = Inv(pos.square<KING>(WHITE));
+
+	auto* st = pos.state();
+	std::int64_t sum_q16 = 0;
+	if (st->nnue_progress_valid
+	    && st->nnue_progress_key == pos.key()
+	    && st->nnue_progress_sq_bk == sq_bk
+	    && st->nnue_progress_sq_wk == sq_wk) {
+		sum_q16 = st->nnue_progress_sum;
+	} else {
+		const auto& list0 = pos.eval_list()->piece_list_fb();
+		const auto& list1 = pos.eval_list()->piece_list_fw();
+
+		sum_q16 = bias_q16_;
+		for (int i = 0; i < PIECE_NUMBER_KING; ++i) {
+			sum_q16 += weights_q16_[sq_bk][list0[i]];
+			sum_q16 += weights_q16_[sq_wk][list1[i]];
+		}
+
+		st->nnue_progress_key = pos.key();
+		st->nnue_progress_sum = sum_q16;
+		st->nnue_progress_sq_bk = sq_bk;
+		st->nnue_progress_sq_wk = sq_wk;
+		st->nnue_progress_valid = true;
+	}
+
+	return progress_0_to_255_from_sum_q16(sum_q16);
+}
+
+int Parameters::BucketIndex(const Position& pos, int bucket_count) const {
+	if (bucket_count <= 1)
+		return 0;
+
+	const int progress = Value0To255(pos);
+	const int bucket = progress * bucket_count / kProgressValueCount;
+	return std::clamp(bucket, 0, bucket_count - 1);
+}
+
+} // namespace Progress
 #endif
+
+    // NNUE評価関数パラメーター（共有メモリまたはローカルメモリ上に配置）
+    SystemWideSharedConstant<NnueNetworks> shared_networks;
 
     // 評価関数ファイル名
     const char* const kFileName = EvalFileDefaultName;
@@ -175,7 +256,7 @@ namespace NNUE {
     std::string GetArchitectureString() {
         const std::string base = "Features=" + FeatureTransformer::GetStructureString() +
 			",Network=" + Network::GetStructureString();
-#if defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536)
+#if defined(SFNNwoPSQT)
 		return "ModelType=SFNNWithoutPsqt;" + base + "{LayerStack=" + std::to_string(kLayerStacks) + "}";
 #else
 		return base;
@@ -185,68 +266,76 @@ namespace NNUE {
 namespace {
 	namespace Detail {
 
-		// 評価関数パラメータを初期化する
+		// 評価関数パラメータを読み込む（参照版）
 		template <typename T>
-		void Initialize(AlignedPtr<T>& pointer) {
-			pointer = make_unique_aligned<T>();
+		Tools::Result ReadParameters(std::istream& stream, T& obj) {
+			std::uint32_t header;
+			stream.read(reinterpret_cast<char*>(&header), sizeof(header));
+			if (!stream) return Tools::ResultCode::FileReadError;
+			// hash値、古い評価関数ファイルに対して一致するとは限らないので、警告に変更する。
+			if (header != T::GetHashValue())
+				sync_cout << "info string Warning : nn.bin hash mismatch." << sync_endl;
+			return obj.ReadParameters(stream);
 		}
 
+		// 評価関数パラメータを書き込む（参照版）
 		template <typename T>
-		void Initialize(LargePagePtr<T>& pointer) {
-			// →　メモリはLarge Pageから確保することで高速化する。
-			pointer = make_unique_large_page<T>();
+		bool WriteParameters(std::ostream& stream, const T& obj) {
+			constexpr std::uint32_t header = T::GetHashValue();
+			stream.write(reinterpret_cast<const char*>(&header), sizeof(header));
+			return obj.WriteParameters(stream);
 		}
 
-            			// 評価関数パラメータを読み込む
-            			template <typename T>
-            			Tools::Result ReadParameters(std::istream& stream, const AlignedPtr<T>& pointer) {
-            				std::uint32_t header;
-            				stream.read(reinterpret_cast<char*>(&header), sizeof(header));
-            				if (!stream)                     return Tools::ResultCode::FileReadError;
-            				if (header != T::GetHashValue()) return Tools::ResultCode::FileMismatch;
-            				return pointer->ReadParameters(stream);
-            			}
-			// 評価関数パラメータを読み込む
-			template <typename T>
-			Tools::Result ReadParameters(std::istream& stream, const LargePagePtr<T>& pointer) {
-				std::uint32_t header;
-				stream.read(reinterpret_cast<char*>(&header), sizeof(header));
-				if (!stream)                     return Tools::ResultCode::FileReadError;
-				if (header != T::GetHashValue()) return Tools::ResultCode::FileMismatch;
-				return pointer->ReadParameters(stream);
-			}
+	}  // namespace Detail
 
-			// 評価関数パラメータを書き込む
-            template <typename T>
-            bool WriteParameters(std::ostream& stream, const AlignedPtr<T>& pointer) {
-                constexpr std::uint32_t header = T::GetHashValue();
-                stream.write(reinterpret_cast<const char*>(&header), sizeof(header));
-                return pointer->WriteParameters(stream);
-            }
+	// テンポラリにパラメータを読み込み、共有メモリに配置する。
+	// 同じパラメータを持つ他プロセスが既に共有メモリを作成済みなら、そちらを参照する。
+	Tools::Result LoadAndShare(std::istream& stream) {
+		// テンポラリ領域にパラメータを読み込む
+		auto tmp = make_unique_large_page<NnueNetworks>();
 
-			// 評価関数パラメータを書き込む
-			template <typename T>
-			bool WriteParameters(std::ostream& stream, const LargePagePtr<T>& pointer) {
-				constexpr std::uint32_t header = T::GetHashValue();
-				stream.write(reinterpret_cast<const char*>(&header), sizeof(header));
-				return pointer->WriteParameters(stream);
-			}
+		std::uint32_t hash_value;
+		std::string architecture;
+		Tools::Result result = ReadHeader(stream, &hash_value, &architecture, nullptr);
+		if (result.is_not_ok()) return result;
+		if (hash_value != kHashValue) {
+			sync_cout << "info string Warning: NNUE hash mismatch: expected " << kHashValue
+				<< " got " << hash_value
+				<< " arch_in_file=" << architecture
+				<< " arch_expected=" << GetArchitectureString()
+				<< sync_endl;
+		}
 
-		}  // namespace Detail
-	
-		// 評価関数パラメータを初期化する
-		void Initialize() {
-			Detail::Initialize<FeatureTransformer>(feature_transformer);
-#if defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536)
-			for (int i = 0; i < kLayerStacks; ++i) {
-				Detail::Initialize<Network>(network[i]);
-			}
-#else
-			Detail::Initialize<Network>(network);
+		result = Detail::ReadParameters<FeatureTransformer>(stream, tmp->feature_transformer);
+		if (result.is_not_ok()) {
+			sync_cout << "info string NNUE feature params read failed: " << result.to_string() << sync_endl;
+			return result;
+		}
+#if defined(SFNNwoPSQT) && NNUE_SFNN_PROGRESS_BUCKETS != 1
+		result = Detail::ReadParameters<Progress::Parameters>(stream, tmp->progress);
+		if (result.is_not_ok()) {
+			sync_cout << "info string NNUE progress params read failed: " << result.to_string() << sync_endl;
+			return result;
+		}
 #endif
+		for (int i = 0; i < kLayerStacks; ++i) {
+			result = Detail::ReadParameters<Network>(stream, tmp->network[i]);
+			if (result.is_not_ok()) {
+				sync_cout << "info string NNUE network params read failed at stack " << i << ": " << result.to_string() << sync_endl;
+				return result;
+			}
 		}
-	
-		}  // namespace
+
+		if (!stream || stream.peek() != std::ios::traits_type::eof())
+			return Tools::ResultCode::FileCloseError;
+
+		// 共有メモリに配置（同一ハッシュの共有メモリが既に存在すればそちらを参照）
+		shared_networks = SystemWideSharedConstant<NnueNetworks>(*tmp);
+
+		return Tools::ResultCode::Ok;
+	}
+
+	}  // namespace
     // ヘッダを読み込む
     Tools::Result ReadHeader(std::istream& stream,
         std::uint32_t* hash_value, std::string* architecture, std::uint32_t* version_out) {
@@ -280,68 +369,344 @@ namespace {
 
     	// 評価関数パラメータを読み込む
     	Tools::Result ReadParameters(std::istream& stream) {
-    		std::uint32_t hash_value;
-    		std::string architecture;
-    		Tools::Result result = ReadHeader(stream, &hash_value, &architecture, nullptr);
-    		if (result.is_not_ok()) return result;
-    		if (hash_value != kHashValue) {
-    			sync_cout << "info string NNUE hash mismatch: expected " << kHashValue
-    				<< " got " << hash_value
-    				<< " arch_in_file=" << architecture
-    				<< " arch_expected=" << GetArchitectureString()
-    				<< sync_endl;
-    			return Tools::ResultCode::FileMismatch;
-    		}
-    
-    		result = Detail::ReadParameters<FeatureTransformer>(stream, feature_transformer);
-    		if (result.is_not_ok()) {
-    			sync_cout << "info string NNUE feature params read failed: " << result.to_string() << sync_endl;
-    			return result;
-    		}
-#if defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536)
-    		for (int i = 0; i < kLayerStacks; ++i) {
-    			result = Detail::ReadParameters<Network>(stream, network[i]);
-    			if (result.is_not_ok()) {
-    				sync_cout << "info string NNUE network params read failed at stack " << i << ": " << result.to_string() << sync_endl;
-    				return result;
-    			}
-    		}
-#else
-    		result = Detail::ReadParameters<Network>(stream, network);
-    		if (result.is_not_ok()) {
-    			sync_cout << "info string NNUE network params read failed: " << result.to_string() << sync_endl;
-    			return result;
-    		}
-#endif
-
-    		if (stream && stream.peek() == std::ios::traits_type::eof())
-    			return Tools::ResultCode::Ok;
-    		else
-    			return Tools::ResultCode::FileCloseError;
+		return LoadAndShare(stream);
     	}
     // 評価関数パラメータを書き込む
     bool WriteParameters(std::ostream& stream) {
         if (!WriteHeader(stream, kHashValue, GetArchitectureString())) return false;
-        if (!Detail::WriteParameters<FeatureTransformer>(stream, feature_transformer)) return false;
-#if defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536)
-        for (int i = 0; i < kLayerStacks; ++i) {
-            if (!Detail::WriteParameters<Network>(stream, network[i])) return false;
-        }
-#else
-        if (!Detail::WriteParameters<Network>(stream, network)) return false;
+        if (!Detail::WriteParameters<FeatureTransformer>(stream, networks().feature_transformer)) return false;
+#if defined(SFNNwoPSQT) && NNUE_SFNN_PROGRESS_BUCKETS != 1
+        if (!Detail::WriteParameters<Progress::Parameters>(stream, networks().progress)) return false;
 #endif
+        for (int i = 0; i < kLayerStacks; ++i) {
+            if (!Detail::WriteParameters<Network>(stream, networks().network[i])) return false;
+        }
         return !stream.fail();
     }
 
     // 差分計算ができるなら進める
     static void UpdateAccumulatorIfPossible(const Position& pos) {
-        feature_transformer->UpdateAccumulatorIfPossible(pos);
+        networks().feature_transformer.UpdateAccumulatorIfPossible(pos);
     }
 
-#if defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536)
-    // レイヤースタックの選択。Tanuki::Progressが直接indexを返す。
+#if defined(SFNNwoPSQT)
+    static_assert(NNUE_SFNN_HAND_BUCKETS == 1 || NNUE_SFNN_HAND_BUCKETS == 4
+        || NNUE_SFNN_HAND_BUCKETS == 16 || NNUE_SFNN_HAND_BUCKETS == 64
+        || NNUE_SFNN_HAND_BUCKETS == 256 || NNUE_SFNN_HAND_BUCKETS == 1024,
+        "unsupported NNUE_SFNN_HAND_BUCKETS");
+    static_assert(
+        (NNUE_SFNN_HAND_BUCKET_TYPE == NNUE_SFNN_HAND_BUCKET_TYPE_NONE && NNUE_SFNN_HAND_BUCKETS == 1)
+        || (NNUE_SFNN_HAND_BUCKET_TYPE == NNUE_SFNN_HAND_BUCKET_TYPE_HAND4 && NNUE_SFNN_HAND_BUCKETS == 4)
+        || (NNUE_SFNN_HAND_BUCKET_TYPE == NNUE_SFNN_HAND_BUCKET_TYPE_HAND16 && NNUE_SFNN_HAND_BUCKETS == 16)
+        || (NNUE_SFNN_HAND_BUCKET_TYPE == NNUE_SFNN_HAND_BUCKET_TYPE_HAND64 && NNUE_SFNN_HAND_BUCKETS == 64)
+        || (NNUE_SFNN_HAND_BUCKET_TYPE == NNUE_SFNN_HAND_BUCKET_TYPE_HAND64Z && NNUE_SFNN_HAND_BUCKETS == 64)
+        || (NNUE_SFNN_HAND_BUCKET_TYPE == NNUE_SFNN_HAND_BUCKET_TYPE_HAND256 && NNUE_SFNN_HAND_BUCKETS == 256)
+        || (NNUE_SFNN_HAND_BUCKET_TYPE == NNUE_SFNN_HAND_BUCKET_TYPE_HAND1024 && NNUE_SFNN_HAND_BUCKETS == 1024),
+        "NNUE_SFNN_HAND_BUCKET_TYPE does not match NNUE_SFNN_HAND_BUCKETS");
+    static_assert(NNUE_SFNN_KING_BUCKETS == 1 || NNUE_SFNN_KING_BUCKETS == 9
+        || NNUE_SFNN_KING_BUCKETS == 81 || NNUE_SFNN_KING_BUCKETS == 169
+        || NNUE_SFNN_KING_BUCKETS == 441 || NNUE_SFNN_KING_BUCKETS == 841,
+        "unsupported NNUE_SFNN_KING_BUCKETS");
+    static_assert(
+        (NNUE_SFNN_KING_BUCKET_TYPE == NNUE_SFNN_KING_BUCKET_TYPE_NONE && NNUE_SFNN_KING_BUCKETS == 1)
+        || (NNUE_SFNN_KING_BUCKET_TYPE == NNUE_SFNN_KING_BUCKET_TYPE_K3K3 && NNUE_SFNN_KING_BUCKETS == 9)
+        || (NNUE_SFNN_KING_BUCKET_TYPE == NNUE_SFNN_KING_BUCKET_TYPE_K9K9 && NNUE_SFNN_KING_BUCKETS == 81)
+        || (NNUE_SFNN_KING_BUCKET_TYPE == NNUE_SFNN_KING_BUCKET_TYPE_K21K21 && NNUE_SFNN_KING_BUCKETS == 441)
+        || (NNUE_SFNN_KING_BUCKET_TYPE == NNUE_SFNN_KING_BUCKET_TYPE_K29K29 && NNUE_SFNN_KING_BUCKETS == 841)
+        || (NNUE_SFNN_KING_BUCKET_TYPE == NNUE_SFNN_KING_BUCKET_TYPE_K9K9Z && NNUE_SFNN_KING_BUCKETS == 81)
+        || (NNUE_SFNN_KING_BUCKET_TYPE == NNUE_SFNN_KING_BUCKET_TYPE_K13K13Z && NNUE_SFNN_KING_BUCKETS == 169),
+        "NNUE_SFNN_KING_BUCKET_TYPE does not match NNUE_SFNN_KING_BUCKETS");
+    static_assert(NNUE_SFNN_PROGRESS_BUCKETS == 1 || NNUE_SFNN_PROGRESS_BUCKETS == 2
+        || NNUE_SFNN_PROGRESS_BUCKETS == 3 || NNUE_SFNN_PROGRESS_BUCKETS == 4
+        || NNUE_SFNN_PROGRESS_BUCKETS == 8 || NNUE_SFNN_PROGRESS_BUCKETS == 16
+        || NNUE_SFNN_PROGRESS_BUCKETS == 32,
+        "unsupported NNUE_SFNN_PROGRESS_BUCKETS");
+#if defined(TANUKI_PROGRESS_LAYER_STACKS)
+    static_assert(kLayerStacks == 8,
+        "champion-compatible progress requires exactly eight LayerStacks");
+#else
+    static_assert(kLayerStacks == NNUE_SFNN_HAND_BUCKETS * NNUE_SFNN_KING_BUCKETS * NNUE_SFNN_PROGRESS_BUCKETS,
+        "LayerStacks must match the SFNN bucket product");
+#endif
+
+    // レイヤースタックの選択。双方の玉の段に応じて9通りに分岐させる。
+    static int king3_by_king3_bucket(const Position& pos) {
+        const auto stm = pos.side_to_move();
+        int f_rank = int(pos.square<KING>(stm)) % 9;
+        int e_rank = int(pos.square<KING>(~stm)) % 9;
+
+        if (stm == BLACK)
+            e_rank = 8 - e_rank;
+        else
+            f_rank = 8 - f_rank;
+
+        return (f_rank / 3) * 3 + e_rank / 3;
+    }
+
+    // レイヤースタックの選択。双方の玉の段に応じて81通りに分岐させる。
+    static int king9_by_king9_bucket(const Position& pos) {
+        const auto stm = pos.side_to_move();
+        const auto f_king = pos.square<KING>(stm);
+        const auto e_king = pos.square<KING>(~stm);
+        int f_rank = int(stm == BLACK ? rank_of(f_king) : rank_of(Inv(f_king)));
+        int e_rank = int(stm == BLACK ? rank_of(Inv(e_king)) : rank_of(e_king));
+        if (f_rank < 0) f_rank = 0;
+        if (f_rank > 8) f_rank = 8;
+        if (e_rank < 0) e_rank = 0;
+        if (e_rank > 8) e_rank = 8;
+        return f_rank * 9 + e_rank;
+    }
+
+    static int file3_bucket(int file) {
+        if (file < 0) file = 0;
+        if (file > 8) file = 8;
+        return file / 3;
+    }
+
+    static int king9_zone_single_bucket(Square sq) {
+        int rank = int(rank_of(sq));
+        int file = int(file_of(sq));
+        if (rank < 0) rank = 0;
+        if (rank > 8) rank = 8;
+
+        if (rank < 3) return 0;
+        if (rank < 6) return 1;
+        if (rank == 6) return 2;
+        return 3 + (rank - 7) * 3 + file3_bucket(file);
+    }
+
+    // レイヤースタックの選択。玉1つを9 zoneに分け、双方の玉で81通りに分岐させる。
+    static int king9_zone_by_king9_zone_bucket(const Position& pos) {
+        const auto stm = pos.side_to_move();
+        const auto f_king = pos.square<KING>(stm);
+        const auto e_king = pos.square<KING>(~stm);
+        const auto f_sq = stm == BLACK ? f_king : Inv(f_king);
+        const auto e_sq = stm == BLACK ? Inv(e_king) : e_king;
+        return king9_zone_single_bucket(f_sq) * 9 + king9_zone_single_bucket(e_sq);
+    }
+
+    static int king13_zone_single_bucket(Square sq) {
+        int rank = int(rank_of(sq));
+        int file = int(file_of(sq));
+        if (rank < 0) rank = 0;
+        if (rank > 8) rank = 8;
+
+        if (rank < 7) return rank;
+        return 7 + (rank - 7) * 3 + file3_bucket(file);
+    }
+
+    // レイヤースタックの選択。玉1つを13 zoneに分け、双方の玉で169通りに分岐させる。
+    static int king13_zone_by_king13_zone_bucket(const Position& pos) {
+        const auto stm = pos.side_to_move();
+        const auto f_king = pos.square<KING>(stm);
+        const auto e_king = pos.square<KING>(~stm);
+        const auto f_sq = stm == BLACK ? f_king : Inv(f_king);
+        const auto e_sq = stm == BLACK ? Inv(e_king) : e_king;
+        return king13_zone_single_bucket(f_sq) * 13 + king13_zone_single_bucket(e_sq);
+    }
+
+    static int king21_single_bucket(Square sq) {
+        int rank = int(rank_of(sq));
+        int file = int(file_of(sq));
+        if (rank < 0) rank = 0;
+        if (rank > 8) rank = 8;
+        if (file < 0) file = 0;
+        if (file > 8) file = 8;
+
+        if (rank < 3) return 0;
+        if (rank < 6) return 1;
+        if (rank == 6) return 2;
+        return 3 + (rank - 7) * 9 + file;
+    }
+
+    // レイヤースタックの選択。玉1つを21通りに分け、双方の玉で441通りに分岐させる。
+    static int king21_by_king21_bucket(const Position& pos) {
+        const auto stm = pos.side_to_move();
+        const auto f_king = pos.square<KING>(stm);
+        const auto e_king = pos.square<KING>(~stm);
+        const auto f_sq = stm == BLACK ? f_king : Inv(f_king);
+        const auto e_sq = stm == BLACK ? Inv(e_king) : e_king;
+        return king21_single_bucket(f_sq) * 21 + king21_single_bucket(e_sq);
+    }
+
+    static int king29_single_bucket(Square sq) {
+        int rank = int(rank_of(sq));
+        int file = int(file_of(sq));
+        if (rank < 0) rank = 0;
+        if (rank > 8) rank = 8;
+        if (file < 0) file = 0;
+        if (file > 8) file = 8;
+
+        if (rank < 3) return 0;
+        if (rank < 6) return 1;
+        return 2 + (rank - 6) * 9 + file;
+    }
+
+    // レイヤースタックの選択。玉1つを29通りに分け、双方の玉で841通りに分岐させる。
+    static int king29_by_king29_bucket(const Position& pos) {
+        const auto stm = pos.side_to_move();
+        const auto f_king = pos.square<KING>(stm);
+        const auto e_king = pos.square<KING>(~stm);
+        const auto f_sq = stm == BLACK ? f_king : Inv(f_king);
+        const auto e_sq = stm == BLACK ? Inv(e_king) : e_king;
+        return king29_single_bucket(f_sq) * 29 + king29_single_bucket(e_sq);
+    }
+
+    static int hand4_single_bucket(Hand hand) {
+        return hand_count(hand, BISHOP) > 0 ? 1 : 0;
+    }
+
+    static int hand16_single_bucket(Hand hand) {
+        int bucket = 0;
+        if (hand_count(hand, PAWN) > 0)
+            bucket |= 1;
+        if (hand_count(hand, BISHOP) > 0)
+            bucket |= 2;
+        return bucket;
+    }
+
+    static int hand64_single_bucket(Hand hand) {
+        int bucket = 0;
+        if (hand_count(hand, PAWN) + hand_count(hand, LANCE) + hand_count(hand, KNIGHT) > 0)
+            bucket |= 1;
+        if (hand_count(hand, GOLD) + hand_count(hand, SILVER) + hand_count(hand, ROOK) > 0)
+            bucket |= 2;
+        if (hand_count(hand, BISHOP) > 0)
+            bucket |= 4;
+        return bucket;
+    }
+
+    static int hand64z_single_bucket(Hand hand) {
+        const int score =
+              hand_count(hand, PAWN)
+            + (hand_count(hand, LANCE) + hand_count(hand, KNIGHT)) * 2
+            + (hand_count(hand, SILVER) + hand_count(hand, GOLD)) * 3
+            + (hand_count(hand, BISHOP) + hand_count(hand, ROOK)) * 5;
+
+        int bucket = (score + 3) / 4;
+        if (bucket < 0) bucket = 0;
+        if (bucket > 7) bucket = 7;
+        return bucket;
+    }
+
+    static int hand256_single_bucket(Hand hand) {
+        int bucket = 0;
+        if (hand_count(hand, PAWN) + hand_count(hand, LANCE) + hand_count(hand, KNIGHT) > 0)
+            bucket |= 1;
+        if (hand_count(hand, SILVER) + hand_count(hand, GOLD) > 0)
+            bucket |= 2;
+        if (hand_count(hand, BISHOP) > 0)
+            bucket |= 4;
+        if (hand_count(hand, ROOK) > 0)
+            bucket |= 8;
+        return bucket;
+    }
+
+    static int hand1024_single_bucket(Hand hand) {
+        int bucket = 0;
+        if (hand_count(hand, PAWN) > 0)
+            bucket |= 1;
+        if (hand_count(hand, LANCE) + hand_count(hand, KNIGHT) > 0)
+            bucket |= 2;
+        if (hand_count(hand, SILVER) + hand_count(hand, GOLD) > 0)
+            bucket |= 4;
+        if (hand_count(hand, BISHOP) > 0)
+            bucket |= 8;
+        if (hand_count(hand, ROOK) > 0)
+            bucket |= 16;
+        return bucket;
+    }
+
+    static int hand4_bucket(const Position& pos) {
+        const auto stm = pos.side_to_move();
+        return hand4_single_bucket(pos.hand_of(stm)) * 2
+            + hand4_single_bucket(pos.hand_of(~stm));
+    }
+
+    static int hand16_bucket(const Position& pos) {
+        const auto stm = pos.side_to_move();
+        return hand16_single_bucket(pos.hand_of(stm)) * 4
+            + hand16_single_bucket(pos.hand_of(~stm));
+    }
+
+    // 手番側/非手番側の手駒有無を3bitずつ見て、64通りに分岐させる。
+    static int hand64_bucket(const Position& pos) {
+        const auto stm = pos.side_to_move();
+        return hand64_single_bucket(pos.hand_of(stm)) * 8
+            + hand64_single_bucket(pos.hand_of(~stm));
+    }
+
+    // 手番側/非手番側の手駒点zoneを8段階ずつに分け、64通りに分岐させる。
+    static int hand64z_bucket(const Position& pos) {
+        const auto stm = pos.side_to_move();
+        return hand64z_single_bucket(pos.hand_of(stm)) * 8
+            + hand64z_single_bucket(pos.hand_of(~stm));
+    }
+
+    static int hand256_bucket(const Position& pos) {
+        const auto stm = pos.side_to_move();
+        return hand256_single_bucket(pos.hand_of(stm)) * 16
+            + hand256_single_bucket(pos.hand_of(~stm));
+    }
+
+    static int hand1024_bucket(const Position& pos) {
+        const auto stm = pos.side_to_move();
+        return hand1024_single_bucket(pos.hand_of(stm)) * 32
+            + hand1024_single_bucket(pos.hand_of(~stm));
+    }
+
+    static int progress_bucket(const Position& pos) {
+#if NNUE_SFNN_PROGRESS_BUCKETS == 1
+        return 0;
+#else
+        return networks().progress.BucketIndex(pos, NNUE_SFNN_PROGRESS_BUCKETS);
+#endif
+    }
+
     static int stack_index_for_nnue(const Position& pos) {
+#if defined(TANUKI_PROGRESS_LAYER_STACKS)
         return Tanuki::Progress::LayerStackIndex(pos);
+#elif NNUE_SFNN_HAND_BUCKETS == 1 && NNUE_SFNN_KING_BUCKETS == 9 && NNUE_SFNN_KING_BUCKET_TYPE == NNUE_SFNN_KING_BUCKET_TYPE_K3K3 && NNUE_SFNN_PROGRESS_BUCKETS == 1
+        return king3_by_king3_bucket(pos);
+#else
+        int idx = 0;
+
+#if NNUE_SFNN_HAND_BUCKET_TYPE == NNUE_SFNN_HAND_BUCKET_TYPE_HAND4
+        idx = hand4_bucket(pos);
+#elif NNUE_SFNN_HAND_BUCKET_TYPE == NNUE_SFNN_HAND_BUCKET_TYPE_HAND16
+        idx = hand16_bucket(pos);
+#elif NNUE_SFNN_HAND_BUCKET_TYPE == NNUE_SFNN_HAND_BUCKET_TYPE_HAND64
+        idx = hand64_bucket(pos);
+#elif NNUE_SFNN_HAND_BUCKET_TYPE == NNUE_SFNN_HAND_BUCKET_TYPE_HAND64Z
+        idx = hand64z_bucket(pos);
+#elif NNUE_SFNN_HAND_BUCKET_TYPE == NNUE_SFNN_HAND_BUCKET_TYPE_HAND256
+        idx = hand256_bucket(pos);
+#elif NNUE_SFNN_HAND_BUCKET_TYPE == NNUE_SFNN_HAND_BUCKET_TYPE_HAND1024
+        idx = hand1024_bucket(pos);
+#endif
+
+#if NNUE_SFNN_KING_BUCKET_TYPE == NNUE_SFNN_KING_BUCKET_TYPE_K3K3
+        idx = idx * 9 + king3_by_king3_bucket(pos);
+#elif NNUE_SFNN_KING_BUCKET_TYPE == NNUE_SFNN_KING_BUCKET_TYPE_K9K9
+        idx = idx * 81 + king9_by_king9_bucket(pos);
+#elif NNUE_SFNN_KING_BUCKET_TYPE == NNUE_SFNN_KING_BUCKET_TYPE_K9K9Z
+        idx = idx * 81 + king9_zone_by_king9_zone_bucket(pos);
+#elif NNUE_SFNN_KING_BUCKET_TYPE == NNUE_SFNN_KING_BUCKET_TYPE_K13K13Z
+        idx = idx * 169 + king13_zone_by_king13_zone_bucket(pos);
+#elif NNUE_SFNN_KING_BUCKET_TYPE == NNUE_SFNN_KING_BUCKET_TYPE_K21K21
+        idx = idx * 441 + king21_by_king21_bucket(pos);
+#elif NNUE_SFNN_KING_BUCKET_TYPE == NNUE_SFNN_KING_BUCKET_TYPE_K29K29
+        idx = idx * 841 + king29_by_king29_bucket(pos);
+#endif
+
+#if NNUE_SFNN_PROGRESS_BUCKETS != 1
+        idx = idx * NNUE_SFNN_PROGRESS_BUCKETS + progress_bucket(pos);
+#endif
+
+        if (idx < 0) idx = 0;
+        if (idx >= kLayerStacks) idx = kLayerStacks - 1;
+        return idx;
+#endif
     }
 #endif
 
@@ -352,15 +717,24 @@ namespace {
             return accumulator.score;
         }
 
+        alignas(kCacheLineSize) char buffer[Network::kBufferSize];
+#if defined(SFNNwoPSQT)
+        const auto bucket = stack_index_for_nnue(pos);
+#if defined(USE_AVX512) && defined(NNUE_HAS_SFNN_ACCUMULATOR_PROPAGATE)
+        networks().feature_transformer.EnsureAccumulator(pos, refresh);
+        const auto output = networks().network[bucket].PropagateFromAccumulator(
+            accumulator.accumulation, pos.side_to_move(), buffer);
+#else
         alignas(kCacheLineSize) TransformedFeatureType
             transformed_features[FeatureTransformer::kBufferSize];
-        feature_transformer->Transform(pos, transformed_features, refresh);
-        alignas(kCacheLineSize) char buffer[Network::kBufferSize];
-#if defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536)
-        const auto bucket = stack_index_for_nnue(pos);
-        const auto output = network[bucket]->Propagate(transformed_features, buffer);
+        networks().feature_transformer.Transform(pos, transformed_features, refresh);
+        const auto output = networks().network[bucket].Propagate(transformed_features, buffer);
+#endif
 #else
-        const auto output = network->Propagate(transformed_features, buffer);
+        alignas(kCacheLineSize) TransformedFeatureType
+            transformed_features[FeatureTransformer::kBufferSize];
+        networks().feature_transformer.Transform(pos, transformed_features, refresh);
+        const auto output = networks().network[0].Propagate(transformed_features, buffer);
 #endif
 
         // VALUE_MAX_EVALより大きな値が返ってくるとaspiration searchがfail highして
@@ -448,19 +822,13 @@ void load_eval() {
     if (eval_loaded)
         return;
 
-	// 初期化もここでやる。
-	NNUE::Initialize();
-
-#if defined(EVAL_LEARN)
-    if (!Options["SkipLoadingEval"])
-#endif
     {
         const std::string dir_name = Options["EvalDir"];
     #if !defined(__EMSCRIPTEN__)
 		const std::string file_name = NNUE::kFileName;
 #else
 		// WASM
-        const std::string file_name = options["EvalFile"];
+        const std::string file_name = Options["EvalFile"];
     #endif
         const Tools::Result result = [&] {
             if (dir_name != "<internal>") {

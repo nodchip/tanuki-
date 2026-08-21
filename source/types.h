@@ -63,13 +63,14 @@ constexpr size_t  size_min  = (std::numeric_limits<size_t> ::min)();
 // --------------------
 
 // 手番
-enum Color : int8_t { BLACK = 0/*先手*/, WHITE = 1/*後手*/, COLOR_NB /* = 2 */ , COLOR_ZERO = 0,};
+enum Color : uint8_t { BLACK = 0/*先手*/, WHITE = 1/*後手*/, COLOR_NB /* = 2 */ , COLOR_ZERO = 0,};
 
 // 相手番を返す
 constexpr Color operator ~(Color c) { return (Color)(c ^ 1);  }
 
 // 正常な値であるかを検査する。assertで使う用。
-constexpr bool is_ok(Color c) { return COLOR_ZERO <= c && c < COLOR_NB; }
+// 💡 Colorはunsignedなので 0 <= c のような条件は意味のない比較という警告がでる。
+constexpr bool is_ok(Color c) { return /* COLOR_ZERO <= c && */ c < COLOR_NB; }
 
 // 出力用(USI形式ではない)　デバッグ用。
 std::ostream& operator<<(std::ostream& os, Color c);
@@ -79,6 +80,7 @@ std::ostream& operator<<(std::ostream& os, Color c);
 // --------------------
 
 //  例) FILE_3なら3筋。
+// 📝 Stockfishではuint8_tに変更になっているが、それだとダウンカウントできないのであとで見直す。
 enum File : int8_t { FILE_1, FILE_2, FILE_3, FILE_4, FILE_5, FILE_6, FILE_7, FILE_8, FILE_9 , FILE_NB , FILE_ZERO=0 };
 
 // 正常な値であるかを検査する。assertで使う用。
@@ -100,6 +102,7 @@ static std::ostream& operator<<(std::ostream& os, File f) { os << (char)('1' + f
 // --------------------
 
 // 例) RANK_4なら4段目。
+// 📝 Stockfishではuint8_tに変更になっているが、それだとダウンカウントできないのであとで見直す。
 enum Rank : int8_t { RANK_1, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8, RANK_9 , RANK_NB , RANK_ZERO = 0};
 
 // 正常な値であるかを検査する。assertで使う用。
@@ -386,22 +389,34 @@ constexpr int MAX_PLY = MAX_PLY_NUM;
 // 探索深さを表現する型
 using Depth = int;
 
-// The following DEPTH_ constants are used for TT entries and QS movegen stages. In regular search,
-// TT depth is literal: the search depth (effort) used to make the corresponding TT value.
-// In qsearch, however, TT entries only store the current QS movegen stage (which should thus compare
+// The following DEPTH_ constants are used for transposition table entries
+// and quiescence search move generation stages. In regular search, the
+// depth stored in the transposition table is literal: the search depth
+// (effort) used to make the corresponding transposition table value. In
+// quiescence search, however, the transposition table entries only store
+// the current quiescence move generation stage (which should thus compare
 // lower than any regular search depth).
-// 静止探索で王手がかかっているときにこれより少ない残り探索深さでの探索した結果が置換表にあってもそれは信用しない
+//
+// 以下のDEPTH_定数は、置換表エントリと静止探索の指し手生成段階に用いる。
+// 通常探索では、置換表に保存されるdepthは文字通りその置換表の値を得るために
+// 使われた探索深さ(探索努力量)を表す。一方、静止探索では、置換表エントリには
+// 現在の静止探索の指し手生成段階だけを保存する。そのため、通常探索のどの深さよりも
+// 小さい値として比較される必要がある。
 constexpr Depth DEPTH_QS = 0;
 
-// For TT entries where no searching at all was done (whether regular or qsearch) we use
-// _UNSEARCHED, which should thus compare lower than any QS or regular depth. _ENTRY_OFFSET is used
-// only for the TT entry occupancy check (see tt.cpp), and should thus be lower than _UNSEARCHED.
+// For transposition table entries where no searching at all was done
+// (whether regular or qsearch) we use DEPTH_UNSEARCHED, which should thus
+// compare lower than any quiescence or regular depth. DEPTH_NONE is used
+// for the transposition table entry occupancy check (see tt.cpp), and
+// should thus be lower than DEPTH_UNSEARCHED.
+//
+// 通常探索か静止探索かにかかわらず、まったく探索せずに作られた置換表エントリには
+// DEPTH_UNSEARCHEDを用いる。これは、静止探索および通常探索のどの深さよりも
+// 小さい値として比較される必要がある。DEPTH_NONEは置換表エントリの空き判定
+// (tt.cpp参照)に用いる値であり、DEPTH_UNSEARCHEDよりも小さくなければならない。
 
-// DEPTH_NONEは探索せずに値を求めたという意味に使う。
 constexpr Depth DEPTH_UNSEARCHED   = -2;
-
-// TTの下駄履き用(TTEntryが使われているかどうかのチェックにのみ用いる)
-constexpr Depth DEPTH_ENTRY_OFFSET = -3;
+constexpr Depth DEPTH_NONE         = -3;
 
 // --------------------
 //     評価値の性質
@@ -410,7 +425,7 @@ constexpr Depth DEPTH_ENTRY_OFFSET = -3;
 // searchで探索窓を設定するので、この窓の範囲外の値が返ってきた場合、
 // high fail時はこの値は上界(真の値はこれより小さい)、low fail時はこの値は下界(真の値はこれより大きい)
 // である。
-enum Bound : int8_t {
+enum Bound : uint8_t {
 	BOUND_NONE,  // 探索していない(DEPTH_NONE)ときに、最善手か、静的評価スコアだけを置換表に格納したいときに用いる。
 	BOUND_UPPER, // 上界(真の評価値はこれより小さい) = 詰みのスコアや、nonPVで評価値があまり信用ならない状態であることを表現する。
 	BOUND_LOWER, // 下界(真の評価値はこれより大きい)
@@ -520,7 +535,7 @@ constexpr bool is_decisive(Value value) { return is_win(value) || is_loss(value)
 extern const char* USI_PIECE;
 
 // 駒の種類(先後の区別なし)
-enum PieceType : int8_t
+enum PieceType : uint8_t
 {
 	// 金の順番を飛の後ろにしておく。KINGを8にしておく。
 	// こうすることで、成りを求めるときに pc |= 8;で求まり、かつ、先手の全種類の駒を列挙するときに空きが発生しない。(DRAGONが終端になる)
@@ -555,7 +570,7 @@ enum PieceType : int8_t
 };
 
 // 駒(先後の区別あり)
-enum Piece : int8_t
+enum Piece : uint8_t
 {
 	NO_PIECE = 0,
 
@@ -709,7 +724,7 @@ enum MoveEnum : uint32_t {
 
 // Stockfishとの互換性を保つために導入。
 // 普通の指し手か成りの指し手かを判定するのに用いる。
-enum MoveType {
+enum MoveType : uint16_t {
     NORMAL,
 #if STOCKFISH
     PROMOTION  = 1 << 14,
@@ -1002,6 +1017,14 @@ constexpr u32 hand_exists(Hand hand, PieceType pr) { /* ASSERT_LV2(PIECE_HAND_ZE
 
 // 歩以外の手駒を持っているか
 constexpr u32 hand_except_pawn_exists(Hand hand) { return hand & (HAND_BIT_MASK ^ PIECE_BIT_MASK2[PAWN]); }
+
+// 持っている駒種に対応する7bitの値を返す。
+// bit0..6 : 歩, 香 , 桂 , 銀 , 角 , 飛 , 金 の順番。
+static uint32_t hand_exists_7bit(Hand h) {
+    // 枚数が1以上なら、引き算により HAND_BORROW_MASK の該当ビットが 0 になる。
+    // それを反転 (~ ) して PEXT で集約すれば 7bit のフラグが得られる。
+    return PEXT32(~(HAND_BORROW_MASK - h), HAND_BORROW_MASK);
+}
 
 // 手駒にpcを1枚加える。
 constexpr void add_hand(Hand &hand, PieceType pr) { hand = Hand(hand + PIECE_TO_HAND[pr]); }
