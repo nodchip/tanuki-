@@ -31,7 +31,7 @@ constexpr int LayerStacks = 8;
 // 各層の次元数
 constexpr IndexType kInputDims   = kTransformedFeatureDimensions;
 constexpr IndexType kHidden1Dims = 7;
-constexpr IndexType kHidden2Dims = 32;
+constexpr IndexType kHidden2Dims = 64;
 
 struct Network {
 
@@ -55,7 +55,7 @@ struct Network {
 	}
 
 	static std::string GetStructureString() {
-		return "SFNN-1536";
+		return "SFNN-1536-8-64";
 	}
 
 	Tools::Result ReadParameters(std::istream& stream) {
