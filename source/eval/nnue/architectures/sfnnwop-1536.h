@@ -23,7 +23,7 @@ using RawFeatures = Features::FeatureSet<
 
 // Number of input feature dimensions after conversion
 // 変換後の入力特徴量の次元数
-constexpr IndexType kTransformedFeatureDimensions = 768;
+constexpr IndexType kTransformedFeatureDimensions = 1024;
 
 // Number of networks stored in the evaluation file
 constexpr int LayerStacks = 8;
@@ -31,7 +31,7 @@ constexpr int LayerStacks = 8;
 // 各層の次元数
 constexpr IndexType kInputDims   = kTransformedFeatureDimensions;
 constexpr IndexType kHidden1Dims = 7;
-constexpr IndexType kHidden2Dims = 32;
+constexpr IndexType kHidden2Dims = 64;
 
 struct Network {
 
@@ -55,7 +55,7 @@ struct Network {
 	}
 
 	static std::string GetStructureString() {
-		return "SFNN-1536";
+		return "SFNN-2048-8-64";
 	}
 
 	Tools::Result ReadParameters(std::istream& stream) {
