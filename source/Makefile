@@ -31,7 +31,9 @@
 #                                  ビルドを確認したDocker image → nvcr.io/nvidia/tensorrt:22.12-py3
 
 
-YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_SFNNwoP1536
+# Dedicated ShogiBench loader for standard HalfKP 256x2-32-32 networks.
+# Keep this fixed even when the builder supplies a different edition.
+override YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_KP256
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_HALFKPE9
