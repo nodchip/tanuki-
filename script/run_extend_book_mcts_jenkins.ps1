@@ -106,7 +106,26 @@ function Write-ProgressSummary {
         return
     }
     try {
-        $status = Get-Content -LiteralPath $StatusPath -Raw | ConvertFrom-Json
+        $share = [System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete
+        $stream = [System.IO.File]::Open(
+            $StatusPath,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            $share
+        )
+        try {
+            $reader = [System.IO.StreamReader]::new($stream)
+            try {
+                $statusText = $reader.ReadToEnd()
+            }
+            finally {
+                $reader.Dispose()
+            }
+        }
+        finally {
+            $stream.Dispose()
+        }
+        $status = $statusText | ConvertFrom-Json
         if ($status.run_id -ne $RunId) {
             Write-Output "[progress-warning] run_id=$RunId reason=run-id-mismatch actual=$($status.run_id)"
             return
@@ -161,6 +180,7 @@ function Remove-OldRunLogs {
     $completedRunIds | Select-Object -Skip $completedToKeep | ForEach-Object {
         Remove-Item -LiteralPath (Join-Path $LogDirectory "book-extender-$_.stdout.log") -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath (Join-Path $LogDirectory "book-extender-$_.stderr.log") -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath (Join-Path $LogDirectory "heartbeat-helper-$_.log") -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -182,6 +202,7 @@ $logDirectory = Join-Path $statePath 'logs'
 $runId = '{0}-{1}' -f [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssZ'), ([Guid]::NewGuid().ToString('N').Substring(0, 8))
 $stdoutLogPath = Join-Path $logDirectory "book-extender-$runId.stdout.log"
 $stderrLogPath = Join-Path $logDirectory "book-extender-$runId.stderr.log"
+$heartbeatLogPath = Join-Path $logDirectory "heartbeat-helper-$runId.log"
 Remove-Item -LiteralPath $stopRequestPath -Force -ErrorAction SilentlyContinue
 Remove-OldRunLogs -LogDirectory $logDirectory -RetentionCount $LogRetentionCount -ActiveRunId $runId
 
@@ -209,6 +230,8 @@ $heartbeatArguments = @(
     '-OwnerStartedAtTicks', $ownerProcess.StartTime.ToUniversalTime().Ticks.ToString()
     '-PidPath', $heartbeatHelperPidPath
     '-IntervalSec', $HeartbeatIntervalSec.ToString()
+    '-LogPath', $heartbeatLogPath
+    '-RunId', $runId
 )
 $heartbeatStartInfo = [System.Diagnostics.ProcessStartInfo]::new()
 $heartbeatStartInfo.FileName = 'powershell.exe'
@@ -243,6 +266,8 @@ $stderrOffset = 0L
 $stdoutPending = ''
 $stderrPending = ''
 $nextProgress = [DateTimeOffset]::UtcNow.AddSeconds($ProgressIntervalSec)
+$heartbeatHelperFailed = $false
+$heartbeatHelperExitCode = $null
 try {
     $stdoutWriteStream = [System.IO.File]::Open(
         $stdoutLogPath,
@@ -272,6 +297,15 @@ try {
             -StdoutPending ([ref]$stdoutPending) `
             -StderrPending ([ref]$stderrPending)
         if ($process.HasExited) { break }
+        if (-not $heartbeatHelperFailed -and $heartbeatProcess.HasExited) {
+            $heartbeatHelperFailed = $true
+            $heartbeatHelperExitCode = $heartbeatProcess.ExitCode
+            Write-Output (
+                "[heartbeat-helper] event=unexpected-exit run_id=$runId " +
+                "exit_code=$heartbeatHelperExitCode log=$heartbeatLogPath"
+            )
+            [System.IO.File]::WriteAllText($stopRequestPath, 'heartbeat-helper-exited')
+        }
         if ([DateTimeOffset]::UtcNow -ge $nextProgress) {
             Write-ProgressSummary `
                 -StatusPath $statusPath `
@@ -295,6 +329,9 @@ try {
         -StdoutPending ([ref]$stdoutPending) `
         -StderrPending ([ref]$stderrPending)
     Remove-OldRunLogs -LogDirectory $logDirectory -RetentionCount $LogRetentionCount -ActiveRunId $runId
+    if ($heartbeatHelperFailed) {
+        exit 23
+    }
     exit $childExitCode
 }
 finally {

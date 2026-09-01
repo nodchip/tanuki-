@@ -423,14 +423,14 @@ pub fn run_normal_extension(
                     return Ok(());
                 }
                 let state = shared.0.lock().map_err(|_| CoordinatorError::Poisoned)?;
-                if state.running_workers != 0 {
-                    let wait = status_interval
-                        .min(next_histogram.saturating_duration_since(std::time::Instant::now()));
-                    let _ = shared
-                        .1
-                        .wait_timeout(state, wait)
-                        .map_err(|_| CoordinatorError::Poisoned)?;
-                }
+                let wait = status_interval
+                    .min(next_histogram.saturating_duration_since(std::time::Instant::now()));
+                let _ = shared
+                    .1
+                    .wait_timeout_while(state, wait, |state| {
+                        state.running_workers != 0 || !state.save_finished
+                    })
+                    .map_err(|_| CoordinatorError::Poisoned)?;
             }
         })
     };

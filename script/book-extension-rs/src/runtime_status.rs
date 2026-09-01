@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, io::Write, path::Path};
+use std::{collections::BTreeMap, io::Write, path::Path, thread, time::Duration};
 
 use serde::Serialize;
 use tempfile::NamedTempFile;
@@ -76,7 +76,26 @@ pub enum RuntimeStatusError {
     Persist(#[from] tempfile::PersistError),
 }
 
+const PERSIST_RETRY_COUNT: usize = 5;
+const PERSIST_RETRY_DELAY: Duration = Duration::from_millis(20);
+
 pub fn write_runtime_status_atomic(
+    path: &Path,
+    snapshot: &RuntimeStatusSnapshot,
+) -> Result<(), RuntimeStatusError> {
+    for attempt in 0..=PERSIST_RETRY_COUNT {
+        match write_runtime_status_atomic_once(path, snapshot) {
+            Ok(()) => return Ok(()),
+            Err(error) if attempt < PERSIST_RETRY_COUNT && is_retryable_persist_error(&error) => {
+                thread::sleep(PERSIST_RETRY_DELAY);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    unreachable!("bounded status persistence loop must return")
+}
+
+fn write_runtime_status_atomic_once(
     path: &Path,
     snapshot: &RuntimeStatusSnapshot,
 ) -> Result<(), RuntimeStatusError> {
@@ -88,4 +107,18 @@ pub fn write_runtime_status_atomic(
     temporary.as_file_mut().sync_all()?;
     temporary.persist(path)?;
     Ok(())
+}
+
+fn is_retryable_persist_error(error: &RuntimeStatusError) -> bool {
+    let kind = match error {
+        RuntimeStatusError::Io(error) => error.kind(),
+        RuntimeStatusError::Persist(error) => error.error.kind(),
+        RuntimeStatusError::Json(_) => return false,
+    };
+    matches!(
+        kind,
+        std::io::ErrorKind::PermissionDenied
+            | std::io::ErrorKind::WouldBlock
+            | std::io::ErrorKind::AlreadyExists
+    )
 }

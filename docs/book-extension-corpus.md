@@ -197,7 +197,7 @@ Get-Content -Wait C:\book-extension-state\pilot\logs\book-extender-<run-id>.stde
 Get-Content -Raw C:\book-extension-state\pilot\runtime-status.json | ConvertFrom-Json | Format-List
 ```
 
-ラッパーはRust子プロセスだけに`BUILD_ID=dontKillMe`を継承させる。heartbeatはログ中継と独立したhelperプロセスが更新し、Jenkinsコンソールが一時的に詰まっても更新を継続する。ラッパーとhelperは通常のJenkins cookieを維持するため、Jenkins Abortでは両方が終了してheartbeatが止まる。Rust子プロセスはtimeout後に全USIへ`stop`を送り、中断結果を破棄する。USIが停止timeout後に強制終了され、パイプ切断を返した場合も停止中の想定エラーとして扱い、最終保存を完了する。通常の手動停止は`script/request_extend_book_stop.ps1 -StateDir C:\book-extension-state\pilot`を使う。
+ラッパーはRust子プロセスだけに`BUILD_ID=dontKillMe`を継承させる。heartbeatはログ中継と独立したhelperプロセスが更新し、Jenkinsコンソールが一時的に詰まっても更新を継続する。helperは一時的なファイル書き込み失敗を短い間隔で再試行し、`state_dir/logs/heartbeat-helper-<run_id>.log`へ失敗、回復、終了理由を保存する。helperが予期せず終了した場合、ラッパーは`stop.request`を作成してRust子プロセスの正常保存を待ち、終了コード23を返す。ラッパーとhelperは通常のJenkins cookieを維持するため、Jenkins Abortでは両方が終了してheartbeatが止まる。Rust子プロセスはtimeout後に全USIへ`stop`を送り、中断結果を破棄する。USIが停止timeout後に強制終了され、パイプ切断を返した場合も停止中の想定エラーとして扱い、最終保存を完了する。通常の手動停止は`script/request_extend_book_stop.ps1 -StateDir C:\book-extension-state\pilot`を使う。
 
 実Jenkins停止ボタン試験は別マシンで行う。Abort後に`[stop] reason=jenkins-heartbeat-expired`が永続ログへ記録され、出力DBをRust validatorで読めること、再開時にtaskを重複適用しないことを確認する。
 
