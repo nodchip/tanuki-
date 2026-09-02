@@ -746,7 +746,12 @@ usi_stop_timeout_sec = 5
 }
 #[test]
 fn runtime_status_recovers_after_transient_write_failure() {
-    use std::{thread, time::Duration};
+    use std::{
+        io::{BufRead, BufReader},
+        sync::mpsc,
+        thread,
+        time::Duration,
+    };
 
     let directory = tempfile::tempdir().unwrap();
     let input = directory.path().join("input.db");
@@ -782,7 +787,7 @@ usi_stop_timeout_sec = 5
         ),
     )
     .unwrap();
-    let child = Command::new(env!("CARGO_BIN_EXE_book-extender"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_book-extender"))
         .args([
             "--config",
             config.to_str().unwrap(),
@@ -799,17 +804,38 @@ usi_stop_timeout_sec = 5
             "--multipv",
             "1",
             "--max-runtime-sec",
-            "0.5",
+            "1.0",
         ])
         .stderr(std::process::Stdio::piped())
         .spawn()
         .unwrap();
 
-    thread::sleep(Duration::from_millis(150));
+    let child_stderr = child.stderr.take().unwrap();
+    let (write_failed_sender, write_failed_receiver) = mpsc::channel();
+    let stderr_reader = thread::spawn(move || {
+        let mut captured = String::new();
+        for line in BufReader::new(child_stderr).lines() {
+            let line = line.unwrap();
+            captured.push_str(&line);
+            captured.push('\n');
+            if line.contains("[runtime-status] event=write-failed") {
+                let _ = write_failed_sender.send(());
+            }
+        }
+        captured
+    });
+    if let Err(error) = write_failed_receiver.recv_timeout(Duration::from_secs(5)) {
+        let _ = child.kill();
+        let status = child.wait().unwrap();
+        let stderr = stderr_reader.join().unwrap();
+        panic!(
+            "runtime did not report the forced status write failure: status={status} error={error:?}\n{stderr}"
+        );
+    }
     std::fs::remove_dir(&status_path).unwrap();
-    let result = child.wait_with_output().unwrap();
-    let stderr = String::from_utf8_lossy(&result.stderr);
-    assert!(result.status.success(), "{stderr}");
+    let status = child.wait().unwrap();
+    let stderr = stderr_reader.join().unwrap();
+    assert!(status.success(), "{stderr}");
     assert!(
         stderr.contains("[runtime-status] event=write-failed"),
         "{stderr}"
