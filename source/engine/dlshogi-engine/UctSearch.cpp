@@ -3,6 +3,9 @@
 #if defined(YANEURAOU_ENGINE_DEEP)
 
 #include "Node.h"
+#if defined(ENABLE_NN_CACHE)
+#include "PolicyValueCache.h"
+#endif
 #include "UctSearch.h"
 #include "dlshogi_searcher.h"
 #include "PrintInfo.h"
@@ -98,6 +101,15 @@ using namespace YaneuraOu::Eval::dlshogi;
 
 namespace dlshogi
 {
+#if defined(ENABLE_NN_CACHE)
+static PolicyValueCache policy_value_cache;
+
+void SetDnnCacheSize(size_t capacity)
+{
+	policy_value_cache.SetCapacity(capacity);
+}
+#endif
+
 // atomicな加算。
 template <typename T>
 inline void atomic_fetch_add(std::atomic<T>* obj, T arg) {
@@ -138,19 +150,30 @@ inline void UpdateResult(ChildNode* child, float result, Node* current)
 // 初期化
 // "isready"に対して呼び出される。
 // スレッド生成は、やねうら王フレームワーク側で行う。
+//   model_path                 : 読み込むmodel path
+//   model_architecture         : 読み込むmodelの入力特徴量仕様
 //   new_thread                 : このインスタンスが確保するUctSearcherの数
 //   gpu_id                     : このインスタンスに紐付けられているGPU ID
 //   policy_value_batch_maxsize : このインスタンスが生成したスレッドがNNのforward()を呼び出す時のbatchsize
-void UctSearcherGroup::Initialize(const std::string& model_path , const int new_thread , const int gpu_id, const int policy_value_batch_maxsize)
+void UctSearcherGroup::Initialize(const std::string& model_path, const std::string& model_architecture,
+                                  const int new_thread, const int gpu_id, const int policy_value_batch_maxsize)
 {
 	// gpu_idは呼び出しごとに変更される可能性はないと仮定してよい。
 	// (固定で確保しているので)
 	this->gpu_id = gpu_id;
+	const bool architecture_changed = this->model_architecture != model_architecture;
+#if defined(TENSOR_RT)
+	const bool slot_capacity_changed = nn && nn->slot_capacity() < new_thread;
+#else
+	constexpr bool slot_capacity_changed = false;
+#endif
 
 	// モデルpath名に変更があるなら、それを読み直す。
 	// ※　先にNNが構築されていないと、このあとNNからalloc()できないのでUctSearcherより先に構築する。
 	// batch sizeに変更があった場合も、このbatch size分だけGPU側にメモリを確保したいので、この時もNNのインスタンスを作りなおす。
-	if (this->model_path != model_path || policy_value_batch_maxsize != this->policy_value_batch_maxsize)
+	if (this->model_path != model_path || architecture_changed
+	    || policy_value_batch_maxsize != this->policy_value_batch_maxsize
+	    || slot_capacity_changed)
 	{
 		std::lock_guard<std::mutex> lk(mutex_gpu);
 
@@ -158,14 +181,18 @@ void UctSearcherGroup::Initialize(const std::string& model_path , const int new_
 		if (nn)
 			nn.reset();
 
-		nn = NN::build_nn(model_path, gpu_id, policy_value_batch_maxsize);
+		nn = NN::build_nn(model_path, gpu_id, policy_value_batch_maxsize, new_thread);
 
 		// 次回、このmodel_pathかalloced_policy_value_batch_maxsizeに変更があれば、再度NNをbuildする。
 		this->model_path = model_path;
+		this->model_architecture = model_architecture;
 	}
+	nn->prepare_slots(new_thread);
 
 	// スレッド数に変更があるか、batchサイズが前回から変更があったならばUctSearcherのインスタンス自体を生成しなおす。
-	if (searchers.size() != (size_t)new_thread || policy_value_batch_maxsize != this->policy_value_batch_maxsize)
+	if (searchers.size() != (size_t)new_thread || architecture_changed
+	    || policy_value_batch_maxsize != this->policy_value_batch_maxsize
+	    || slot_capacity_changed)
 	{
 		searchers.clear();
 		searchers.reserve(new_thread); // いまから追加する要素数はわかっているので事前に確保しておく。
@@ -174,6 +201,7 @@ void UctSearcherGroup::Initialize(const std::string& model_path , const int new_
 			searchers.emplace_back(this, i, policy_value_batch_maxsize);
 
 		this->policy_value_batch_maxsize = policy_value_batch_maxsize;
+		this->threads = new_thread;
 	}
 
 	for (int i = 0; i < new_thread; ++i) {
@@ -231,7 +259,7 @@ UCTSearcherGroup::Term()
 NodeTree* UctSearcher::get_node_tree() const { return grp->get_dlsearcher()->get_node_tree(); }
 
 // Evaluateを呼び出すリスト(queue)に追加する。
-void UctSearcher::QueuingNode(const Position *pos, Node* node, float* value_win)
+bool UctSearcher::QueuingNode(const Position *pos, Node* node, float* value_win)
 {
 #if defined(LOG_PRINT)
 	logger.print("sfen "+pos->sfen(0));
@@ -244,6 +272,22 @@ void UctSearcher::QueuingNode(const Position *pos, Node* node, float* value_win)
 		std::cout << "error" << std::endl;
 	}*/
 
+#if defined(ENABLE_NN_CACHE) && !defined(USE_POLICY_BOOK) && !defined(MAKE_BOOK)
+	Key policy_value_cache_key = 0;
+	if (policy_value_cache.IsEnabled()) {
+		policy_value_cache_key = pos->key();
+		PolicyValueCache::ResultPtr cached;
+		if (policy_value_cache.Lookup(policy_value_cache_key, node->child_num, cached)) {
+			ChildNode* uct_child = node->child.get();
+			for (ChildNumType i = 0; i < node->child_num; ++i)
+				uct_child[i].nnrate = cached->policy[i];
+			*value_win = cached->value;
+			node->SetEvaled();
+			return true;
+		}
+	}
+#endif
+
 	// 現在の局面に出現している特徴量を設定する。
 	// current_policy_value_batch_indexは、UctSearchThreadごとに持っているのでlock不要
 
@@ -254,6 +298,9 @@ void UctSearcher::QueuingNode(const Position *pos, Node* node, float* value_win)
 #if defined(USE_POLICY_BOOK)
 		pos->hash_key() ,
 #endif
+#if defined(ENABLE_NN_CACHE)
+		policy_value_cache_key,
+#endif
 		value_win};
 
 #ifdef MAKE_BOOK
@@ -262,6 +309,7 @@ void UctSearcher::QueuingNode(const Position *pos, Node* node, float* value_win)
 
 	current_policy_value_batch_index++;
 	// これが、policy_value_batch_maxsize分だけ溜まったら、nn->forward()を呼び出す。
+	return false;
 }
 
 // leaf node用の詰め将棋ルーチンの初期化(alloc)を行う。
@@ -377,8 +425,8 @@ void UctSearcher::DummyForward()
 	// このスレッドとGPUとを紐付ける。
 	grp->set_device();
 	// 最大バッチサイズ(policy_value_batch_maxsize) と 最小バッチサイズ(1) でそれぞれ推論を実行しておく
-	grp->nn_forward(policy_value_batch_maxsize, packed_features1, packed_features2, features1, features2, y1, y2);
-	grp->nn_forward(1, packed_features1, packed_features2, features1, features2, y1, y2);
+	grp->nn_forward(thread_id, policy_value_batch_maxsize, packed_features1, packed_features2, features1, features2, y1, y2);
+	grp->nn_forward(thread_id, 1, packed_features1, packed_features2, features1, features2, y1, y2);
 	// ダミー局面推論終了時間
 	TimePoint tpforwardend = now();
 
@@ -693,12 +741,14 @@ float UctSearcher::UctSearch(Position* pos, ChildNode* parent , Node* current, N
 					else
 					{
 						// ノードをキューに追加
-						QueuingNode(pos, child_node , &visitor.value_win);
-
-						// このとき、まだEvalNodeが完了していないのでchild_node->evaledはまだfalseのまま
-						// にしておく必要がある。
-
-						return QUEUING;
+						if (QueuingNode(pos, child_node, &visitor.value_win))
+							result = 1.0f - visitor.value_win;
+						else
+						{
+							// このとき、まだEvalNodeが完了していないのでchild_node->evaledはまだfalseのまま
+							// にしておく必要がある。
+							return QUEUING;
+						}
 					}
 				}
 
@@ -919,17 +969,17 @@ void UctSearcher::EvalNode() {
 #if defined(LOG_PRINT)
     // 入力特徴量
     std::stringstream ss;
-    for (int i = 0; i < sizeof(NN_Input1) / sizeof(DType); ++i)
-        ss << ((DType*) features1)[i] << ",";
+    for (size_t i = 0; i < input1_element_count(1); ++i)
+        ss << features1[i] << ",";
     ss << endl << "Input2" << endl;
-    for (int i = 0; i < sizeof(NN_Input2) / sizeof(DType); ++i)
-        ss << ((DType*) features2)[i] << ",";
+    for (size_t i = 0; i < input2_element_count(1); ++i)
+        ss << features2[i] << ",";
     logger.print(ss.str());
 #endif
 
     // predict
     // policy_value_batch_sizeの数だけまとめて局面を評価する
-    grp->nn_forward(policy_value_batch_size, packed_features1, packed_features2, features1,
+    grp->nn_forward(thread_id, policy_value_batch_size, packed_features1, packed_features2, features1,
                     features2, y1, y2);
 
     //cout << *y2 << endl;
@@ -1095,6 +1145,16 @@ void UctSearcher::EvalNode() {
             }
         }
 #endif
+#if defined(ENABLE_NN_CACHE) && !defined(USE_POLICY_BOOK) && !defined(MAKE_BOOK)
+		if (policy_value_cache.IsEnabled()) {
+			std::vector<float> policy(child_num);
+			for (ChildNumType j = 0; j < child_num; ++j)
+				policy[j] = uct_child[j].nnrate;
+			policy_value_cache.Store(policy_value_batch[i].policy_value_cache_key,
+			                         *policy_value_batch[i].value_win, std::move(policy));
+		}
+#endif
+
         node->SetEvaled();
     }
 }

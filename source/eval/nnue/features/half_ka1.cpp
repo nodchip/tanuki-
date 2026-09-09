@@ -1,10 +1,10 @@
-// NNUE評価関数の入力特徴量HalfKA_hmの定義
+﻿// NNUE評価関数の入力特徴量HalfKAの定義
 
 #include "../../../config.h"
 
 #if defined(EVAL_NNUE)
 
-#include "half_ka_hm.h"
+#include "half_ka1.h"
 #include "index_list.h"
 
 namespace YaneuraOu {
@@ -12,26 +12,14 @@ namespace Eval::NNUE::Features {
 
 	// 玉の位置とBonaPieceから特徴量のインデックスを求める
 	template <Side AssociatedKing>
-	inline IndexType HalfKA_hm<AssociatedKing>::MakeIndex(Square sq_k, BonaPiece p) {
-		if (sq_k >= SQ_61) {
-			// 玉が6筋～9筋にいる場合、4筋～1筋に反転する。
-			sq_k = Mir(sq_k);
-
-			if (p >= fe_hand_end) {
-				// 持駒は反転しない。
-				IndexType piece_index = (p - fe_hand_end) / SQ_NB;
-				Square sq_p = static_cast<Square>((p - fe_hand_end) % SQ_NB);
-				sq_p = Mir(sq_p);
-				p = static_cast<BonaPiece>(fe_hand_end + piece_index * static_cast<IndexType>(SQ_NB) + sq_p);
-			}
-		}
-		// 後手玉は自玉と同じPLANEに持っていく
-		return static_cast<IndexType>(e_king) * static_cast<IndexType>(sq_k) + static_cast<IndexType>(p >= e_king ? p - SQ_NB : p);
+	inline IndexType HalfKA1<AssociatedKing>::MakeIndex(Square sq_k, BonaPiece p) {
+		// 両玉を区別して含める
+		return static_cast<IndexType>(fe_end2) * static_cast<IndexType>(sq_k) + static_cast<IndexType>(p);
 	}
 
 	// 駒の情報を取得する
 	template <Side AssociatedKing>
-	inline void HalfKA_hm<AssociatedKing>::GetPieces(
+	inline void HalfKA1<AssociatedKing>::GetPieces(
 		const Position& pos, Color perspective,
 		BonaPiece** pieces, Square* sq_target_k) {
 		*pieces = (perspective == BLACK) ?
@@ -45,7 +33,7 @@ namespace Eval::NNUE::Features {
 
 	// 特徴量のうち、値が1であるインデックスのリストを取得する
 	template <Side AssociatedKing>
-	void HalfKA_hm<AssociatedKing>::AppendActiveIndices(
+	void HalfKA1<AssociatedKing>::AppendActiveIndices(
 		const Position& pos, Color perspective, IndexList* active) {
 		// コンパイラの警告を回避するため、配列サイズが小さい場合は何もしない
 		if (RawFeatures::kMaxActiveDimensions < kMaxActiveDimensions) return;
@@ -60,7 +48,7 @@ namespace Eval::NNUE::Features {
 
 	// 特徴量のうち、一手前から値が変化したインデックスのリストを取得する
 	template <Side AssociatedKing>
-	void HalfKA_hm<AssociatedKing>::AppendChangedIndices(
+	void HalfKA1<AssociatedKing>::AppendChangedIndices(
 		const Position& pos, Color perspective,
 		IndexList* removed, IndexList* added) {
 		BonaPiece* pieces;
@@ -77,8 +65,8 @@ namespace Eval::NNUE::Features {
 		}
 	}
 
-	template class HalfKA_hm<Side::kFriend>;
-	template class HalfKA_hm<Side::kEnemy>;
+	template class HalfKA1<Side::kFriend>;
+	template class HalfKA1<Side::kEnemy>;
 
 }  // namespace Eval::NNUE::Features
 }  // namespace YaneuraOu

@@ -6,6 +6,8 @@
 
 #include "dlshogi_types.h"
 
+#include <cstddef>
+
 namespace dlshogi {
 
 using namespace YaneuraOu;
@@ -77,6 +79,11 @@ struct SearchOptions {
     // 探索したノード数とは異なる。
     // ※　探索rootでの訪問回数(move_count)がこれを超えたらhashfullとして探索を中止する。
     NodeCountType uct_node_limit = 10000000;
+
+#if defined(ENABLE_NN_CACHE)
+	// NN推論結果cacheの最大局面数。0なら無効。
+	size_t dnn_cache_size = 100000;
+#endif
 
     // エンジンオプションの"MultiPV"の値。
     ChildNumType multi_pv = 1;

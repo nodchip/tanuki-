@@ -11,7 +11,7 @@
 // このペタショック化である。
 
 // コマンド例)
-//    makebook petashock book1.db user_book1.db
+//    makebook peta_shock book1.db user_book1.db
 // 
 // book1.dbをmin-max探索してuser_book1.dbを書き出す。
 // 
@@ -35,6 +35,10 @@
 	あと、連続王手の千日手の処理については、その実装箇所にコメントがあるようにそこだけDFSしています。
 */
 
+#include <array>
+#include <cstdio>
+#include <cstring>
+#include <fstream>
 #include <sstream>
 #include <vector>
 #include <unordered_map>
@@ -44,7 +48,6 @@
 #include <random>
 #include <utility> // For std::forward
 #include <new>
-#include <stdexcept>
 
 #include "book.h"
 #include "../thread.h"
@@ -247,6 +250,157 @@ namespace MakeBook2025
 	// 乱数を入れているので、実際の手数はこれより少し少ないかも。
 	const u16 BOOK_MAX_PLY = 256;
 
+	static constexpr std::array<char, 16> YBB_MAGIC = {
+		'Y', 'A', 'N', 'E', '-', 'B', 'I', 'N',
+		'B', 'O', 'O', 'K', '-', 'V', '1', '\0',
+	};
+	static constexpr u64 YBB_HEADER_SIZE = 32;
+	static constexpr u64 YBB_INDEX_RECORD_SIZE = 44;
+	static constexpr u64 YBB_FLAG_MOVE_DEPTH = 1;
+	static constexpr u64 YBB_KNOWN_FLAGS = YBB_FLAG_MOVE_DEPTH;
+
+	struct YbbIndexEntry
+	{
+		PackedSfen packed_sfen{};
+		u64 moves_offset = 0;
+		u16 ply = 0;
+		u16 move_count = 0;
+	};
+
+	static bool ends_with(const string& text, const string& suffix)
+	{
+		return text.size() >= suffix.size() && text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
+	}
+
+	static bool is_ybb_book(const string& filename)
+	{
+		return ends_with(filename, ".ybb");
+	}
+
+	static bool is_db_book(const string& filename)
+	{
+		return ends_with(filename, ".db");
+	}
+
+	static string ybb_book_name_from_db_name(const string& db_filename)
+	{
+		if (!ends_with(db_filename, ".db"))
+			return string();
+		string ybb_filename = db_filename;
+		ybb_filename.resize(ybb_filename.size() - string(".db").size());
+		ybb_filename += ".ybb";
+		return ybb_filename;
+	}
+
+	static string resolve_book_filename_with_ybb_fallback(const string& filename)
+	{
+		if (Path::Exists(filename))
+			return filename;
+
+		const auto ybb_filename = ybb_book_name_from_db_name(filename);
+		if (!ybb_filename.empty() && Path::Exists(ybb_filename))
+			return ybb_filename;
+
+		return filename;
+	}
+
+	static bool read_u16_le(istream& is, u16& value)
+	{
+		array<unsigned char, 2> bytes{};
+		is.read(reinterpret_cast<char*>(bytes.data()), bytes.size());
+		if (!is)
+			return false;
+		value = u16(bytes[0] | (bytes[1] << 8));
+		return true;
+	}
+
+	static bool read_u64_le(istream& is, u64& value)
+	{
+		array<unsigned char, 8> bytes{};
+		is.read(reinterpret_cast<char*>(bytes.data()), bytes.size());
+		if (!is)
+			return false;
+		value = 0;
+		for (int i = 7; i >= 0; --i)
+		{
+			value <<= 8;
+			value |= bytes[size_t(i)];
+		}
+		return true;
+	}
+
+	static bool write_u16_le(ostream& os, u16 value)
+	{
+		array<unsigned char, 2> bytes{
+			static_cast<unsigned char>(value & 0xff),
+			static_cast<unsigned char>((value >> 8) & 0xff),
+		};
+		os.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+		return bool(os);
+	}
+
+	static bool write_u64_le(ostream& os, u64 value)
+	{
+		array<unsigned char, 8> bytes{};
+		for (size_t i = 0; i < bytes.size(); ++i)
+		{
+			bytes[i] = static_cast<unsigned char>(value & 0xff);
+			value >>= 8;
+		}
+		os.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+		return bool(os);
+	}
+
+	static bool read_ybb_header(istream& is, u64& record_count, u64& flags)
+	{
+		array<char, 16> magic{};
+		is.read(magic.data(), magic.size());
+		if (!is || magic != YBB_MAGIC)
+			return false;
+		if (!read_u64_le(is, record_count))
+			return false;
+		if (!read_u64_le(is, flags))
+			return false;
+		return (flags & ~YBB_KNOWN_FLAGS) == 0;
+	}
+
+	static bool ybb_index_size(u64 record_count, u64& index_size)
+	{
+		if (record_count > (std::numeric_limits<u64>::max() - YBB_HEADER_SIZE) / YBB_INDEX_RECORD_SIZE)
+			return false;
+		index_size = YBB_HEADER_SIZE + record_count * YBB_INDEX_RECORD_SIZE;
+		return true;
+	}
+
+	static bool read_ybb_index_entry(istream& is, YbbIndexEntry& entry)
+	{
+		is.read(reinterpret_cast<char*>(entry.packed_sfen.data), 32);
+		if (!is)
+			return false;
+		if (!read_u64_le(is, entry.moves_offset))
+			return false;
+		if (!read_u16_le(is, entry.ply))
+			return false;
+		if (!read_u16_le(is, entry.move_count))
+			return false;
+		return true;
+	}
+
+	static bool write_ybb_header(ostream& os, u64 record_count, u64 flags)
+	{
+		os.write(YBB_MAGIC.data(), YBB_MAGIC.size());
+		return bool(os) && write_u64_le(os, record_count) && write_u64_le(os, flags);
+	}
+
+	static bool write_ybb_index_entry(ostream& os, const YbbIndexEntry& entry)
+	{
+		os.write(reinterpret_cast<const char*>(entry.packed_sfen.data), 32);
+		return bool(os)
+			&& write_u64_le(os, entry.moves_offset)
+			&& write_u16_le(os, entry.ply)
+			&& write_u16_le(os, entry.move_count);
+	}
+
 	// 定跡の評価値とその時のdepthをひとまとめにした構造体
 	struct ValueDepth
 	{
@@ -299,7 +453,7 @@ namespace MakeBook2025
 	struct BookMove
 	{
 		// moveの指し手がleaf nodeである場合。
-		BookMove(Move16 move, s16 value, s16 depth) :
+		BookMove(Move16 move, s16 value, u16 depth) :
 			move(move), vd(ValueDepth(value, depth)), leaf(true) {
 		}
 
@@ -380,13 +534,16 @@ namespace MakeBook2025
 		void make_book(istringstream& is, string book_dir)
 		{
 			// 初期化等
-			initialize(is, book_dir);
+			if (initialize(is, book_dir).is_not_ok())
+				return;
 
 			// ペタショック化する定跡ファイルの読み込み
-			read_book();
+			if (read_book().is_not_ok())
+				return;
 
 			// 局面の合流チェック
-			convergence_check();
+			if (convergence_check().is_not_ok())
+				return;
 
 			// 後退解析その1 : 出次数0の局面を定跡ツリーから削除
 			remove_const_nodes();
@@ -401,10 +558,14 @@ namespace MakeBook2025
 			propagate_all_nodes();
 
 			// ペタショック化した定跡の書き出し
-			write_peta_shock_book(writebook_path, book_nodes);
+			if (write_peta_shock_book(writebook_path, book_nodes).is_not_ok())
+				return;
 
 			// 結果出力
 			output_result();
+
+			if (!fast)
+				std::remove(sfen_temp_path.c_str());
 		}
 
 	protected:
@@ -412,7 +573,7 @@ namespace MakeBook2025
 		// === helper function ===
 
 		// 初期化
-		void initialize(istringstream& is, string book_dir)
+		Tools::Result initialize(istringstream& is, string book_dir)
 		{
 			// hashkeyのbit数をチェックして、128bit未満であれば警告を出す。
 
@@ -425,6 +586,11 @@ namespace MakeBook2025
 			}
 
 			is >> readbook_path >> writebook_path;
+			if (readbook_path.empty() || writebook_path.empty())
+			{
+				cout << "Error! : makebook peta_shock requires readbook and writebook paths." << endl;
+				return Tools::ResultCode::FileMismatch;
+			}
 
 			// コマンドラインオプションの読み込み
 			string token;
@@ -442,7 +608,26 @@ namespace MakeBook2025
 
 			readbook_path  = Path::Combine(BOOK_DIR, readbook_path);
 			writebook_path = Path::Combine(BOOK_DIR, writebook_path);
-			sfen_temp_path = Path::Combine(BOOK_DIR, SFEN_TEMP_FILENAME);
+			sfen_temp_path = writebook_path + "." + SFEN_TEMP_FILENAME;
+
+			const auto actual_readbook_path = resolve_book_filename_with_ybb_fallback(readbook_path);
+			if (actual_readbook_path != readbook_path)
+			{
+				cout << "readbook fallback   : " << readbook_path << " -> " << actual_readbook_path << endl;
+				readbook_path = actual_readbook_path;
+			}
+
+			const bool read_is_db = is_db_book(readbook_path);
+			const bool write_is_db = is_db_book(writebook_path);
+			const bool read_is_ybb = is_ybb_book(readbook_path);
+			const bool write_is_ybb = is_ybb_book(writebook_path);
+			if (!((read_is_db && write_is_db) || (read_is_ybb && write_is_ybb)))
+			{
+				cout << "Error! : makebook peta_shock supports only .db -> .db or .ybb -> .ybb." << endl;
+				cout << "        readbook_path  : " << readbook_path << endl;
+				cout << "        writebook_path : " << writebook_path << endl;
+				return Tools::ResultCode::FileMismatch;
+			}
 
 			cout << "[ PetaShock makebook CONFIGURATION ]" << endl;
 
@@ -473,6 +658,8 @@ namespace MakeBook2025
 
 			original_sfens.clear();
 			check_loop_nodes.clear();
+
+			return Tools::Result::Ok();
 		}
 
 		// ペタショック化前の定跡ファイルの読み込み。
@@ -485,6 +672,145 @@ namespace MakeBook2025
 
 			// MemoryBookに読み込むと時間かかる + メモリ消費量が大きくなるので
 			// 直接自前でbook_nodesに読み込む。
+
+			if (is_ybb_book(readbook_path))
+			{
+				ifstream index_reader(readbook_path, ios::binary);
+				if (!index_reader)
+				{
+					sync_cout << "info string Error! : can't read file : " + readbook_path << sync_endl;
+					return Tools::ResultCode::FileNotFound;
+				}
+				ifstream moves_reader(readbook_path, ios::binary);
+				if (!moves_reader)
+				{
+					sync_cout << "info string Error! : can't read file : " + readbook_path << sync_endl;
+					return Tools::ResultCode::FileNotFound;
+				}
+
+				u64 noe = 0;
+				u64 ybb_flags = 0;
+				if (!read_ybb_header(index_reader, noe, ybb_flags))
+				{
+					sync_cout << "info string Error! : invalid ybb file : " << readbook_path << sync_endl;
+					return Tools::ResultCode::FileReadError;
+				}
+				u64 moves_base = 0;
+				if (!ybb_index_size(noe, moves_base))
+				{
+					sync_cout << "info string Error! : invalid ybb file : " << readbook_path << sync_endl;
+					return Tools::ResultCode::FileReadError;
+				}
+
+				cout << "Number Of Elements : " << noe << endl;
+				book_nodes.reserve(size_t(noe));
+				hashkey_to_index.reserve(size_t(noe));
+				if (fast)
+					original_sfens.reserve(size_t(noe));
+
+				SystemIO::TextWriter sfen_writer;
+				if (!fast)
+				{
+					if (sfen_writer.Open(sfen_temp_path).is_not_ok())
+					{
+						sync_cout << "info string Error! : can't write file : " + sfen_temp_path << sync_endl;
+						return Tools::ResultCode::FileOpenError;
+					}
+				}
+
+				progress.reset(noe == 0 ? 0 : noe - 1);
+				Position pos;
+
+				for (u64 i = 0; i < noe; ++i)
+				{
+					progress.check(i);
+
+					YbbIndexEntry entry;
+					if (!read_ybb_index_entry(index_reader, entry))
+					{
+						if (!fast)
+							sfen_writer.Close();
+						sync_cout << "info string Error! : invalid ybb file : " << readbook_path << sync_endl;
+						return Tools::ResultCode::FileReadError;
+					}
+					string sfen = Position::sfen_unpack(entry.packed_sfen);
+					StringExtension::trim_number_inplace(sfen);
+					sfen += " " + std::to_string(entry.ply);
+
+					if (fast)
+						original_sfens.push_back(sfen);
+					else
+						sfen_writer.WriteLine(sfen);
+
+					StringExtension::trim_number_inplace(sfen);
+					Color stm = (sfen.find('w') != std::string::npos) ? WHITE : BLACK;
+					string white_sfen = stm == WHITE ? sfen : Position::sfen_to_flipped_sfen(sfen);
+
+					StateInfo si;
+					pos.set(white_sfen, &si);
+					Key white_hash_key = pos.key();
+
+					auto book_node_index = BookNodeIndex(book_nodes.size());
+					hashkey_to_index[white_hash_key] = book_node_index;
+
+					bool checked = pos.checkers();
+					book_nodes.emplace_back(BookNode());
+					auto& book_node = book_nodes.back();
+
+					book_node.color       = stm;
+					book_node.checked     = checked;
+					book_node.check_loop  = checked;
+					in_check_counter     += checked;
+
+					moves_reader.clear();
+					moves_reader.seekg(std::streamoff(moves_base + entry.moves_offset), ios::beg);
+					if (!moves_reader)
+					{
+						if (!fast)
+							sfen_writer.Close();
+						sync_cout << "info string Error! : invalid ybb moves area : " << readbook_path << sync_endl;
+						return Tools::ResultCode::FileReadError;
+					}
+
+					for (u16 move_index = 0; move_index < entry.move_count; ++move_index)
+					{
+						u16 move16_value = 0;
+						u16 eval_value = 0;
+						if (!read_u16_le(moves_reader, move16_value) || !read_u16_le(moves_reader, eval_value))
+						{
+							if (!fast)
+								sfen_writer.Close();
+							sync_cout << "info string Error! : invalid ybb moves area : " << readbook_path << sync_endl;
+							return Tools::ResultCode::FileReadError;
+						}
+						if (ybb_flags & YBB_FLAG_MOVE_DEPTH)
+						{
+							// depthフィールドは読み飛ばすが、入力値は後退解析に使用しない。
+							u16 ignored_depth;
+							if (!read_u16_le(moves_reader, ignored_depth))
+							{
+								if (!fast)
+									sfen_writer.Close();
+								sync_cout << "info string Error! : invalid ybb moves area : " << readbook_path << sync_endl;
+								return Tools::ResultCode::FileReadError;
+							}
+						}
+						Move16 move16 = Move16(move16_value);
+						auto value = (s16)std::clamp((int)(s16)eval_value, BOOK_VALUE_MIN, BOOK_VALUE_MAX);
+
+						if (book_node.color == WHITE)
+							move16 = flip_move(move16);
+
+						// 入力側の指し手はleaf候補なので、入力depthを引き継がず0として後退解析する。
+						book_node.moves.emplace_back(BookMove(move16, value, 0));
+					}
+				}
+
+				if (!fast)
+					sfen_writer.Close();
+
+				return Tools::Result::Ok();
+			}
 
 			SystemIO::TextReader reader;
 			// ReadLine()の時に行の末尾のスペース、タブを自動トリム。空行は自動スキップ。
@@ -553,7 +879,13 @@ namespace MakeBook2025
 			// sfen文字列はファイルに書き出す。
 			SystemIO::TextWriter sfen_writer;
 			if (!fast)
-				sfen_writer.Open(sfen_temp_path);
+			{
+				if (sfen_writer.Open(sfen_temp_path).is_not_ok())
+				{
+					sync_cout << "info string Error! : can't write file : " + sfen_temp_path << sync_endl;
+					return Tools::ResultCode::FileOpenError;
+				}
+			}
 
 			Position pos;
 
@@ -627,7 +959,6 @@ namespace MakeBook2025
 				auto move_str   = scanner.get_text();
 				auto ponder_str = scanner.get_text(); // 使わないがskipはしないといけない。
 				auto value      = (s16)std::clamp((int)scanner.get_number(0), BOOK_VALUE_MIN, BOOK_VALUE_MAX);
-				auto depth      = (s16)scanner.get_number(0);
 				Move16 move16 = (move_str == "none" || move_str == "None" || move_str == "resign") ? Move16::none() : USIEngine::to_move16(move_str);
 				//Move16 ponder = (ponder_str == "none" || ponder_str == "None" || ponder_str == "resign") ? Move16::none() : USI::to_move16(ponder_str);
 
@@ -636,7 +967,8 @@ namespace MakeBook2025
 				if (book_node.color == WHITE)
 					move16 = flip_move(move16);
 
-				book_node.moves.emplace_back(BookMove(move16, value, 0 /*depth*/));
+				// 入力側の指し手はleaf候補なので、入力depthを引き継がず0として後退解析する。
+				book_node.moves.emplace_back(BookMove(move16, value, 0));
 				// あとで合流のチェックをしてleaf nodeであるかを確認する。
 			}
 			if (!fast)
@@ -646,7 +978,7 @@ namespace MakeBook2025
 		}
 
 		// 局面の合流チェック
-		void convergence_check()
+		Tools::Result convergence_check()
 		{
 			cout << "Convergence Check   :" << endl;
 
@@ -654,7 +986,13 @@ namespace MakeBook2025
 			// これは、元の定跡ファイルに出現したsfen文字列がそのまま書き出されている。
 			SystemIO::TextReader sfen_reader;
 			if (!fast)
-				sfen_reader.Open(sfen_temp_path);
+			{
+				if (sfen_reader.Open(sfen_temp_path).is_not_ok())
+				{
+					sync_cout << "info string Error! : can't read file : " + sfen_temp_path << sync_endl;
+					return Tools::ResultCode::FileOpenError;
+				}
+			}
 
 			Tools::ProgressBar progress;
 			progress.reset(book_nodes.size() - 1);
@@ -674,7 +1012,13 @@ namespace MakeBook2025
 				if (fast)
 					sfen = original_sfens[i];
 				else
-					sfen_reader.ReadLine(sfen);
+				{
+					if (sfen_reader.ReadLine(sfen).is_not_ok())
+					{
+						sync_cout << "info string Error! : can't read sfen temp file : " + sfen_temp_path << sync_endl;
+						return Tools::ResultCode::FileReadError;
+					}
+				}
 
 				// この局面が後手番なら、sfenを先手の局面化する。
 				// 💡: BookNodeは先手の局面で考えている。hashkeyは後手の局面で考えている。
@@ -686,7 +1030,7 @@ namespace MakeBook2025
 
 				// 元ファイルの定跡DBに登録されていた指し手
 				SmallVector<BookMove> book_moves;
-				std::swap(book_node.moves, book_moves); // swapしていったんbook_move.movesはクリアしてしまう。
+				std::swap(book_node.moves, book_moves); // swapしていったんbook_node.movesはクリアしてしまう。
 
 				// ここから全合法手で一手進めて既知の(定跡ツリー上の他の)局面に行くかを調べる。
 				for (auto move : MoveList<LEGAL_ALL>(pos))
@@ -694,19 +1038,19 @@ namespace MakeBook2025
 					// moveで進めた局面が存在する時のhash値。
 					Key next_hash = pos.key_after(move);
 
-					if (hashkey_to_index.count(next_hash) > 0)
+					auto it = hashkey_to_index.find(next_hash);
+					if (it != hashkey_to_index.end())
 					{
 						// 定跡局面が存在した。
 
-						BookNodeIndex next_book_node_index = hashkey_to_index[next_hash];
-						BookNode&     next_book_node       = book_nodes[next_book_node_index];
-
-						BookMove book_move(move.to_move16(), next_book_node_index);
+						BookNodeIndex next_book_node_index = it->second;
+						Move16        move16               = move.to_move16();
+						BookMove      book_move(move16, next_book_node_index);
 
 						// これが定跡DBのこの局面の指し手に登録されていないなら、
 						// これは(定跡DBにはなかった指し手で進めたら既知の局面に)合流したということだから
 						// 合流カウンターをインクリメントしておく。
-						if (std::find_if(book_node.moves.begin(), book_node.moves.end(), [&](auto& book_move) { return book_move.move == move; }) == book_node.moves.end())
+						if (std::find_if(book_moves.begin(), book_moves.end(), [&](const auto& bm) { return bm.move == move16; }) == book_moves.end())
 							converged_moves++;
 
 						book_node.moves.emplace_back(book_move);
@@ -733,10 +1077,11 @@ namespace MakeBook2025
 
 				progress.check(i);
 			}
-			if (fast)
+			if (!fast)
 				sfen_reader.Close();
 
 			//cout << "converged_moves : " << converged_moves << endl;
+			return Tools::Result::Ok();
 		}
 
 		// 親に伝播するためのVDを作る。(評価値を反転させて、depthを1加算)
@@ -1172,9 +1517,67 @@ namespace MakeBook2025
 			progress.check(BOOK_MAX_PLY + 100);
 		}
 
+		SmallVector<BookMove> make_output_moves(BookNode& book_node)
+		{
+			// いったんコピー。
+			SmallVector<BookMove> moves;
+			for (auto& move : book_node.moves)
+				if (move.leaf)
+					moves.emplace_back(move);
+				else
+				{
+					auto& next_node = book_nodes[move.next];
+					auto vd = next_node.vd;
+					// この指し手を選ぶとcheck loop(連続王手の千日手サイクル)に突入して
+					// かつ王手されている局面になる。この指し手と同じ評価値がbestであるなら、
+					// こちらの指し手は選びたくないので選ばれないようにdepthを調整する。
+					if (next_node.check_loop && next_node.checked)
+						vd.depth = BOOK_DEPTH_PERPUTUAL_CHECK;
+					moves.emplace_back(BookMove(move.move, vd));
+				}
+
+			// 評価値順で降順sortする。
+			std::sort(moves.begin(), moves.end(),
+				[](const BookMove& x, const BookMove& y) {
+					return x.vd > y.vd;
+				});
+
+			SmallVector<BookMove> output_moves;
+			if (moves.size() == 0)
+				return output_moves;
+
+			for(size_t i = 0 ; i < moves.size() ; ++i)
+			{
+				auto move = moves[i];
+
+				// shrinkモードなら、最善手と異なる指し手は削除。
+				if (shrink && moves[0].vd.value != move.vd.value)
+					continue;
+
+				// 1.
+				// valueがbestmoveと同じだが、depthが異なるなら、valueを-1しておく。
+				// (千日手絡みで手順が伸びている/縮んでいるのかも知れないから)
+
+				// 2.
+				// あと、連続王手のループから(王手している側が)そこから抜ける指し手があるとき、
+				// ループ回る指し手と抜ける指し手が同じ評価値であることがある。
+				// この時、depthを比較してループを回るほうの指し手を選ぶといつまでもループが抜けられなくて
+				// 連続王手の千日手が成立してしまう。
+				// よって、check loopでかつ!checkのときで同じスコアのときにはdepthを見てはならない。
+				// そのため、depth == BOOK_DEPTH_PERPUTUAL_CHECKはValueDepthのoperator >() で特殊な処理をしている。
+
+				if (i > 0 && moves[0].vd.value == move.vd.value && moves[0].vd.depth != move.vd.depth)
+					move.vd.value--;
+
+				output_moves.emplace_back(move);
+			}
+
+			return output_moves;
+		}
+
 		// ペタショック化した定跡ファイルを書き出す。
 		//	shrink : bestvalueの指し手のみを書き出す。
-		void write_peta_shock_book(std::string writebook_path, std::vector<BookNode>& book_nodes)
+		Tools::Result write_peta_shock_book(std::string writebook_path, std::vector<BookNode>& book_nodes)
 		{
 			// 通常のpeta_shockコマンド時の処理。(peta_shock_nextコマンドではなく)
 
@@ -1183,6 +1586,14 @@ namespace MakeBook2025
 			// (clear()では解放されないので、swap trickを用いる。)
 			HashKey2Index().swap(this->hashkey_to_index);
 
+			if (is_ybb_book(writebook_path))
+				return write_peta_shock_ybb_book(writebook_path, book_nodes);
+
+			return write_peta_shock_db_book(writebook_path, book_nodes);
+		}
+
+		Tools::Result write_peta_shock_db_book(std::string writebook_path, std::vector<BookNode>& book_nodes)
+		{
 			// progress表示用
 			Tools::ProgressBar progress;
 
@@ -1194,17 +1605,24 @@ namespace MakeBook2025
 			if (writer.Open(writebook_path).is_not_ok())
 			{
 				cout << "Error! : open file error , path = " << writebook_path << endl;
-				return;
+				return Tools::ResultCode::FileOpenError;
 			}
 
-			progress.reset(book_nodes.size() - 1);
+			progress.reset(book_nodes.size() == 0 ? 0 : book_nodes.size() - 1);
 
 			// バージョン識別用文字列
 			writer.WriteLine(YaneuraOu::Book::BookDBHeader2016_100);
+			writer.WriteLine("# NOE:" + to_string(book_nodes.size()));
 
 			SystemIO::TextReader sfen_reader;
 			if (!fast)
-				sfen_reader.Open(sfen_temp_path);
+			{
+				if (sfen_reader.Open(sfen_temp_path).is_not_ok())
+				{
+					sync_cout << "info string Error! : can't read file : " + sfen_temp_path << sync_endl;
+					return Tools::ResultCode::FileOpenError;
+				}
+			}
 
 			for(BookNodeIndex i = 0 ; i < BookNodeIndex(book_nodes.size()) ; ++i)
 			{
@@ -1213,62 +1631,26 @@ namespace MakeBook2025
 				if (fast)
 					sfen = original_sfens[i];
 				else
-					sfen_reader.ReadLine(sfen); // 元のsfen(手番を含め)通りにしておく。
+				{
+					if (sfen_reader.ReadLine(sfen).is_not_ok())
+					{
+						sync_cout << "info string Error! : can't read sfen temp file : " + sfen_temp_path << sync_endl;
+						return Tools::ResultCode::FileReadError;
+					}
+				}
 
-				writer.WriteLine("sfen " + sfen);
+				if (writer.WriteLine("sfen " + sfen).is_not_ok())
+					return Tools::ResultCode::FileWriteError;
 				writer.Flush(); // ⇦ これ呼び出さないとメモリ食ったままになる。
 
-				// いったんコピー。
-				SmallVector<BookMove> moves;
-				for (auto& move : book_node.moves)
-					if (move.leaf)
-						moves.emplace_back(move);
-					else
-					{
-						auto& next_node = book_nodes[move.next];
-						auto vd = next_node.vd;
-						// この指し手を選ぶとcheck loop(連続王手の千日手サイクル)に突入して
-						// かつ王手されている局面になる。この指し手と同じ評価値がbestであるなら、
-						// こちらの指し手は選びたくないので選ばれないようにdepthを調整する。
-						if (next_node.check_loop && next_node.checked)
-							vd.depth = BOOK_DEPTH_PERPUTUAL_CHECK;
-						moves.emplace_back(BookMove(move.move, vd));
-					}
-
-				// 評価値順で降順sortする。
-				std::sort(moves.begin(), moves.end(),
-					[](const BookMove& x, const BookMove& y) {
-						return x.vd > y.vd;
-					});
-
-				// 指し手を出力
-				for(size_t i = 0 ; i < moves.size() ; ++i)
+				const auto moves = make_output_moves(book_node);
+				for(const auto& move : moves)
 				{
-					auto& move = moves[i];
-
-					// shrinkモードなら、最善手と異なる指し手は削除。
-					if (shrink && moves[0].vd.value != move.vd.value)
-						continue;
-
-					// 1.
-					// valueがbestmoveと同じだが、depthが異なるなら、valueを-1しておく。
-					// (千日手絡みで手順が伸びている/縮んでいるのかも知れないから)
-
-					// 2.
-					// あと、連続王手のループから(王手している側が)そこから抜ける指し手があるとき、
-					// ループ回る指し手と抜ける指し手が同じ評価値であることがある。
-					// この時、depthを比較してループを回るほうの指し手を選ぶといつまでもループが抜けられなくて
-					// 連続王手の千日手が成立してしまう。
-					// よって、check loopでかつ!checkのときで同じスコアのときにはdepthを見てはならない。
-					// そのため、depth == BOOK_DEPTH_PERPUTUAL_CHECKはValueDepthのoperator >() で特殊な処理をしている。
-
-					if (i > 0 && moves[0].vd.value == move.vd.value && moves[0].vd.depth != move.vd.depth)
-						move.vd.value--;
-
 					// 元のDB上で後手の局面なら後手の局面として書き出したいので、
 					// 後手の局面であるなら指し手を反転させる。
 					Move16 m16 = (book_node.color == WHITE) ? flip_move(move.move) : move.move;
-					writer.WriteLine(to_usi_string(m16) + " none " + to_string(move.vd.value) + " " + to_string(move.vd.depth));
+					if (writer.WriteLine(to_usi_string(m16) + " none " + to_string(move.vd.value) + " " + to_string(move.vd.depth)).is_not_ok())
+						return Tools::ResultCode::FileWriteError;
 				}
 
 				progress.check(i);
@@ -1277,6 +1659,100 @@ namespace MakeBook2025
 				sfen_reader.Close();
 
 			cout << "write " + writebook_path << endl;
+			return Tools::Result::Ok();
+		}
+
+		Tools::Result write_peta_shock_ybb_book(std::string writebook_path, std::vector<BookNode>& book_nodes)
+		{
+			cout << "Write to a book DB  : " << endl;
+
+			ifstream index_reader(readbook_path, ios::binary);
+			if (!index_reader)
+			{
+				sync_cout << "info string Error! : can't read file : " + readbook_path << sync_endl;
+				return Tools::ResultCode::FileNotFound;
+			}
+
+			u64 input_record_count = 0;
+			u64 input_flags = 0;
+			if (!read_ybb_header(index_reader, input_record_count, input_flags))
+			{
+				sync_cout << "info string Error! : invalid ybb file : " << readbook_path << sync_endl;
+				return Tools::ResultCode::FileReadError;
+			}
+
+			u64 input_moves_base = 0;
+			if (!ybb_index_size(input_record_count, input_moves_base) || input_record_count != u64(book_nodes.size()))
+			{
+				sync_cout << "info string Error! : invalid ybb file : " << readbook_path << sync_endl;
+				return Tools::ResultCode::FileReadError;
+			}
+
+			u64 index_size = 0;
+			if (!ybb_index_size(u64(book_nodes.size()), index_size))
+				return Tools::ResultCode::FileWriteError;
+
+			ofstream writer(writebook_path, ios::binary | ios::out | ios::trunc);
+			if (!writer)
+			{
+				cout << "Error! : open file error , path = " << writebook_path << endl;
+				return Tools::ResultCode::FileOpenError;
+			}
+
+			constexpr u64 output_flags = YBB_FLAG_MOVE_DEPTH;
+			if (!write_ybb_header(writer, u64(book_nodes.size()), output_flags))
+				return Tools::ResultCode::FileWriteError;
+
+			u64 index_offset = YBB_HEADER_SIZE;
+			u64 move_offset = 0;
+
+			Tools::ProgressBar progress;
+			progress.reset(book_nodes.size() == 0 ? 0 : book_nodes.size() - 1);
+
+			for(BookNodeIndex i = 0 ; i < BookNodeIndex(book_nodes.size()) ; ++i)
+			{
+				YbbIndexEntry entry;
+				if (!read_ybb_index_entry(index_reader, entry))
+				{
+					sync_cout << "info string Error! : invalid ybb file : " << readbook_path << sync_endl;
+					return Tools::ResultCode::FileReadError;
+				}
+
+				auto& book_node = book_nodes[i];
+				const auto moves = make_output_moves(book_node);
+				if (moves.size() > numeric_limits<u16>::max())
+				{
+					sync_cout << "info string Error! : too many moves in ybb record : " << writebook_path << sync_endl;
+					return Tools::ResultCode::FileWriteError;
+				}
+
+				entry.moves_offset = move_offset;
+				entry.move_count = u16(moves.size());
+
+				writer.seekp(std::streamoff(index_offset), ios::beg);
+				if (!writer || !write_ybb_index_entry(writer, entry))
+					return Tools::ResultCode::FileWriteError;
+
+				writer.seekp(std::streamoff(index_size + move_offset), ios::beg);
+				if (!writer)
+					return Tools::ResultCode::FileWriteError;
+
+				for(const auto& move : moves)
+				{
+					Move16 m16 = (book_node.color == WHITE) ? flip_move(move.move) : move.move;
+					if (!write_u16_le(writer, m16.raw())
+						|| !write_u16_le(writer, u16(move.vd.value))
+						|| !write_u16_le(writer, move.vd.depth))
+						return Tools::ResultCode::FileWriteError;
+				}
+
+				index_offset += YBB_INDEX_RECORD_SIZE;
+				move_offset += u64(moves.size()) * 6;
+				progress.check(i);
+			}
+
+			cout << "write " + writebook_path << endl;
+			return Tools::Result::Ok();
 		}
 
 		// 結果出力(統計値など)
@@ -1366,8 +1842,7 @@ namespace MakeBook2025
 
 namespace Book
 {
-	// 2025年以降に作ったmakebook拡張コマンド
-	// "makebook XXX"コマンド。XXXの部分に"build_tree"や"extend_tree"が来る。
+	// 2025年以降に作ったmakebook拡張コマンド。
 	// この拡張コマンドを処理したら、この関数は非0を返す。
 	int makebook2025(std::istringstream& is, const std::string& token, const OptionsMap& options)
     {

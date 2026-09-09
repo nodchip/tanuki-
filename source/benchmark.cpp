@@ -71,7 +71,7 @@ std::vector<std::string> setup_bench(const std::string& currentFen, std::istream
 	std::vector<std::string> fens, list;
 	std::string              go, token;
 
-#if STOCKFISH
+#if STOCKFISH || defined(GOAL_SHOGITEST_COMPAT)
 	// Assign default values to missing arguments
 	std::string ttSize    = (is >> token) ? token : "16";
 	std::string threads   = (is >> token) ? token : "1";
@@ -81,11 +81,11 @@ std::vector<std::string> setup_bench(const std::string& currentFen, std::istream
 #else
 	// 🌈 やねうら王では、デフォルトで1分間(時間固定)のbenchにしておく。
 
-	std::string ttSize    = (is >> token) ? token : "16";
+	std::string ttSize    = (is >> token) ? token : "1024";
     std::string threads   = (is >> token) ? token : "1";
-    std::string limit     = (is >> token) ? token : "13";
+    std::string limit     = (is >> token) ? token : "15000";
     std::string fenFile   = (is >> token) ? token : "default";
-    std::string limitType = (is >> token) ? token : "depth";
+    std::string limitType = (is >> token) ? token : "movetime";
 #endif
 
 	go = limitType == "eval" ? "eval" : "go " + limitType + " " + limit;
@@ -118,7 +118,7 @@ std::vector<std::string> setup_bench(const std::string& currentFen, std::istream
 #if STOCKFISH
 	list.emplace_back("setoption name Hash value " + ttSize);
 #else
-    list.emplace_back("setoption name Hash value " + ttSize);
+    list.emplace_back("setoption name USI_Hash value " + ttSize);
 #endif
 	// 🤔 どうせ内部的にしか使わない符号みたいなものなので"usinewgame"に変更しないことにする。
     list.emplace_back("ucinewgame");
