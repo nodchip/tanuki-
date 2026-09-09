@@ -469,7 +469,11 @@ ifneq (,$(IS_NNUE_EDITION))
 			# 知らないNNUEのarchitectureなので、architecture headerを動的に生成する。
 			ARCH_HEADER_FILE = \"architectures/$(NNUE_ARCH).h\"
 			CPPFLAGS += -DNNUE_ARCHITECTURE_HEADER=$(ARCH_HEADER_FILE)
+			# The fixed worker edition uses the checked-in generated header.
+			# Other architectures retain upstream on-demand generation.
+			ifeq (,$(GOAL_SHOGITEST_COMPAT))
 			ARCH_GEN_SCRIPT = $(PYTHON) eval/nnue/architectures/nnue_arch_gen.py $(NNUE_ARCH) eval/nnue/architectures
+			endif
 
 			# SFNN_* はPSQTなしSFNNなので、シンボル SFNNwoPSQT 定義しておく。
 			ifneq (,$(filter SFNN%,$(NNUE_ARCH_UPPER)))
