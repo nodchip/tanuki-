@@ -1,7 +1,7 @@
-// NNUE評価関数の入力特徴量HalfKAの定義
+﻿// NNUE評価関数の入力特徴量HalfKA_hmの定義
 
-#ifndef _NNUE_FEATURES_HALF_KA_H_
-#define _NNUE_FEATURES_HALF_KA_H_
+#ifndef _NNUE_FEATURES_HALF_KA_HM2_H_
+#define _NNUE_FEATURES_HALF_KA_HM2_H_
 
 #include "../../../config.h"
 
@@ -13,19 +13,20 @@
 namespace YaneuraOu {
 namespace Eval::NNUE::Features {
 
-	// 特徴量HalfKP：自玉または敵玉の位置と、玉以外の駒の位置の組み合わせ
+	// 特徴量HalfKP_vm：自玉または敵玉の位置と、すべての駒の位置の組み合わせ
+	// 6筋～9筋に玉がいる場合、4筋～1筋に反転させる
 	template <Side AssociatedKing>
-	class HalfKA {
+	class HalfKA_hm2 {
 	public:
 		// 特徴量名
 		static constexpr const char* kName =
-			(AssociatedKing == Side::kFriend) ? "HalfKA(Friend)" : "HalfKA(Enemy)";
+			(AssociatedKing == Side::kFriend) ? "HalfKA_hm2(Friend)" : "HalfKA_hm(Enemy)";
 		// 評価関数ファイルに埋め込むハッシュ値
 		static constexpr std::uint32_t kHashValue =
-			0x5f134cb9u ^ (AssociatedKing == Side::kFriend);
+			0x7f234cb9u ^ (AssociatedKing == Side::kFriend);
 		// 特徴量の次元数
 		static constexpr IndexType kDimensions =
-			static_cast<IndexType>(SQ_NB) * static_cast<IndexType>(e_king);
+			5 * static_cast<IndexType>(FILE_NB) * static_cast<IndexType>(e_king);
 		// 特徴量のうち、同時に値が1となるインデックスの数の最大値
 		static constexpr IndexType kMaxActiveDimensions = PIECE_NUMBER_NB;
 		// 差分計算の代わりに全計算を行うタイミング

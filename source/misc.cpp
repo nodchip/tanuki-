@@ -75,7 +75,7 @@ namespace {
 
 // Our fancy logging facility. The trick here is to replace cin.rdbuf() and
 // cout.rdbuf() with two Tie objects that tie cin and cout to a file stream. We
-// can toggle the logging of cout and std:cin at runtime whilst preserving
+// can toggle the logging of cout and std::cin at runtime whilst preserving
 // usual I/O functionality, all without changing a single line of code!
 // Idea from http://groups.google.com/group/comp.lang.c++/msg/1d941c0f26ea0d81
 
@@ -160,8 +160,6 @@ public:
 
 } // namespace
 
-/// Trampoline helper to avoid moving Logger to misc.h
-void start_logger(const string& fname) { Logger::start(fname); }
 
 // --------------------
 //  engine info
@@ -279,10 +277,6 @@ std::string engine_info(const std::string& engine_name,
 			+ TARGET_CPU
 #if defined(FOR_TOURNAMENT)
 			+" TOURNAMENT"
-#endif
-
-#if defined(EVAL_LEARN)
-			+" EVAL_LEARN"
 #endif
 			;
 			engine_author_ = engine_author;
@@ -450,8 +444,8 @@ string config_info()
 		"halfkp_1024x2_8_32";
 	#elif defined(YANEURAOU_ENGINE_NNUE_HALFKP_1024X2_8_64)
 		"halfkp_1024x2_8_64";
-	#elif defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536)
-		"sfnnwop-1536";
+	#elif defined(YANEURAOU_ENGINE_SFNN1536)
+		"sfnn-1536";
 	#elif defined(EVAL_NNUE_HALFKP_VM_256X2_32_32)
 		"halfkpvm_256x2_32_32";
 	#else
@@ -495,14 +489,6 @@ string config_info()
 		false;
 #endif
 
-
-	bool eval_learn =
-#if defined(EVAL_LEARN)
-		true;
-#else
-		false;
-#endif
-
 	bool use_mate_dfpn =
 #if defined(USE_MATE_DFPN)
 		true;
@@ -514,7 +500,6 @@ string config_info()
 	config += o2("FOR_TOURNAMENT"           , for_tournament     );
 	config += o2("ENABLE_TEST_CMD"          , test_cmd           );
 	config += o2("ENABLE_MAKEBOOK_CMD"      , make_book_cmd      );
-	config += o2("EVAL_LEARN"               , eval_learn         );
 	config += o2("USE_MATE_DFPN"            , use_mate_dfpn      );
 
 	// コンパイラ情報もついでに出力する。
@@ -567,6 +552,48 @@ ostream& operator<<(ostream& os, SyncCout sc) {
 
 void sync_cout_start() { std::cout << IO_LOCK; }
 void sync_cout_end() { std::cout << IO_UNLOCK; }
+
+// Hash function based on public domain MurmurHash64A, by Austin Appleby.
+uint64_t hash_bytes(const char* data, size_t size) {
+    const uint64_t m = 0xc6a4a7935bd1e995ull;
+    const int      r = 47;
+
+    uint64_t h = size * m;
+
+    const char* end = data + (size & ~(size_t) 7);
+
+    for (const char* p = data; p != end; p += 8)
+    {
+        uint64_t k;
+        std::memcpy(&k, p, sizeof(k));
+
+        k *= m;
+        k ^= k >> r;
+        k *= m;
+
+        h ^= k;
+        h *= m;
+    }
+
+    if (size & 7)
+    {
+        uint64_t k = 0;
+        for (int i = (size & 7) - 1; i >= 0; i--)
+            k = (k << 8) | (uint64_t) end[i];
+
+        h ^= k;
+        h *= m;
+    }
+
+    h ^= h >> r;
+    h *= m;
+    h ^= h >> r;
+
+    return h;
+}
+
+/// Trampoline helper to avoid moving Logger to misc.h
+void start_logger(const string& fname) { Logger::start(fname); }
 
 // --------------------
 //  prefetch命令
@@ -631,7 +658,7 @@ namespace Tools {
 	// ※ Stockfishのtt.cppのTranspositionTable::clear()にあるコードと同等のコード。
 	void memclear(ThreadPool& threads, const char* name_, void* table, size_t size)
 	{
-#if !defined(EVAL_LEARN) && !defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__)
 
 		// Windows10では、このゼロクリアには非常に時間がかかる。
 		// malloc()時点ではメモリを実メモリに割り当てられておらず、
@@ -673,11 +700,6 @@ namespace Tools {
 		// yaneuraou.wasm
 		// pthread_joinによってブラウザのメインスレッドがブロックされるため、単一スレッドでメモリをクリアする処理に変更
 
-		// LEARN版のときは、
-		// 単一スレッドでメモリをクリアする。(他のスレッドは仕事をしているので..)
-		// 教師生成を行う時は、対局の最初にスレッドごとのTTに対して、
-		// このclear()が呼び出されるものとする。
-		// 例) th->tt.clear();
 		memset(table, 0, size);
 #endif
 
