@@ -77,9 +77,7 @@ namespace Eval::NNUE {
 
   // SIMD width (in bytes)
   // SIMD幅（バイト単位）
-  #if defined(USE_AVX512)
-  constexpr std::size_t kSimdWidth = 64;
-  #elif defined(USE_AVX2)
+  #if defined(USE_AVX2)
   constexpr std::size_t kSimdWidth = 32;
   #elif defined(USE_SSE2)
   constexpr std::size_t kSimdWidth = 16;
@@ -123,10 +121,6 @@ namespace Eval::NNUE {
 
   // インデックスの型
   using IndexType = std::uint32_t;
-
-  // 学習用クラステンプレートの前方宣言
-  template <typename Layer>
-  class Trainer;
 
   // Round n up to be a multiple of base
   // n以上で最小のbaseの倍数を求める

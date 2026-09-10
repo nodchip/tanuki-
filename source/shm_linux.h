@@ -1,6 +1,6 @@
 ﻿/*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2025 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -19,6 +19,10 @@
 #ifndef SHM_LINUX_H_INCLUDED
 #define SHM_LINUX_H_INCLUDED
 
+#if !defined(__linux__) || defined(__ANDROID__)
+    #error shm_linux.h should not be included on this platform.
+#endif
+
 #include <atomic>
 #include <cassert>
 #include <cerrno>
@@ -33,7 +37,6 @@
 #include <string>
 #include <inttypes.h>
 #include <type_traits>
-#include <unordered_set>
 
 #include <fcntl.h>
 #include <signal.h>
@@ -41,16 +44,10 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <limits.h>
+#define SF_MAX_SEM_NAME_LEN NAME_MAX
 
-#if defined(__NetBSD__) || defined(__DragonFly__) || defined(__linux__)
-    #include <limits.h>
-    #define SF_MAX_SEM_NAME_LEN NAME_MAX
-#elif defined(__APPLE__)
-    #define SF_MAX_SEM_NAME_LEN 31
-#else
-    #define SF_MAX_SEM_NAME_LEN 255
-#endif
-
+#include "misc.h"
 
 namespace YaneuraOu::shm {
 
@@ -66,49 +63,62 @@ struct ShmHeader {
 
 class SharedMemoryBase {
    public:
-    virtual ~SharedMemoryBase()                      = default;
-    virtual void               close() noexcept      = 0;
-    virtual const std::string& name() const noexcept = 0;
+    virtual ~SharedMemoryBase()                                        = default;
+    virtual void               close(bool skip_unmap = false) noexcept = 0;
+    virtual const std::string& name() const noexcept                   = 0;
 };
 
 class SharedMemoryRegistry {
    private:
-    static std::mutex                            registry_mutex_;
-    static std::unordered_set<SharedMemoryBase*> active_instances_;
+    static std::mutex                     registry_mutex_;
+    static std::vector<SharedMemoryBase*> active_instances_;
 
    public:
     static void register_instance(SharedMemoryBase* instance) {
         std::scoped_lock lock(registry_mutex_);
-        active_instances_.insert(instance);
+        active_instances_.push_back(instance);
     }
 
     static void unregister_instance(SharedMemoryBase* instance) {
         std::scoped_lock lock(registry_mutex_);
-        active_instances_.erase(instance);
+        active_instances_.erase(
+          std::remove(active_instances_.begin(), active_instances_.end(), instance),
+          active_instances_.end());
     }
 
-    static void cleanup_all() noexcept {
+    static void cleanup_all(bool skip_unmap = false) noexcept {
         std::scoped_lock lock(registry_mutex_);
         for (auto* instance : active_instances_)
-            instance->close();
+            instance->close(skip_unmap);
         active_instances_.clear();
     }
 };
 
-inline std::mutex                            SharedMemoryRegistry::registry_mutex_;
-inline std::unordered_set<SharedMemoryBase*> SharedMemoryRegistry::active_instances_;
+inline std::mutex                     SharedMemoryRegistry::registry_mutex_;
+inline std::vector<SharedMemoryBase*> SharedMemoryRegistry::active_instances_;
 
 class CleanupHooks {
    private:
     static std::once_flag register_once_;
 
     static void handle_signal(int sig) noexcept {
-        SharedMemoryRegistry::cleanup_all();
-        _Exit(128 + sig);
+        // Search threads may still be running, so skip munmap (but still perform
+        // other cleanup actions). The memory mappings will be released on exit.
+        SharedMemoryRegistry::cleanup_all(true);
+
+        // Invoke the default handler, which will exit
+        struct sigaction sa;
+        sa.sa_handler = SIG_DFL;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0;
+        if (sigaction(sig, &sa, nullptr) == -1)
+            _Exit(128 + sig);
+
+        raise(sig);
     }
 
     static void register_signal_handlers() noexcept {
-        std::atexit([]() { SharedMemoryRegistry::cleanup_all(); });
+        std::atexit([]() { SharedMemoryRegistry::cleanup_all(true); });
 
         constexpr int signals[] = {SIGHUP,  SIGINT,  SIGQUIT, SIGILL, SIGABRT, SIGFPE,
                                    SIGSEGV, SIGTERM, SIGBUS,  SIGSYS, SIGXCPU, SIGXFSZ};
@@ -164,15 +174,19 @@ class SharedMemory: public detail::SharedMemoryBase {
     size_t             total_size_ = 0;
     std::string        sentinel_base_;
     std::string        sentinel_path_;
+#if !STOCKFISH
+    bool               reused_existing_ = false;
+#endif
 
     static constexpr size_t calculate_total_size() noexcept {
         return sizeof(T) + sizeof(detail::ShmHeader);
     }
 
     static std::string make_sentinel_base(const std::string& name) {
-        uint64_t hash = std::hash<std::string>{}(name);
-        char     buf[32];
-        std::snprintf(buf, sizeof(buf), "sfshm_%016" PRIx64, static_cast<uint64_t>(hash));
+        char buf[32];
+        // Using std::to_string here causes non-deterministic PGO builds.
+        // snprintf, being part of libc, is insensitive to the formatted values.
+        std::snprintf(buf, sizeof(buf), "sfshm_%016" PRIu64, hash_string(name));
         return buf;
     }
 
@@ -198,7 +212,12 @@ class SharedMemory: public detail::SharedMemoryBase {
         header_ptr_(other.header_ptr_),
         total_size_(other.total_size_),
         sentinel_base_(std::move(other.sentinel_base_)),
-        sentinel_path_(std::move(other.sentinel_path_)) {
+        sentinel_path_(std::move(other.sentinel_path_))
+#if !STOCKFISH
+        ,
+        reused_existing_(other.reused_existing_)
+#endif
+    {
 
         detail::SharedMemoryRegistry::unregister_instance(&other);
         detail::SharedMemoryRegistry::register_instance(this);
@@ -219,6 +238,9 @@ class SharedMemory: public detail::SharedMemoryBase {
             total_size_    = other.total_size_;
             sentinel_base_ = std::move(other.sentinel_base_);
             sentinel_path_ = std::move(other.sentinel_path_);
+#if !STOCKFISH
+            reused_existing_ = other.reused_existing_;
+#endif
 
             detail::SharedMemoryRegistry::unregister_instance(&other);
             detail::SharedMemoryRegistry::register_instance(this);
@@ -314,11 +336,14 @@ class SharedMemory: public detail::SharedMemoryBase {
             unlock_shared_mutex();
             unlock_file();
             detail::SharedMemoryRegistry::register_instance(this);
+#if !STOCKFISH
+            reused_existing_ = !created_new;
+#endif
             return true;
         }
     }
 
-    void close() noexcept override {
+    void close(bool skip_unmap = false) noexcept override {
         if (fd_ == -1 && mapped_ptr_ == nullptr)
             return;
 
@@ -345,7 +370,10 @@ class SharedMemory: public detail::SharedMemoryBase {
             decrement_refcount_relaxed();
         }
 
-        unmap_region();
+        if (skip_unmap)
+            mapped_ptr_ = nullptr;
+        else
+            unmap_region();
 
         if (remove_region)
             shm_unlink(name_.c_str());
@@ -359,7 +387,8 @@ class SharedMemory: public detail::SharedMemoryBase {
             fd_ = -1;
         }
 
-        reset();
+        if (!skip_unmap)
+            reset();
     }
 
     const std::string& name() const noexcept override { return name_; }
@@ -371,6 +400,10 @@ class SharedMemory: public detail::SharedMemoryBase {
     [[nodiscard]] const T* operator->() const noexcept { return data_ptr_; }
 
     [[nodiscard]] const T& operator*() const noexcept { return *data_ptr_; }
+
+#if !STOCKFISH
+    [[nodiscard]] bool reused_existing() const noexcept { return is_open() && reused_existing_; }
+#endif
 
     [[nodiscard]] uint32_t ref_count() const noexcept {
         return header_ptr_ ? header_ptr_->ref_count.load(std::memory_order_acquire) : 0;
@@ -389,6 +422,9 @@ class SharedMemory: public detail::SharedMemoryBase {
         data_ptr_   = nullptr;
         header_ptr_ = nullptr;
         sentinel_path_.clear();
+#if !STOCKFISH
+        reused_existing_ = false;
+#endif
     }
 
     void unmap_region() noexcept {
@@ -427,11 +463,10 @@ class SharedMemory: public detail::SharedMemoryBase {
     }
 
     std::string sentinel_full_path(pid_t pid) const {
-        std::string path = "/dev/shm/";
-        path += sentinel_base_;
-        path.push_back('.');
-        path += std::to_string(pid);
-        return path;
+        char buf[1024];
+        // See above snprintf comment
+        std::snprintf(buf, sizeof(buf), "/dev/shm/%s.%ld", sentinel_base_.c_str(), long(pid));
+        return buf;
     }
 
     void decrement_refcount_relaxed() noexcept {
@@ -502,7 +537,7 @@ class SharedMemory: public detail::SharedMemoryBase {
             return false;
 
         bool success = pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED) == 0;
-#ifdef PTHREAD_MUTEX_ROBUST
+#if _POSIX_C_SOURCE >= 200809L
         if (success)
             success = pthread_mutexattr_setrobust(&attr, PTHREAD_MUTEX_ROBUST) == 0;
 #endif
@@ -524,7 +559,7 @@ class SharedMemory: public detail::SharedMemoryBase {
             if (rc == 0)
                 return true;
 
-#ifdef PTHREAD_MUTEX_ROBUST
+#if _POSIX_C_SOURCE >= 200809L
             if (rc == EOWNERDEAD)
             {
                 if (pthread_mutex_consistent(&header_ptr_->mutex) == 0)

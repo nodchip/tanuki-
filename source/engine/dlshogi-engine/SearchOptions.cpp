@@ -3,6 +3,9 @@
 #if defined(YANEURAOU_ENGINE_DEEP)
 
 #include "SearchOptions.h"
+#if defined(ENABLE_NN_CACHE)
+#include "UctSearch.h"
+#endif
 
 #include "../../position.h"
 #include "../../usi.h"
@@ -84,6 +87,15 @@ void SearchOptions::add_options(OptionsMap& options) {
           uct_node_limit = NodeCountType(o);
           return std::nullopt;
       }));
+
+#if defined(ENABLE_NN_CACHE)
+	options.add(  //
+	  "DNN_Cache_Size", Option(100000, 0, 10000000, [&](const Option& o) {
+		  dnn_cache_size = size_t(int(o));
+		  SetDnnCacheSize(dnn_cache_size);
+		  return std::nullopt;
+	  }));
+#endif
 
     // 引き分けの時の値 : 1000分率で
     // 引き分けの局面では、この値とみなす。

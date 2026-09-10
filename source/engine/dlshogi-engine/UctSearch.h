@@ -33,21 +33,27 @@ public:
 	// "isready"に対して呼び出される。
 	// スレッド生成は、やねうら王フレームワーク側で行う。
 	//   model_path                 : 読み込むmodel path
+	//   model_architecture         : 読み込むmodelの入力特徴量仕様
 	//   new_thread                 : このインスタンスが確保するUctSearcherの数
 	//   gpu_id                     : このインスタンスに紐付けられているGPU ID
 	//   policy_value_batch_maxsize : このインスタンスが生成したスレッドがNNのforward()を呼び出す時のbatchsize
-	void Initialize(const std::string& model_path , const int new_thread, const int gpu_id, const int policy_value_batch_maxsize);
+	void Initialize(const std::string& model_path, const std::string& model_architecture,
+	                const int new_thread, const int gpu_id, const int policy_value_batch_maxsize);
 
 	// ニューラルネットのforward() (順方向の伝播 = 推論)を呼び出す。
-	void nn_forward(const int batch_size, PType* p1, PType* p2, NN_Input1* x1, NN_Input2* x2, NN_Output_Policy* y1, NN_Output_Value* y2)
+	void nn_forward(const int slot_id, const int batch_size, PType* p1, PType* p2, NN_Input1* x1, NN_Input2* x2, NN_Output_Policy* y1, NN_Output_Value* y2)
 	{
 #if !defined(UNPACK_CUDA)
 		// 入力特徴量を展開する。GPU側で展開する場合は不要。
 		extract_input_features(batch_size, p1, p2, x1, x2);
 #endif
+#if defined(TENSOR_RT)
+		nn->forward(slot_id, batch_size, p1, p2, x1, x2, y1, y2);
+#else
 		mutex_gpu.lock();
 		nn->forward(batch_size, p1, p2, x1, x2, y1, y2);
 		mutex_gpu.unlock();
+#endif
 	}
 
 	// 各探索スレッドは探索開始時に(nn_forward()の呼び出しまでに)、この関数を呼び出してスレッドとGPUとを紐付けないといけない。
@@ -113,7 +119,15 @@ private:
 	// nnが保持しているモデルのpath。
 	// 異なるモデルになった時に前のものを開放して確保しなおす。
 	std::string model_path;
+
+	// nnが保持している入力特徴量仕様。
+	std::string model_architecture;
 };
+
+#if defined(ENABLE_NN_CACHE)
+// NN推論結果cacheの容量指定。0なら無効。
+void SetDnnCacheSize(size_t capacity);
+#endif
 
 // leaf nodeまでに辿ったNodeを記録しておく構造体。
 // ※　dlshogiではtrajectory_t
@@ -157,6 +171,10 @@ struct BatchElement {
 	HASH_KEY key;       // この局面のhash key
 #endif
 
+#if defined(ENABLE_NN_CACHE)
+	Key policy_value_cache_key; // NN推論結果cache用。HASH_KEY_BITSに応じたKey型。
+#endif
+
 	// 通常の探索では、このポインターはNodeVisitor::value_win を指している。
 	float* value_win; // leaf nodeでのvalue_winの値(これを辿ってきたNodeに対して符号を反転させながら伝播させていく)
 };
@@ -182,10 +200,10 @@ public:
 		// 推論(NN::forward())のためのメモリを動的に確保する。
 		// GPUを利用する場合は、GPU側のメモリを確保しなければならないので、alloc()は抽象化されている。
 
-		packed_features1 = grp->gpu_memalloc<PType>((policy_value_batch_maxsize * ((int)COLOR_NB * (int)MAX_FEATURES1_NUM * (int)SQ_NB) + 7) >> 3);
-		packed_features2 = grp->gpu_memalloc<PType>((policy_value_batch_maxsize * ((int)MAX_FEATURES2_NUM) + 7) >> 3);
-		features1 = grp->gpu_memalloc<NN_Input1       >(policy_value_batch_maxsize);
-		features2 = grp->gpu_memalloc<NN_Input2       >(policy_value_batch_maxsize);
+		packed_features1 = grp->gpu_memalloc<PType>(packed_input1_byte_count(policy_value_batch_maxsize));
+		packed_features2 = grp->gpu_memalloc<PType>(packed_input2_byte_count(policy_value_batch_maxsize));
+		features1 = grp->gpu_memalloc<NN_Input1>(input1_element_count(policy_value_batch_maxsize));
+		features2 = grp->gpu_memalloc<NN_Input2>(input2_element_count(policy_value_batch_maxsize));
 		y1        = grp->gpu_memalloc<NN_Output_Policy>(policy_value_batch_maxsize);
 		y2        = grp->gpu_memalloc<NN_Output_Value >(policy_value_batch_maxsize);
 
@@ -275,7 +293,7 @@ private:
 	ChildNumType SelectMaxUcbChild(ChildNode* parent, Node* current);
 
 	// Evaluateを呼び出すリスト(queue)に追加する。
-	void QueuingNode(const Position* pos, Node* node, float* value_win);
+	bool QueuingNode(const Position* pos, Node* node, float* value_win);
 
 	// ノードを評価
 	void EvalNode();
