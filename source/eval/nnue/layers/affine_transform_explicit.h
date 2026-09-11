@@ -1,4 +1,5 @@
-// Definition of layer AffineTransformExplicit of NNUE evaluation function
+﻿// Definition of layer AffineTransformExplicit of NNUE evaluation function
+// 📝 このheaderはSFNNで使う新しい仕様のaffine_transform.h
 
 #ifndef NNUE_LAYERS_AFFINE_TRANSFORM_EXPLICIT_H_INCLUDED
 #define NNUE_LAYERS_AFFINE_TRANSFORM_EXPLICIT_H_INCLUDED
@@ -17,6 +18,9 @@ namespace Eval::NNUE::Layers {
 // Affine transformation layer (Explicit Dimensions)
 template<IndexType InputDimensions, IndexType OutputDimensions>
 class AffineTransformExplicit {
+        template<IndexType, IndexType>
+        friend class AffineTransformExplicit;
+
    public:
         // Input/output type
         using InputType = std::uint8_t;
@@ -27,6 +31,10 @@ class AffineTransformExplicit {
         static constexpr IndexType kOutputDimensions      = OutputDimensions;
         static constexpr IndexType kPaddedInputDimensions = CeilToMultiple<IndexType>(kInputDimensions, kMaxSimdWidth);
         static constexpr IndexType kPaddedOutputDimensions = CeilToMultiple<IndexType>(kOutputDimensions, kMaxSimdWidth);
+        static constexpr bool kHasClippedReLUPackedWeights =
+                kInputDimensions == 64 && kOutputDimensions == 1;
+        static constexpr IndexType kClippedReLUPackedWeightDimensions =
+                kHasClippedReLUPackedWeights ? kPaddedInputDimensions : 1;
 
         using OutputBuffer = OutputType[kPaddedOutputDimensions];
 
@@ -51,7 +59,7 @@ class AffineTransformExplicit {
 
     static constexpr IndexType get_weight_index(IndexType i) {
 #if defined(USE_SSSE3) || defined(USE_NEON_DOTPROD)
-        return get_weight_index_scrambled(i);
+        return kOutputDimensions % 4 == 0 ? get_weight_index_scrambled(i) : i;
 #else
         return i;
 #endif
@@ -63,6 +71,19 @@ class AffineTransformExplicit {
                         biases_[i] = read_little_endian<BiasType>(stream);
                 for (std::size_t i = 0; i < kOutputDimensions * kPaddedInputDimensions; ++i)
                         weights_[get_weight_index(IndexType(i))] = read_little_endian<WeightType>(stream);
+                if constexpr (kHasClippedReLUPackedWeights) {
+                        constexpr IndexType kDwordCount = kPaddedInputDimensions / 4;
+                        constexpr IndexType kPerm[kDwordCount] = {
+                                0, 4, 8, 12, 1, 5, 9, 13,
+                                2, 6, 10, 14, 3, 7, 11, 15};
+                        for (IndexType lane = 0; lane < kDwordCount; ++lane) {
+                                const IndexType src_lane = kPerm[lane];
+                                for (IndexType b = 0; b < 4; ++b) {
+                                        weights_clipped_relu_packed_[src_lane * 4 + b] =
+                                                weights_[lane * 4 + b];
+                                }
+                        }
+                }
                 return !stream.fail() ? Tools::ResultCode::Ok : Tools::ResultCode::FileReadError;
         }
 
@@ -100,25 +121,57 @@ class AffineTransformExplicit {
                                 constexpr IndexType kNumChunks = CeilToMultiple<IndexType>(kInputDimensions, 8) / 4;
                                 constexpr IndexType kNumRegs = kOutputDimensions / 16;
 
+                                constexpr IndexType kNumAccums = kNumRegs;
+#if defined(USE_NNUE_VNNI)
+                                constexpr IndexType kActualNumRegs = 2 * kNumAccums;
+#else
+                                constexpr IndexType kActualNumRegs = kNumAccums;
+#endif
+
                                 const auto   input32 = reinterpret_cast<const std::int32_t*>(input);
                                 const __m512i* biasvec = reinterpret_cast<const __m512i*>(biases_);
-                                __m512i        acc[kNumRegs];
+                                __m512i        acc[kActualNumRegs];
 
-                                for (IndexType k = 0; k < kNumRegs; ++k)
+                                for (IndexType k = 0; k < kNumAccums; ++k)
                                         acc[k] = biasvec[k];
+#if defined(USE_NNUE_VNNI)
+                                for (IndexType k = kNumAccums; k < kActualNumRegs; ++k)
+                                        acc[k] = _mm512_setzero_si512();
+#endif
 
+#if defined(USE_NNUE_VNNI)
+                                IndexType i = 0;
+                                for (; i + 1 < kNumChunks; i += 2)
+                                {
+                                        const __m512i in0 = _mm512_set1_epi32(input32[i]);
+                                        const __m512i in1 = _mm512_set1_epi32(input32[i + 1]);
+                                        const auto col0 = reinterpret_cast<const __m512i*>(&weights_[i * kOutputDimensions * 4]);
+                                        const auto col1 = reinterpret_cast<const __m512i*>(&weights_[(i + 1) * kOutputDimensions * 4]);
+
+                                        for (IndexType k = 0; k < kNumAccums; ++k) {
+                                                Simd::m512_add_dpbusd_epi32(acc[k], in0, col0[k]);
+                                                Simd::m512_add_dpbusd_epi32(acc[k + kNumAccums], in1, col1[k]);
+                                        }
+                                }
+
+                                for (IndexType k = 0; k < kNumAccums; ++k)
+                                        acc[k] = _mm512_add_epi32(acc[k], acc[k + kNumAccums]);
+
+                                for (; i < kNumChunks; ++i)
+#else
                                 for (IndexType i = 0; i < kNumChunks; ++i)
+#endif
                                 {
                                         const __m512i in = _mm512_set1_epi32(input32[i]);
                                         const auto  col  = reinterpret_cast<const __m512i*>(&weights_[i * kOutputDimensions * 4]);
 
-                                        for (IndexType k = 0; k < kNumRegs; ++k)
+                                        for (IndexType k = 0; k < kNumAccums; ++k)
                                                 Simd::m512_add_dpbusd_epi32(acc[k], in, col[k]);
                                 }
 
                                 __m512i* outptr = reinterpret_cast<__m512i*>(output);
 
-                                for (IndexType k = 0; k < kNumRegs; ++k)
+                                for (IndexType k = 0; k < kNumAccums; ++k)
                                         outptr[k] = acc[k];
                         }
                         else
@@ -130,25 +183,57 @@ class AffineTransformExplicit {
                                 constexpr IndexType kNumChunks = CeilToMultiple<IndexType>(kInputDimensions, 8) / 4;
                                 constexpr IndexType kNumRegs = kOutputDimensions / 8;
 
+                                constexpr IndexType kNumAccums = kNumRegs;
+#if defined(USE_AVXVNNI)
+                                constexpr IndexType kActualNumRegs = 2 * kNumAccums;
+#else
+                                constexpr IndexType kActualNumRegs = kNumAccums;
+#endif
+
                                 const auto   input32 = reinterpret_cast<const std::int32_t*>(input);
                                 const __m256i* biasvec = reinterpret_cast<const __m256i*>(biases_);
-                                __m256i        acc[kNumRegs];
+                                __m256i        acc[kActualNumRegs];
 
-                                for (IndexType k = 0; k < kNumRegs; ++k)
+                                for (IndexType k = 0; k < kNumAccums; ++k)
                                         acc[k] = biasvec[k];
+#if defined(USE_AVXVNNI)
+                                for (IndexType k = kNumAccums; k < kActualNumRegs; ++k)
+                                        acc[k] = _mm256_setzero_si256();
+#endif
 
+#if defined(USE_AVXVNNI)
+                                IndexType i = 0;
+                                for (; i + 1 < kNumChunks; i += 2)
+                                {
+                                        const __m256i in0 = _mm256_set1_epi32(input32[i]);
+                                        const __m256i in1 = _mm256_set1_epi32(input32[i + 1]);
+                                        const auto col0 = reinterpret_cast<const __m256i*>(&weights_[i * kOutputDimensions * 4]);
+                                        const auto col1 = reinterpret_cast<const __m256i*>(&weights_[(i + 1) * kOutputDimensions * 4]);
+
+                                        for (IndexType k = 0; k < kNumAccums; ++k) {
+                                                Simd::m256_add_dpbusd_epi32(acc[k], in0, col0[k]);
+                                                Simd::m256_add_dpbusd_epi32(acc[k + kNumAccums], in1, col1[k]);
+                                        }
+                                }
+
+                                for (IndexType k = 0; k < kNumAccums; ++k)
+                                        acc[k] = _mm256_add_epi32(acc[k], acc[k + kNumAccums]);
+
+                                for (; i < kNumChunks; ++i)
+#else
                                 for (IndexType i = 0; i < kNumChunks; ++i)
+#endif
                                 {
                                         const __m256i in = _mm256_set1_epi32(input32[i]);
                                         const auto  col  = reinterpret_cast<const __m256i*>(&weights_[i * kOutputDimensions * 4]);
 
-                                        for (IndexType k = 0; k < kNumRegs; ++k)
+                                        for (IndexType k = 0; k < kNumAccums; ++k)
                                                 Simd::m256_add_dpbusd_epi32(acc[k], in, col[k]);
                                 }
 
                                 __m256i* outptr = reinterpret_cast<__m256i*>(output);
 
-                                for (IndexType k = 0; k < kNumRegs; ++k)
+                                for (IndexType k = 0; k < kNumAccums; ++k)
                                         outptr[k] = acc[k];
                         }
                         else
@@ -185,10 +270,11 @@ class AffineTransformExplicit {
 #endif
 
 #if defined(USE_NEON_DOTPROD)
-                        if constexpr (kOutputDimensions % 4 == 0)
+                        if constexpr (kOutputDimensions % (sizeof(int32x4_t) / sizeof(OutputType)) == 0)
                         {
                                 constexpr IndexType kNumChunks = CeilToMultiple<IndexType>(kInputDimensions, 8) / 4;
-                                constexpr IndexType kNumRegs = kOutputDimensions / 4;
+                                constexpr IndexType kOutputSimdWidth = sizeof(int32x4_t) / sizeof(OutputType);
+                                constexpr IndexType kNumRegs = kOutputDimensions / kOutputSimdWidth;
 
                                 const auto       input32 = reinterpret_cast<const std::int32_t*>(input);
                                 const int32x4_t* biasvec = reinterpret_cast<const int32x4_t*>(biases_);
@@ -214,7 +300,8 @@ class AffineTransformExplicit {
                         else
 #endif
 
-                        {}
+                        affine_transform_unaligned<kInputDimensions, kPaddedInputDimensions, kOutputDimensions>(
+                          output, weights_, biases_, input);
                 }
                 else if constexpr (kOutputDimensions == 1)
                 {
@@ -272,14 +359,105 @@ class AffineTransformExplicit {
 #endif
         }
 
+#if defined(USE_AVX512)
+        void PropagateClippedReLUPackedToOutput(
+            const std::uint32_t* input32,
+            const AffineTransformExplicit<kOutputDimensions, 1>& next_layer,
+            OutputType* output) const {
+                if constexpr (kOutputDimensions == 64) {
+                        constexpr IndexType kNumChunks = CeilToMultiple<IndexType>(kInputDimensions, 8) / 4;
+                        constexpr IndexType kNumRegs = kOutputDimensions / 16;
+
+                        constexpr IndexType kNumAccums = kNumRegs;
+#if defined(USE_NNUE_VNNI)
+                        constexpr IndexType kActualNumRegs = 2 * kNumAccums;
+#else
+                        constexpr IndexType kActualNumRegs = kNumAccums;
+#endif
+
+                        const auto biasvec = reinterpret_cast<const __m512i*>(biases_);
+                        __m512i acc[kActualNumRegs];
+
+                        for (IndexType k = 0; k < kNumAccums; ++k)
+                                acc[k] = biasvec[k];
+#if defined(USE_NNUE_VNNI)
+                        for (IndexType k = kNumAccums; k < kActualNumRegs; ++k)
+                                acc[k] = _mm512_setzero_si512();
+#endif
+
+#if defined(USE_NNUE_VNNI)
+                        IndexType i = 0;
+                        for (; i + 1 < kNumChunks; i += 2) {
+                                const __m512i in0 = _mm512_set1_epi32(static_cast<int>(input32[i]));
+                                const __m512i in1 = _mm512_set1_epi32(static_cast<int>(input32[i + 1]));
+                                const auto col0 = reinterpret_cast<const __m512i*>(
+                                        &weights_[i * kOutputDimensions * 4]);
+                                const auto col1 = reinterpret_cast<const __m512i*>(
+                                        &weights_[(i + 1) * kOutputDimensions * 4]);
+
+                                for (IndexType k = 0; k < kNumAccums; ++k) {
+                                        Simd::m512_add_dpbusd_epi32(acc[k], in0, col0[k]);
+                                        Simd::m512_add_dpbusd_epi32(acc[k + kNumAccums], in1, col1[k]);
+                                }
+                        }
+
+                        for (IndexType k = 0; k < kNumAccums; ++k)
+                                acc[k] = _mm512_add_epi32(acc[k], acc[k + kNumAccums]);
+
+                        for (; i < kNumChunks; ++i) {
+#else
+                        for (IndexType i = 0; i < kNumChunks; ++i) {
+#endif
+                                const __m512i in = _mm512_set1_epi32(static_cast<int>(input32[i]));
+                                const auto col = reinterpret_cast<const __m512i*>(
+                                        &weights_[i * kOutputDimensions * 4]);
+
+                                for (IndexType k = 0; k < kNumAccums; ++k)
+                                        Simd::m512_add_dpbusd_epi32(acc[k], in, col[k]);
+                        }
+
+                        const __m512i kZero = _mm512_setzero_si512();
+                        const __m512i words0 = _mm512_srai_epi16(
+                                _mm512_packs_epi32(acc[0], acc[1]), kWeightScaleBits);
+                        const __m512i words1 = _mm512_srai_epi16(
+                                _mm512_packs_epi32(acc[2], acc[3]), kWeightScaleBits);
+                        const __m512i clipped =
+                                _mm512_max_epi8(_mm512_packs_epi16(words0, words1), kZero);
+
+                        __m512i sum = _mm512_setzero_si512();
+                        const auto row0 =
+                                reinterpret_cast<const __m512i*>(&next_layer.weights_clipped_relu_packed_[0]);
+                        Simd::m512_add_dpbusd_epi32(sum, clipped, row0[0]);
+                        const __m256i sum_lo = _mm512_castsi512_si256(sum);
+                        const __m256i sum_hi = _mm512_extracti64x4_epi64(sum, 1);
+                        output[0] = Simd::m256_hadd(_mm256_add_epi32(sum_lo, sum_hi),
+                                                     next_layer.biases_[0]);
+                } else {
+                        static_assert(kOutputDimensions == 64,
+                                "PropagateClippedReLUPackedToOutput currently supports 64 hidden units.");
+                }
+        }
+
+        // Fused path for SFNN's tiny tail: Affine(14->64) -> ClippedReLU(64)
+        // -> Affine(64->1).  This avoids writing and re-reading the 64-byte
+        // activation buffer while preserving ClippedReLUExplicit's byte order.
+        void PropagateClippedReLUToOutput(
+            const InputType* input,
+            const AffineTransformExplicit<kOutputDimensions, 1>& next_layer,
+            OutputType* output) const {
+                PropagateClippedReLUPackedToOutput(
+                    reinterpret_cast<const std::uint32_t*>(input), next_layer, output);
+        }
+#endif
+
    private:
         using BiasType   = OutputType;
         using WeightType = std::int8_t;
 
-        friend class Trainer<AffineTransformExplicit>;
-
         alignas(kCacheLineSize) BiasType biases_[kOutputDimensions];
         alignas(kCacheLineSize) WeightType weights_[kOutputDimensions * kPaddedInputDimensions];
+        alignas(kCacheLineSize) WeightType
+                weights_clipped_relu_packed_[kClippedReLUPackedWeightDimensions];
 };
 
 }  // namespace Eval::NNUE::Layers

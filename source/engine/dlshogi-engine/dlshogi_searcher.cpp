@@ -38,7 +38,8 @@ void DlshogiSearcher::add_options(OptionsMap& options) {
 // GPUの初期化、各UctSearchThreadGroupに属するそれぞれのスレッド数と、各スレッドごとのNNのbatch sizeの設定
 // "isready"に対して呼び出される。
 // スレッドの生成ついでに、詰将棋探索系の初期化もここで行う。
-void DlshogiSearcher::InitGPU(const std::string& model_path , std::vector<int> thread_settings, int policy_value_batch_maxsize)
+void DlshogiSearcher::InitGPU(const std::string& model_path, const std::string& model_architecture,
+                              std::vector<int> thread_settings, int policy_value_batch_maxsize)
 {
 	// ----------------------
 	// 必要なスレッド数の算出
@@ -73,11 +74,13 @@ void DlshogiSearcher::InitGPU(const std::string& model_path , std::vector<int> t
 		💡 やねうら王のThreadPoolクラスは、前回と異なるスレッド数であれば自動的に再確保される。
 	*/ 
 
-    auto worker_factory = [&](size_t threadIdx, NumaReplicatedAccessToken numaAccessToken) {
+	auto worker_factory = [&](Search::SharedState& sharedState,
+								const Search::ThreadIds& ids)
+	{
             auto p = make_unique_large_page<FukauraOuWorker>(
 
               // Worker基底classが渡して欲しいもの。
-              engine.options, engine.threads, threadIdx, numaAccessToken,
+              sharedState, ids,
 
               // 追加でFukauraOuEngineからもらいたいもの
               *this, engine);
@@ -88,8 +91,8 @@ void DlshogiSearcher::InitGPU(const std::string& model_path , std::vector<int> t
 	// 探索の終了条件を満たしたかを監視するためのスレッド数
 	const int search_interruption_check_thread_num = 1;
 
-    engine.threads.set(engine.numaContext.get_numa_config(), engine.options,
-                           total_thread_num + search_interruption_check_thread_num, worker_factory);
+    engine.threads.set(engine.numaContext.get_numa_config(), {engine.options, engine.threads, engine.tt, engine.sharedHists /*, networks*/ },
+					engine.updateContext, total_thread_num + search_interruption_check_thread_num , worker_factory);
 
 	// このタイミングで確保しなおす。
 
@@ -102,10 +105,14 @@ void DlshogiSearcher::InitGPU(const std::string& model_path , std::vector<int> t
 
 	// モデルの読み込み
     ElapsedTimer time;
-        
+#if defined(ENABLE_NN_CACHE)
+	SetDnnCacheSize(search_options.dnn_cache_size);
+#endif
+
 	for (size_t i = 0; i < search_groups_size ; i++)
 		if (thread_settings[i] > 0)
-			search_groups[i].Initialize(model_path , thread_settings[i],/* gpu_id = */int(i), policy_value_batch_maxsize);
+			search_groups[i].Initialize(model_path, model_architecture,
+			                            thread_settings[i],/* gpu_id = */int(i), policy_value_batch_maxsize);
 
 	sync_cout << "info string All model files have been loaded. " << time.elapsed() << "ms." << sync_endl;
 

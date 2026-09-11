@@ -27,12 +27,10 @@ class FukauraOuEngine;
 class FukauraOuWorker : public Worker {
    public:
 
-	FukauraOuWorker(OptionsMap&               options,
-                    ThreadPool&               threads,
-                    size_t                    threadIdx,
-                    NumaReplicatedAccessToken numaAccessToken,
-                    DlshogiSearcher&          searcher,
-                    FukauraOuEngine&          engine);
+	FukauraOuWorker(Search::SharedState&     sharedState,
+                    const Search::ThreadIds& ids,
+                    DlshogiSearcher&         searcher,
+                    FukauraOuEngine&         engine);
 
 
 	// "go"コマンドの初期化時に呼び出される。

@@ -59,7 +59,11 @@ namespace Eval::NNUE {
 
   // Version of the evaluation file
   // 評価関数ファイルのバージョンを表す定数
+#if defined(ENABLE_SFNN_16BIT_WEIGHT)
+  constexpr std::uint32_t kVersion = 0x7AF32F17u;
+#else
   constexpr std::uint32_t kVersion = 0x7AF32F16u;
+#endif
 
   // LEB128圧縮データを識別するためのmagic string
   constexpr const char        Leb128MagicString[] = "COMPRESSED_LEB128";
@@ -77,9 +81,7 @@ namespace Eval::NNUE {
 
   // SIMD width (in bytes)
   // SIMD幅（バイト単位）
-  #if defined(USE_AVX512)
-  constexpr std::size_t kSimdWidth = 64;
-  #elif defined(USE_AVX2)
+  #if defined(USE_AVX2)
   constexpr std::size_t kSimdWidth = 32;
   #elif defined(USE_SSE2)
   constexpr std::size_t kSimdWidth = 16;
@@ -123,10 +125,6 @@ namespace Eval::NNUE {
 
   // インデックスの型
   using IndexType = std::uint32_t;
-
-  // 学習用クラステンプレートの前方宣言
-  template <typename Layer>
-  class Trainer;
 
   // Round n up to be a multiple of base
   // n以上で最小のbaseの倍数を求める
