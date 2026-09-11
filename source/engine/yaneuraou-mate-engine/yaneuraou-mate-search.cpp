@@ -7,6 +7,7 @@
 #include "../../usi.h"
 #include "../../search.h"
 #include "../../thread.h"
+#include "../../misc.h"
 #include "../../mate/mate.h"
 
 using namespace std;
@@ -26,12 +27,10 @@ namespace Search {
 
 class YaneuraOuMateWorker: public Worker {
    public:
-    YaneuraOuMateWorker(OptionsMap&               options,
-                        ThreadPool&               threads,
-                        size_t                    threadIdx,
-                        NumaReplicatedAccessToken numaAccessToken) :
+    YaneuraOuMateWorker(Search::SharedState& sharedState,
+					 const Search::ThreadIds& ids) :
         // 基底classのconstructorの呼び出し
-        Worker(options, threads, threadIdx, numaAccessToken) {}
+        Worker(sharedState, ids) {}
 
     // このworker(探索用の1つのスレッド)の初期化
     // 📝 これは、"usinewgame"のタイミングで、すべての探索スレッド(エンジンオプションの"Threads"で決まる)に対して呼び出される。
@@ -142,7 +141,7 @@ class YaneuraOuMateEngine: public Engine {
         else
             solver.ChangeSolverType(Mate::Dfpn::DfpnSolverType::None);
 
-        u64 mem = options["Hash"];
+        u64 mem = options["USI_Hash"];
         sync_cout << "info string DfPn memory allocation , USI_Hash = " << mem << " [MB]"
                   << sync_endl;
         solver.alloc(mem);
@@ -158,7 +157,7 @@ class YaneuraOuMateEngine: public Engine {
 
         // 置換表のサイズ。[MB]で指定。
         options.add(  //
-          "Hash", Option(1024, 1, MaxHashMB, [this](const Option& o) {
+          "USI_Hash", Option(1024, 1, MaxHashMB, [this](const Option& o) {
               // set_tt_size();
               // ⇨  どうせisready()で確保するので、handlerを呼び出して反映させる必要はない。
               return std::nullopt;
@@ -197,17 +196,20 @@ class YaneuraOuMateEngine: public Engine {
 
         // 💡　難しいことは考えずにコピペして使ってください。"Search::UserWorker"と書いてあるところに、
         //      あなたの作成したWorker派生classの名前を書きます。
-        auto worker_factory = [&](size_t threadIdx, NumaReplicatedAccessToken numaAccessToken) {
+		auto worker_factory = [&](Search::SharedState& sharedState,
+								  const Search::ThreadIds& ids)
+		{
 
 			auto p = make_unique_large_page<Search::YaneuraOuMateWorker>(
 				// Worker基底classが渡して欲しいもの。
-				options, threads, threadIdx, numaAccessToken
+                sharedState, ids
 			);
 
 			return LargePagePtr<Worker>(p.release());  // Worker* に upcast
 		};
 
-        threads.set(numaContext.get_numa_config(), options, options["Threads"], worker_factory);
+        threads.set(numaContext.get_numa_config(), {options, threads, tt, sharedHists /*, networks*/ },
+					updateContext, options["Threads"], worker_factory);
 
         // 📌 NUMAの設定
 
@@ -246,6 +248,7 @@ namespace {
 		// USIコマンドの応答部
 		auto usi = std::make_unique<USIEngine>();
 		usi->set_engine(*engine);  // エンジン実装を差し替える。
+		usi->enqueue_startup_commands(CommandLine::g);
 
 		// USIコマンドの応答のためのループ
 		usi->loop();

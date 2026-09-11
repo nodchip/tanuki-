@@ -1,4 +1,4 @@
-// A class that converts the input features of the NNUE evaluation function
+﻿// A class that converts the input features of the NNUE evaluation function
 // NNUE評価関数の入力特徴量の変換を行うクラス
 
 #ifndef CLASSIC_NNUE_FEATURE_TRANSFORMER_H_INCLUDED
@@ -8,7 +8,7 @@
 
 #if defined(EVAL_NNUE)
 
-#if defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536)
+#if defined(SFNNwoPSQT)
 #define USE_ELEMENT_WISE_MULTIPLY
 #endif
 
@@ -37,8 +37,6 @@ namespace Eval::NNUE {
 
 #if defined(USE_AVX512)
 using vec_t = __m512i;
-static_assert(kSimdWidth == sizeof(vec_t),
-              "AVX512 NNUE requires kSimdWidth to match the 64-byte vector width.");
 #define vec_load(a) _mm512_load_si512(a)
 #define vec_store(a, b) _mm512_store_si512(a, b)
 #define vec_add_16(a, b) _mm512_add_epi16(a, b)
@@ -112,6 +110,22 @@ static constexpr IndexType kNumRegs = 16;
 
 #endif
 
+/*
+ 例) SFNN1536のときのkNumChunksの計算
+
+┌─────────┬───────────────┬─────────────────┬────────────┐
+│  SIMD            │ sizeof(vec_t)                │ / sizeof(int16)                  │ kNumChunks             │
+├─────────┼───────────────┼─────────────────┼────────────┤
+│ AVX-512          │ 64                           │ 32                               │ 1536/32=48             │
+├─────────┼───────────────┼─────────────────┼────────────┤
+│ AVX2             │ 32                           │ 16                               │ 1536/16=96             │
+├─────────┼───────────────┼─────────────────┼────────────┤
+│ SSE2             │ 16                           │ 8                                │ 1536/8=192             │
+├─────────┼───────────────┼─────────────────┼────────────┤
+│ NEON             │ 16                           │ 8                                │ 1536/8=192             │
+└─────────┴───────────────┴─────────────────┴────────────┘
+*/
+
 constexpr IndexType MaxChunkSize = 16;
 
 // Input feature converter
@@ -151,7 +165,8 @@ class FeatureTransformer {
 	// Hash value embedded in the evaluation file
 	// 評価関数ファイルに埋め込むハッシュ値
 	static constexpr std::uint32_t GetHashValue() {
-#if defined(YANEURAOU_ENGINE_NNUE_SFNNwoP1536)
+#if defined(SFNNwoPSQT)
+		// 学習部と整合性とるの面倒なのでSFNNwoPSQTのときはこれに固定しておく。
 		return 0x5f134ab8u;
 #else
 		return RawFeatures::kHashValue ^ kOutputDimensions;
@@ -172,18 +187,22 @@ class FeatureTransformer {
 		read_leb_128<BiasType>(stream, biases_, kHalfDimensions);
 		read_leb_128<WeightType>(stream, weights_, kHalfDimensions * kInputDimensions);
 
-#if defined(VECTOR)
+#if defined(VECTOR) && !defined(NNUE_SMALL_SFNN_FT)
 		permute_weights(inverse_order_packs);
 #endif
 		scale_weights(true);
+#if defined(USE_FINNY_TABLES)
+		if (!stream.fail())
+			++finny_generation_;
+#endif
 #else
 		for (std::size_t i = 0; i < kHalfDimensions; ++i) biases_[i] = read_little_endian<BiasType>(stream);
 		for (std::size_t i = 0; i < kHalfDimensions * kInputDimensions; ++i)
 			weights_[i] = read_little_endian<WeightType>(stream);
-#endif
 #if defined(USE_FINNY_TABLES)
 		if (!stream.fail())
 			++finny_generation_;
+#endif
 #endif
 		return !stream.fail() ? Tools::ResultCode::Ok : Tools::ResultCode::FileReadError;
 	}
@@ -211,19 +230,27 @@ class FeatureTransformer {
 		return false;
 	}
 
-	// Convert input features
-	// 入力特徴量を変換する
-	void Transform(const Position& pos, OutputType* output, bool refresh) const {
+	void EnsureAccumulator(const Position& pos, bool refresh) const {
 		if (refresh || !UpdateAccumulatorIfPossible(pos)) {
 			refresh_accumulator(pos);
 		}
+	}
+
+	// Convert input features
+	// 入力特徴量を変換する
+	void Transform(const Position& pos, OutputType* output, bool refresh) const {
+		EnsureAccumulator(pos, refresh);
 		const auto& accumulation = pos.state()->accumulator.accumulation;
 
 #if defined(USE_ELEMENT_WISE_MULTIPLY)
 
-#if defined(VECTOR)
-			// Packed output is kSimdWidth bytes for each SIMD register
+#if defined(VECTOR) && !defined(NNUE_SMALL_SFNN_FT)
+			// Packed output is sizeof(vec_t) bytes for each SIMD register
+#if defined(USE_AVX512)
+			constexpr IndexType OutputChunkSize = 64;
+#else
 			constexpr IndexType OutputChunkSize = kSimdWidth;
+#endif
 		static_assert((kHalfDimensions / 2) % OutputChunkSize == 0);
 		constexpr IndexType NumOutputChunks = kHalfDimensions / 2 / OutputChunkSize;
 
@@ -263,6 +290,13 @@ class FeatureTransformer {
 		}
 
 #else
+		constexpr int shift =
+#if defined(VECTOR) && !defined(USE_SSE2)
+			6;
+#else
+			7;
+#endif
+
 		const Color perspectives[2] = { pos.side_to_move(), ~pos.side_to_move() };
 		for (IndexType p = 0; p < 2; ++p) {
 			const IndexType offset = (kHalfDimensions / 2) * p;
@@ -273,13 +307,19 @@ class FeatureTransformer {
 				BiasType sum1 = accumulation[perspectives[p]][0][j + kHalfDimensions / 2];
 				sum0 = std::clamp<BiasType>(sum0, 0, 127 * 2);
 				sum1 = std::clamp<BiasType>(sum1, 0, 127 * 2);
-				output[offset + j] = static_cast<OutputType>(unsigned(sum0 * sum1) / 512);
+				const int product = (int(sum0) << shift) * int(sum1);
+				const int value = product >> 16;
+				output[offset + j] = static_cast<OutputType>(std::clamp(value, 0, 255));
 			}
 
 		}
 #endif
 
 #else
+
+		// 以下は旧NNUEのコード。
+		// ループ本体がx86とNEONで異なる（2入力→1出力 vs 1入力→1出力）ため、
+		// kNumChunksの意味自体がアーキテクチャごとに違うため、共通化しにくい。触らないことにする。
 
 #if defined(USE_AVX512)
 		constexpr IndexType kNumChunks = kHalfDimensions / (kSimdWidth * 2);
@@ -480,11 +520,10 @@ class FeatureTransformer {
 	}
 
 #if defined(VECTOR)
-	// Apply all feature changes to a register-sized tile before writing it back.
-	// This avoids reading and writing the whole accumulator once per feature.
+	// 変更された各特徴量ごとにaccumulator全体を読み書きするのを避けるため、
+	// SIMDレジスタに収まるタイル単位で差分をまとめて適用する。
 	static constexpr IndexType kVectorHeight = sizeof(vec_t) / sizeof(BiasType);
-	static_assert(kHalfDimensions % kVectorHeight == 0,
-		"kVectorHeight must divide kHalfDimensions");
+	static_assert(kHalfDimensions % kVectorHeight == 0, "kVectorHeight must divide kHalfDimensions");
 	static constexpr IndexType kNumVectorChunks = kHalfDimensions / kVectorHeight;
 	static constexpr IndexType kTileRegs = [] {
 		IndexType regs = std::min(kNumRegs, kNumVectorChunks);
@@ -498,13 +537,11 @@ class FeatureTransformer {
 	void update_accumulator_tiled(
 		const BiasType* source, BiasType* destination,
 		ApplyChanges apply_changes) const {
-		for (IndexType tile_offset = 0; tile_offset < kHalfDimensions;
-			 tile_offset += kTileHeight) {
+		for (IndexType tile_offset = 0; tile_offset < kHalfDimensions; tile_offset += kTileHeight) {
 			vec_t acc[kTileRegs];
 
 			if (source) {
-				const auto* source_tile =
-					reinterpret_cast<const vec_t*>(source + tile_offset);
+				const auto* source_tile = reinterpret_cast<const vec_t*>(source + tile_offset);
 				for (IndexType k = 0; k < kTileRegs; ++k)
 					acc[k] = vec_load(source_tile + k);
 			} else {
@@ -514,23 +551,20 @@ class FeatureTransformer {
 
 			apply_changes(acc, tile_offset);
 
-			auto* destination_tile =
-				reinterpret_cast<vec_t*>(destination + tile_offset);
+			auto* destination_tile = reinterpret_cast<vec_t*>(destination + tile_offset);
 			for (IndexType k = 0; k < kTileRegs; ++k)
 				vec_store(destination_tile + k, acc[k]);
 		}
 	}
 
-	void add_weight_to_tile(
-		vec_t* acc, IndexType index, IndexType tile_offset) const {
+	void add_weight_to_tile(vec_t* acc, IndexType index, IndexType tile_offset) const {
 		const auto* column = reinterpret_cast<const vec_t*>(
 			&weights_[kHalfDimensions * index + tile_offset]);
 		for (IndexType k = 0; k < kTileRegs; ++k)
 			acc[k] = vec_add_16(acc[k], vec_load(column + k));
 	}
 
-	void sub_weight_from_tile(
-		vec_t* acc, IndexType index, IndexType tile_offset) const {
+	void sub_weight_from_tile(vec_t* acc, IndexType index, IndexType tile_offset) const {
 		const auto* column = reinterpret_cast<const vec_t*>(
 			&weights_[kHalfDimensions * index + tile_offset]);
 		for (IndexType k = 0; k < kTileRegs; ++k)
@@ -538,9 +572,9 @@ class FeatureTransformer {
 	}
 #endif
 
-#if defined(USE_FINNY_TABLES)
 	// StockfishのAccumulatorCaches(Finny Tables)と同じ発想。
 	// 王位置ごとにrefresh済みaccumulatorを持ち、次回はactive featureの差分だけを適用する。
+#if defined(USE_FINNY_TABLES)
 	static constexpr bool kUseFinnyTables = kHalfDimensions <= 4096;
 
 	struct alignas(kCacheLineSize) FinnyEntry {
@@ -597,43 +631,69 @@ class FeatureTransformer {
 
 		bool old_matched[RawFeatures::kMaxActiveDimensions] = {};
 		bool new_matched[RawFeatures::kMaxActiveDimensions] = {};
-		for (std::size_t old_index = 0; old_index < old_active.size(); ++old_index) {
-			for (std::size_t new_index = 0; new_index < new_active.size(); ++new_index) {
-				if (!new_matched[new_index] && old_active[old_index] == new_active[new_index]) {
-					old_matched[old_index] = true;
-					new_matched[new_index] = true;
+
+		for (std::size_t oi = 0; oi < old_active.size(); ++oi) {
+			for (std::size_t ni = 0; ni < new_active.size(); ++ni) {
+				if (!new_matched[ni] && old_active[oi] == new_active[ni]) {
+					old_matched[oi] = true;
+					new_matched[ni] = true;
 					break;
 				}
 			}
 		}
 
-		for (std::size_t i = 0; i < old_active.size(); ++i)
-			if (!old_matched[i])
-				removed.push_back(old_active[i]);
-		for (std::size_t i = 0; i < new_active.size(); ++i)
-			if (!new_matched[i])
-				added.push_back(new_active[i]);
+		for (std::size_t oi = 0; oi < old_active.size(); ++oi)
+			if (!old_matched[oi])
+				removed.push_back(old_active[oi]);
+		for (std::size_t ni = 0; ni < new_active.size(); ++ni)
+			if (!new_matched[ni])
+				added.push_back(new_active[ni]);
 	}
 
 	static void copy_index_list(
-		Features::IndexList& destination, const Features::IndexList& source) {
+		Features::IndexList& destination,
+		const Features::IndexList& source) {
 		destination.resize(source.size());
 		for (std::size_t i = 0; i < source.size(); ++i)
 			destination[i] = source[i];
 	}
+#endif
 
+	void refresh_accumulator_from_scratch(
+		BiasType* current, const Features::IndexList& active_indices, IndexType trigger_index) const {
+#if defined(VECTOR)
+		const auto* source = trigger_index == 0 ? biases_ : nullptr;
+		update_accumulator_tiled(
+			source, current,
+			[&](vec_t* acc, IndexType tile_offset) {
+				for (const auto index : active_indices)
+					add_weight_to_tile(acc, index, tile_offset);
+			});
+#else
+		if (trigger_index == 0)
+			std::memcpy(current, biases_, kHalfDimensions * sizeof(BiasType));
+		else
+			std::memset(current, 0, kHalfDimensions * sizeof(BiasType));
+
+		for (const auto index : active_indices) {
+			const IndexType offset = kHalfDimensions * index;
+			for (IndexType j = 0; j < kHalfDimensions; ++j)
+				current[j] += weights_[offset + j];
+		}
+#endif
+	}
+
+#if defined(USE_FINNY_TABLES)
 #if defined(VECTOR)
 	template <typename ApplyChanges>
 	void update_accumulator_tiled_to_two(
 		const BiasType* source, BiasType* destination0, BiasType* destination1,
 		ApplyChanges apply_changes) const {
-		for (IndexType tile_offset = 0; tile_offset < kHalfDimensions;
-			 tile_offset += kTileHeight) {
+		for (IndexType tile_offset = 0; tile_offset < kHalfDimensions; tile_offset += kTileHeight) {
 			vec_t acc[kTileRegs];
 
 			if (source) {
-				const auto* source_tile =
-					reinterpret_cast<const vec_t*>(source + tile_offset);
+				const auto* source_tile = reinterpret_cast<const vec_t*>(source + tile_offset);
 				for (IndexType k = 0; k < kTileRegs; ++k)
 					acc[k] = vec_load(source_tile + k);
 			} else {
@@ -643,30 +703,12 @@ class FeatureTransformer {
 
 			apply_changes(acc, tile_offset);
 
-			auto* destination0_tile =
-				reinterpret_cast<vec_t*>(destination0 + tile_offset);
-			auto* destination1_tile =
-				reinterpret_cast<vec_t*>(destination1 + tile_offset);
+			auto* destination0_tile = reinterpret_cast<vec_t*>(destination0 + tile_offset);
+			auto* destination1_tile = reinterpret_cast<vec_t*>(destination1 + tile_offset);
 			for (IndexType k = 0; k < kTileRegs; ++k) {
 				vec_store(destination0_tile + k, acc[k]);
 				vec_store(destination1_tile + k, acc[k]);
 			}
-		}
-	}
-#else
-	void refresh_finny_entry_from_scratch(
-		FinnyEntry& entry,
-		const Features::IndexList& active_indices,
-		IndexType trigger_index) const {
-		if (trigger_index == 0)
-			std::memcpy(entry.accumulation, biases_, kHalfDimensions * sizeof(BiasType));
-		else
-			std::memset(entry.accumulation, 0, kHalfDimensions * sizeof(BiasType));
-
-		for (const auto index : active_indices) {
-			const IndexType offset = kHalfDimensions * index;
-			for (IndexType j = 0; j < kHalfDimensions; ++j)
-				entry.accumulation[j] += weights_[offset + j];
 		}
 	}
 #endif
@@ -686,9 +728,8 @@ class FeatureTransformer {
 						add_weight_to_tile(acc, index, tile_offset);
 				});
 #else
-			refresh_finny_entry_from_scratch(entry, active_indices, trigger_index);
-			std::memcpy(current, entry.accumulation,
-				kHalfDimensions * sizeof(BiasType));
+			refresh_accumulator_from_scratch(entry.accumulation, active_indices, trigger_index);
+			std::memcpy(current, entry.accumulation, kHalfDimensions * sizeof(BiasType));
 #endif
 			copy_index_list(entry.active_indices, active_indices);
 			entry.initialized = true;
@@ -718,10 +759,9 @@ class FeatureTransformer {
 			}
 #endif
 			copy_index_list(entry.active_indices, active_indices);
-		#if !defined(VECTOR)
-			std::memcpy(current, entry.accumulation,
-				kHalfDimensions * sizeof(BiasType));
-		#endif
+#if !defined(VECTOR)
+			std::memcpy(current, entry.accumulation, kHalfDimensions * sizeof(BiasType));
+#endif
 		}
 	}
 
@@ -737,7 +777,8 @@ class FeatureTransformer {
 			Features::IndexList active_indices[2];
 			const auto trigger = kRefreshTriggers[i];
 			RawFeatures::AppendActiveIndices(pos, trigger, active_indices);
-			for (Color perspective : {BLACK, WHITE}) {
+			for (int c = 0; c < COLOR_NB; ++c) {
+				const Color perspective = static_cast<Color>(c);
 				const Square bucket = finny_bucket_square(pos, trigger, perspective);
 				auto& entry = cache->entries[i][perspective][bucket];
 				refresh_accumulator_using_finny_entry(
@@ -760,6 +801,7 @@ class FeatureTransformer {
 			return;
 		}
 #endif
+
 		auto& accumulator = pos.state()->accumulator;
 		for (IndexType i = 0; i < kRefreshTriggers.size(); ++i) {
 			Features::IndexList active_indices[2];
@@ -768,26 +810,10 @@ class FeatureTransformer {
 				const Color perspective = static_cast<Color>(c);
 #if defined(VECTOR)
 				auto* current = accumulator.accumulation[perspective][i];
-				const auto* source = i == 0 ? biases_ : nullptr;
-				update_accumulator_tiled(
-					source, current,
-					[&](vec_t* acc, IndexType tile_offset) {
-						for (const auto index : active_indices[perspective])
-							add_weight_to_tile(acc, index, tile_offset);
-					});
+				refresh_accumulator_from_scratch(current, active_indices[perspective], i);
 #else
-				if (i == 0) {
-					std::memcpy(accumulator.accumulation[perspective][i], biases_, kHalfDimensions * sizeof(BiasType));
-				} else {
-					std::memset(accumulator.accumulation[perspective][i], 0, kHalfDimensions * sizeof(BiasType));
-				}
-				for (const auto index : active_indices[perspective]) {
-					const IndexType offset = kHalfDimensions * index;
-
-					for (IndexType j = 0; j < kHalfDimensions; ++j) {
-						accumulator.accumulation[perspective][i][j] += weights_[offset + j];
-					}
-				}
+				refresh_accumulator_from_scratch(
+					accumulator.accumulation[perspective][i], active_indices[perspective], i);
 #endif
 			}
 		}
@@ -820,7 +846,8 @@ class FeatureTransformer {
 						});
 				} else {
 					update_accumulator_tiled(
-						prev_accumulator.accumulation[perspective][i], current,
+						prev_accumulator.accumulation[perspective][i],
+						current,
 						[&](vec_t* acc, IndexType tile_offset) {
 							for (const auto index : removed_indices[perspective])
 								sub_weight_from_tile(acc, index, tile_offset);
@@ -832,15 +859,15 @@ class FeatureTransformer {
 				if (reset[perspective]) {
 					if (i == 0) {
 						std::memcpy(accumulator.accumulation[perspective][i], biases_,
-							kHalfDimensions * sizeof(BiasType));
+						            kHalfDimensions * sizeof(BiasType));
 					} else {
-						std::memset(accumulator.accumulation[perspective][i], 0,
-							kHalfDimensions * sizeof(BiasType));
+						std::memset(accumulator.accumulation[perspective][i], 0, kHalfDimensions * sizeof(BiasType));
 					}
 				} else {
-					std::memcpy(accumulator.accumulation[perspective][i],
-						prev_accumulator.accumulation[perspective][i],
-						kHalfDimensions * sizeof(BiasType));
+					// Difference calculation for the feature amount changed from 1 to 0
+					// 1から0に変化した特徴量に関する差分計算
+					std::memcpy(accumulator.accumulation[perspective][i], prev_accumulator.accumulation[perspective][i],
+					            kHalfDimensions * sizeof(BiasType));
 					for (const auto index : removed_indices[perspective]) {
 						const IndexType offset = kHalfDimensions * index;
 						for (IndexType j = 0; j < kHalfDimensions; ++j) {
@@ -848,11 +875,13 @@ class FeatureTransformer {
 						}
 					}
 				}
+				// Difference calculation for features that changed from 0 to 1
+				// 0から1に変化した特徴量に関する差分計算
 				for (const auto index : added_indices[perspective]) {
 					const IndexType offset = kHalfDimensions * index;
-						for (IndexType j = 0; j < kHalfDimensions; ++j) {
+					for (IndexType j = 0; j < kHalfDimensions; ++j) {
 							accumulator.accumulation[perspective][i][j] += weights_[offset + j];
-						}
+					}
 				}
 #endif
 			}
@@ -865,10 +894,6 @@ class FeatureTransformer {
 
 	// parameter type
 	// パラメータの型
-
-	// Make the learning class a friend
-	// 学習用クラスをfriendにする
-	friend class Trainer<FeatureTransformer>;
 
 	// parameter
 	// パラメータ

@@ -6,16 +6,15 @@
 //      通常のtestコマンド
 // ----------------------------------
 
+#include <fstream>
+#include <iomanip>
 #include <sstream>
 #include "../position.h"
 #include "../usi.h"
 #include "../thread.h"
 #include "../search.h"
 #include "../movegen.h"
-
-#if defined(EVAL_LEARN)
-#include "../eval/evaluate_common.h"
-#endif
+#include "../evaluate.h"
 
 namespace YaneuraOu {
 namespace {
@@ -191,6 +190,7 @@ namespace {
 
 				// 思考時間、nodes_limit、1～4倍の間でランダム化
 				Search::LimitsType lm;
+                lm.startTime = now();
 				lm.movetime = movetime * (1000 + prng.rand(3000)) / 1000;
 				lm.nodes    = nodes_limit * (1000 + prng.rand(3000)) / 1000;
 
@@ -231,6 +231,140 @@ namespace {
 				std::cout << result;
 		}
 	}
+
+#if defined(YANEURAOU_ENGINE)
+	// "test eval_accuracy <psv_path>" : 検証用 PSV ファイルに対し evaluate() を
+	// 呼び、決着のついた局面 (= W/L) のみを対象に sign 一致率を計算する。
+	//
+	// 慣例:
+	//   pred  = (evaluate(pos) >= 0)        側面から見て勝ち予測
+	//   truth = (game_result   >  0)        STM が勝った
+	//   match = (pred == truth)            game_result == 0 (引き分け) は両側から除外
+	//
+	// 引き分け除外の理由: dlshogi の旧 binary_accuracy は draw を win 側にバケット
+	// していたが、dlshogi 作者が実際に検証に使っている局面集には引き分けが含まれて
+	// いない。draw を含めると「model_output ≈ 0 を出すモデル」が draw + win に対し
+	// 機械的に正解扱いされる構造的バイアス (= --scale を小さくして 0 に寄せると
+	// 単調に accuracy が上がる現象の一因) を持つため、これを排し W vs L の純粋な
+	// 符号一致率を測る。BulletOu 側の test_value_accuracy も同じ定義に揃えてある。
+	//
+	// YANEURAOU_ENGINE ガード: このコマンドは「engine.evaluate() が局面ごとに
+	// 意味のある Value を返す」ことに依存する。これを満たすのは YaneuraOuEngine
+	// を継承する NNUE / KPPT / KPP_KKPT / Material 系のみ (= YANEURAOU_ENGINE が
+	// 定義される構成)。ふかうら王 (Deep)、tanuki/yaneuraou-mate、user-engine は
+	// Engine::evaluate() の基底実装 (VALUE_NONE を返す) のままで accuracy 算出が
+	// 無意味なため除外する。
+	void eval_accuracy(IEngine& engine, std::istringstream& is)
+	{
+		std::string psv_path;
+		is >> psv_path;
+
+		if (psv_path.empty())
+		{
+			std::cout << "Error: usage: test eval_accuracy <psv_path>" << std::endl;
+			return;
+		}
+
+		std::ifstream f(psv_path, std::ios::binary);
+		if (!f)
+		{
+			std::cout << "Error: cannot open " << psv_path << std::endl;
+			return;
+		}
+
+		// PsvRecord 固定長 (40 byte)。size が割り切れない = corrupted/truncated。
+		f.seekg(0, std::ios::end);
+		auto file_size = (uint64_t)f.tellg();
+		f.seekg(0, std::ios::beg);
+		if (file_size % sizeof(PsvRecord) != 0)
+		{
+			std::cout << "Error: file size " << file_size
+					  << " is not a multiple of " << sizeof(PsvRecord)
+					  << " byte (PsvRecord size) — possibly corrupted/truncated"
+					  << std::endl;
+			return;
+		}
+		const uint64_t total_records = file_size / sizeof(PsvRecord);
+
+		std::cout << "test eval_accuracy: " << psv_path << std::endl
+				  << "  records = " << total_records << std::endl;
+
+		// nn.bin の load を保証 (= "isready" 相当処理を先に走らせる)
+		engine.isready();
+
+		auto& pos = engine.get_position();
+		StateInfo si;
+
+		uint64_t compared = 0;
+		uint64_t sign_match = 0;
+		uint64_t drawn = 0;
+		uint64_t skipped = 0;
+
+		auto start_time = now();
+		auto last_report = start_time;
+
+		PsvRecord rec;
+		while (f.read(reinterpret_cast<char*>(&rec), sizeof(PsvRecord)))
+		{
+			if (pos.set_from_packed_sfen(rec.sfen, &si, false, rec.gamePly).is_not_ok())
+			{
+				skipped++;
+				continue;
+			}
+
+			// 引き分けは accuracy 算出から除外。位置数のカウントだけ別途行う。
+			if (rec.game_result == 0)
+			{
+				drawn++;
+				continue;
+			}
+
+			// IEngine::evaluate() は内部で verify_networks() + Eval::evaluate(pos) を
+			// 呼ぶ。NNUE accumulator は set_from_packed_sfen 後に invalid 状態に
+			// なっているはずなので、Eval::evaluate 側で full refresh される (= 通常の
+			// 探索開始時と同じ経路)。
+			Value v = engine.evaluate();
+
+			bool pred  = v >= VALUE_ZERO;
+			bool truth = rec.game_result > 0;
+			if (pred == truth) sign_match++;
+			compared++;
+
+			// 5 秒ごとに進捗
+			auto cur = now();
+			if (cur - last_report >= 5000)
+			{
+				last_report = cur;
+				double pct = (total_records > 0)
+					? 100.0 * (double)compared / (double)total_records
+					: 0.0;
+				std::cout << "  processed " << compared << " / " << total_records
+						  << " (" << std::fixed << std::setprecision(1) << pct
+						  << "%)" << std::endl;
+			}
+		}
+
+		auto elapsed_ms = now() - start_time;
+		double accuracy = (compared > 0)
+			? (double)sign_match / (double)compared
+			: 0.0;
+
+		std::cout << "----" << std::endl;
+		std::cout << "test eval_accuracy result:" << std::endl;
+		std::cout << "  decisive   = " << compared
+				  << " (skipped " << skipped << " malformed records)" << std::endl;
+		std::cout << "  accuracy   = " << std::fixed << std::setprecision(4)
+				  << (accuracy * 100.0) << "% (" << sign_match << "/" << compared
+				  << " matches; W vs L sign agreement)" << std::endl;
+		std::cout << "  drawn      = " << drawn
+				  << " (excluded from accuracy)" << std::endl;
+		std::cout << "  elapsed    = " << elapsed_ms << " ms ("
+				  << (elapsed_ms > 0
+					  ? ((compared + drawn) * 1000) / (uint64_t)elapsed_ms
+					  : 0)
+				  << " positions/sec)" << std::endl;
+	}
+#endif // defined(YANEURAOU_ENGINE)
 } // namespace
 
 // ----------------------------------
@@ -242,9 +376,12 @@ namespace Test
 	// 通常のテストコマンド。コマンドを処理した時 trueが返る。
 	bool normal_test_cmd(IEngine& engine , std::istringstream& is, const std::string& token)
 	{
-		if (token == "genmoves")         gen_moves(engine, is);       // 現在の局面に対して指し手生成のテストを行う。
-		else if (token == "autoplay")    auto_play(engine, is);       // 連続自己対局を行う。
-		else return false;									          // どのコマンドも処理することがなかった
+		if (token == "genmoves")              gen_moves(engine, is);       // 現在の局面に対して指し手生成のテストを行う。
+		else if (token == "autoplay")         auto_play(engine, is);       // 連続自己対局を行う。
+#if defined(YANEURAOU_ENGINE)
+		else if (token == "eval_accuracy")    eval_accuracy(engine, is);   // PSV に対し evaluate() の sign 一致率を測る。
+#endif
+		else return false;									               // どのコマンドも処理することがなかった
 			
 		// いずれかのコマンドを処理した。
 		return true;
