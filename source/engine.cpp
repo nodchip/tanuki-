@@ -1,4 +1,6 @@
-﻿#include "engine.h"
+﻿#include <atomic>
+
+#include "engine.h"
 #include "thread.h"
 #include "perft.h"
 #include "usioption.h"
@@ -7,8 +9,21 @@
 
 namespace YaneuraOu {
 
+// The default configuration will attempt to group L3 domains up to 32 threads.
+// This size was found to be a good balance between the Elo gain of increased
+// history sharing and the speed loss from more cross-cache accesses (see
+// PR#6526). The user can always explicitly override this behavior.
+
+// デフォルトの設定では、L3 ドメインを最大 32 スレッドまでまとめようとします。
+// このサイズは、履歴共有が増えることによる Elo の向上と、
+// キャッシュをまたぐアクセスが増えることによる速度低下との
+// バランスが良いことが確認されています（PR#6526 を参照）。
+// ユーザーは、この挙動を明示的に上書きすることができます。
+
+constexpr NumaAutoPolicy DefaultNumaPolicy = BundledL3Policy{32};
+
 Engine::Engine() :
-	numaContext(NumaConfig::from_system()),
+	numaContext(NumaConfig::from_system(DefaultNumaPolicy)),
 	states(new std::deque<StateInfo>(1)),
 	threads()
 {
@@ -142,22 +157,23 @@ void Engine::add_options() {
     //     複数スレッドを用いて行うことができなくなるため。
     // ⚠ ここで、派生class側のresize_threads()ではなく、
     //	   このclassのresize_threads()を呼び出すことに注意。
-    //     派生class側のresize_threads()は、"Hash"を参照して
+    //     派生class側のresize_threads()は、"USI_Hash"を参照して
     //     置換表を初期化するコードが書かれているかもしれないが、
-    //     いま時点では、"Hash"のoptionをaddしていないのでエラーとなる。
-    Engine::resize_threads();
+    //     いま時点では、"USI_Hash"のoptionをaddしていないのでエラーとなる。
+    // Engine::resize_threads();
+	// → thread数が0のときは初期化をskipするようにしたからこれはなくてもいいと思う。
 }
 
 // NumaConfig(numaContextのこと)を Options["NumaPolicy"]の値 から設定する。
 void Engine::set_numa_config_from_option(const std::string& o) {
 	if (o == "auto" || o == "system")
 	{
-		numaContext.set_numa_config(NumaConfig::from_system());
+		numaContext.set_numa_config(NumaConfig::from_system(DefaultNumaPolicy));
 	}
 	else if (o == "hardware")
 	{
 		// Don't respect affinity set in the system.
-		numaContext.set_numa_config(NumaConfig::from_system(false));
+		numaContext.set_numa_config(NumaConfig::from_system(DefaultNumaPolicy, false));
 	}
 	else if (o == "none")
 	{
@@ -189,13 +205,16 @@ void Engine::wait_for_search_finished() {
 
 // "position"コマンドの下請け。
 // sfen文字列 + movesのあとに書かれていた(USIの)指し手文字列から、現在の局面を設定する。
-void Engine::set_position(const std::string& sfen, const std::vector<std::string>& moves) {
+std::optional<PositionSetError> Engine::set_position(const std::string&              sfen,
+                                                     const std::vector<std::string>& moves) {
 
 	// Drop the old state and create a new one
 	// 古い状態を破棄して新しい状態を作成する
 
 	states = StateListPtr(new std::deque<StateInfo>(1));
-	pos.set(sfen /*, options["UCI_Chess960"]*/ , &states->back());
+	auto err = pos.set(sfen /*, options["UCI_Chess960"]*/ , &states->back());
+	if (err.has_value())
+		return err;
 
 #if !STOCKFISH
     std::vector<Move> moves0;
@@ -206,10 +225,13 @@ void Engine::set_position(const std::string& sfen, const std::vector<std::string
 		auto m = USIEngine::to_move(pos, move);
 
 		if (m == Move::none())
-			break;
+			return PositionSetError("Illegal move: " + move);
 
 		states->emplace_back();
-		pos.do_move(m, states->back());
+		if (m == Move::null())
+			pos.do_null_move(states->back());
+		else
+			pos.do_move(m, states->back());
 
 #if !STOCKFISH
 		moves0.emplace_back(m);
@@ -222,6 +244,7 @@ void Engine::set_position(const std::string& sfen, const std::vector<std::string
 	moves_from_game_root = std::move(moves0);
 #endif
 
+	return std::nullopt;
 }
 
 
@@ -329,9 +352,14 @@ void Engine::resize_threads() {
 	if (!options.count("Threads"))
         return;
 
-	auto worker_factory = [&](size_t threadIdx, NumaReplicatedAccessToken numaAccessToken)
-		{ return make_unique_large_page<Search::Worker>(options, threads, threadIdx, numaAccessToken); };
-    threads.set(numaContext.get_numa_config(), options, options["Threads"], worker_factory);
+	auto worker_factory = [&](Search::SharedState& sharedState, const Search::ThreadIds& ids)
+		{ return make_unique_large_page<Search::Worker>(sharedState, ids); };
+
+    threads.set(numaContext.get_numa_config(),
+                {options, threads, tt, sharedHists /*, networks*/ }, /* これはSharedState 相当 */
+				updateContext,
+                options["Threads"],
+				worker_factory);
 #endif
 
 	// 📌 置換表の再割り当て。
@@ -493,18 +521,18 @@ void Engine::run_heavy_job(std::function<void()> job) {
     // 確認してから処理を行う。
 
     // スレッドが起動したことを通知するためのフラグ
-    auto thread_started = false;
+    std::atomic_bool thread_started{ false };
 
     // この関数を抜ける時に立つフラグ(スレッドを停止させる用)
-    auto thread_end = false;
+    std::atomic_bool thread_end{ false };
 
     // 定期的な改行送信用のスレッド
     auto th = std::thread([&] {
         // スレッドが起動した
-        thread_started = true;
+        thread_started.store(true, std::memory_order_release);
 
         int count = 0;
-        while (!thread_end)
+        while (!thread_end.load(std::memory_order_acquire))
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             if (++count >= 50 /* 5秒 */)
@@ -519,12 +547,12 @@ void Engine::run_heavy_job(std::function<void()> job) {
         }
     });
     SCOPE_EXIT({
-        thread_end = true;
+        thread_end.store(true, std::memory_order_release);
         th.join();
     });
 
     // スレッド起動待ち
-    while (!thread_started)
+    while (!thread_started.load(std::memory_order_acquire))
         Tools::sleep(100);
 
     // --- Keep Alive的な処理ここまで ---

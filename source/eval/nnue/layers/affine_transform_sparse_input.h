@@ -39,7 +39,7 @@ void find_nnz(const std::int32_t* input, std::uint16_t* out, IndexType& count_ou
 #define vec_nnz(a) _mm512_cmpgt_epi32_mask(a, _mm512_setzero_si512())
 #elif defined(USE_AVX2)
     using vec_t = __m256i;
-#if defined(USE_VNNI) && !defined(USE_AVXVNNI)
+#if defined(USE_NNUE_VNNI) && !defined(USE_AVXVNNI)
 #define vec_nnz(a) _mm256_cmpgt_epi32_mask(a, _mm256_setzero_si256())
 #else
 #define vec_nnz(a) \
@@ -338,10 +338,11 @@ class AffineTransformSparseInput {
 #endif
 
 #if defined(USE_NEON_DOTPROD)
-        if constexpr (kOutputDimensions % 8 == 0)
+        if constexpr (kOutputDimensions % (sizeof(int32x4_t) / sizeof(OutputType)) == 0)
         {
             constexpr IndexType kNumChunks = CeilToMultiple<IndexType>(kInputDimensions, 8) / kChunkSize;
-            constexpr IndexType kNumRegs   = kOutputDimensions / 8;
+            constexpr IndexType kOutputSimdWidth = sizeof(int32x4_t) / sizeof(OutputType);
+            constexpr IndexType kNumRegs   = kOutputDimensions / kOutputSimdWidth;
             std::uint16_t       nnz[kNumChunks];
             IndexType           count;
 
@@ -392,9 +393,6 @@ class AffineTransformSparseInput {
 	// パラメータの型
 	using BiasType   = OutputType;
 	using WeightType = std::int8_t;
-
-	// 学習用クラスをfriendにする
-	friend class Trainer<AffineTransformSparseInput>;
 
 	// この層の直前の層
 	PreviousLayer previous_layer_;

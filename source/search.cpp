@@ -3,30 +3,37 @@
 
 namespace YaneuraOu {
 
-Search::Worker::Worker(
-	OptionsMap& options, ThreadPool& threads, size_t threadIdx, NumaReplicatedAccessToken numaAccessToken
-	/*
-						SharedState&                    sharedState,
-                        std::unique_ptr<ISearchManager> sm,
-                        size_t                          threadId,
-                        NumaReplicatedAccessToken       token
-	*/
-	) :
+Search::Worker::Worker(SharedState& sharedState,
+#if STOCKFISH
+                       std::unique_ptr<ISearchManager> sm,
+                       size_t                          threadIdx,
+                       size_t                          numaThreadId,
+                       size_t                          numaTotalThreads,
+                       NumaReplicatedAccessToken       token
+#else
+                       const ThreadIds& ids
+#endif
+) :
     // Unpack the SharedState struct into member variables
-	// 💡 StockfishではSharedState構造体から、このclassのmember変数を初期化しているが、
-	//     SharedStateは、やねうら王では採用しないことにした。
-
-	options(options),
-	threads(threads),
+	// 🌈 これは、やねうら王ではYaneuraOuWorkerのほうが持っている。
+    //sharedHistory(sharedState.sharedHistories.at(token.get_numa_index())),
+	options(sharedState.options),
+	threads(sharedState.threads),
+#if STOCKFISH
 	threadIdx(threadIdx),
-    numaAccessToken(numaAccessToken)
-
-	#if 0
+    numaThreadIdx(numaThreadId),
+    numaTotal(numaTotalThreads),
+    numaAccessToken(token),
     manager(std::move(sm)),
-    networks(sharedState.networks),
-    tt(sharedState.tt)
-	refreshTable(networks[token])
-	#endif
+#else
+	threadIdx(ids.threadIdx),
+    numaThreadIdx(ids.numaThreadIdx),
+    numaTotal(ids.numaTotal),
+    numaAccessToken(ids.numaAccessToken),
+#endif
+	tt(sharedState.tt)
+    //networks(sharedState.networks),
+	//refreshTable(networks[token])
 {
     //clear();
 
