@@ -43,3 +43,21 @@ Review the cancellation guards as well. Do not publish private position/history
 fixtures, networks, PVs, or runtime logs with this source repair. Separate finite
 concurrent time-control qualification and strength testing are required before
 using a changed engine in production or adopting it as a champion.
+
+## Finite operational validation (2026-10-11)
+
+The repaired engine completed 128 games (64 reversed-color pairs) at 64-game
+concurrency, using 10 seconds plus 0.1 seconds per move, one thread and 128 MiB
+hash per engine. Full-card inspection found no timeouts, illegal moves, engine
+errors or incomplete pairs. All 128 engine processes exited normally.
+
+A separate same-engine, same-network control used predeclared diagnostic SPRT
+hypotheses of nElo 100/200 with alpha and beta 0.05. Its first boundary occurred
+at 12 pairs; draining ended at 50 complete pairs (100 games), below the finite
+64-pair cap. No incomplete pairs or timeouts remained, and all 128 engine
+processes exited normally. This validates an observed live-boundary drain, not
+every individual post-boundary partner dispatch.
+
+These are operational checks, not strength or promotion evidence. The matched
+unmodified build also passed the focused timing test, so a timing improvement
+and elimination of the original rare timeout have not been established.
