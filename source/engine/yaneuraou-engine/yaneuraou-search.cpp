@@ -4179,6 +4179,14 @@ Value Search::YaneuraOuWorker::qsearch(Position& pos, Stack* ss, Value alpha, Va
     // Step 2. 即座に引き分けになるか、最大のply(手数)に達していないかを確認します。
     // -----------------------
 
+    // A long tactical subtree must not defer deadline checks until main search.
+    // Use the existing main-thread timer policy and discard interrupted values.
+    if (is_mainthread())
+        main_manager()->check_time(*this);
+
+    if (threads.stop.load(std::memory_order_relaxed))
+        return VALUE_ZERO;
+
     // 千日手チェックは、MovePickerでcaptures(駒を取る指し手しか生成しない)なら、
     // 千日手チェックしない方が強いようだ。
     // ただし、MovePickerで、TTの指し手に対してもcapturesであるという制限をかけないと
@@ -4604,6 +4612,11 @@ Value Search::YaneuraOuWorker::qsearch(Position& pos, Stack* ss, Value alpha, Va
 
         value = -qsearch<nodeType>(pos, ss + 1, -beta, -alpha);
         undo_move(pos, move);
+
+        // Restore the position, then propagate cancellation without updating
+        // bestValue, the principal variation or the transposition table.
+        if (threads.stop.load(std::memory_order_relaxed))
+            return VALUE_ZERO;
 
 		ASSERT_LV3(-VALUE_INFINITE < value && value < VALUE_INFINITE);
 
