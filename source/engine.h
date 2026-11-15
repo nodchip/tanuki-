@@ -418,8 +418,8 @@ class Engine: public IEngine {
     virtual void usinewgame() override {};
     virtual void user(std::istringstream& is) override {};
 
-    virtual std::string get_engine_name() const override { return "YaneuraOu"; }
-    virtual std::string get_engine_author() const override { return "yaneurao"; }
+    virtual std::string get_engine_name() const override { return "tanuki-dr7_prd"; }
+    virtual std::string get_engine_author() const override { return "yanurao, nodchip"; }
     virtual std::string get_engine_version() const override { return ENGINE_VERSION; }
     virtual std::string get_eval_name() const override { return EVAL_TYPE_NAME; }
 

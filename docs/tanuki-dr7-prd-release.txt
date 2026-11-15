@@ -1,0 +1,29 @@
+将棋 AI「お紅さん狸」
+tanuki-dr7_prd — Windows x86-64 版
+作者: yanurao, nodchip
+
+使い方
+
+本製品に GUI は付属していません。以下の GUI プログラムを併用することを推奨します。
+
+- ShogiHome: https://sunfish-shogi.github.io/electron-shogi/
+- 将棋GUIソフト「将棋所」: https://shogidokoro2.stars.ne.jp/
+- ShogiGUI: http://shogigui.siganus.com/
+
+お使いの CPU に対応する tanuki-dr7_prd-*.exe を登録してください。
+評価関数は eval/nn.bin と eval/progress.bin です。エンジンの EvalDir は初期値の
+eval を使用できます。別の場所に移す場合は、2つを同じフォルダーに置き、EvalDir
+でそのフォルダーを指定してください。
+FV_SCALE の初期値は 24 です。GUI から変更できます。
+
+AVX、AVX-512、VNNI の各版は、CPU と OS が対応する命令を使える場合に選んで
+ください。zen3avx512vnni 版にも AVX-512 VNNI が必要です。対応を確認できない場合は
+sse2 版を使用してください。
+
+検証状況
+
+SSE2、SSSE3、SSE41、SSE42、AVX2、AVXVNNI 版は対応する Windows PC で評価関数の
+読み込みと探索を確認しました。その他の版はビルドを確認しましたが、対応 CPU 上での
+実行は未確認です。
+
+ライセンスは同梱の gpl-3.0.txt を参照してください。

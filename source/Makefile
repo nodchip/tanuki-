@@ -80,6 +80,9 @@ TARGET_CPU = AVX2
 #TARGET_CPU = ZEN1
 #TARGET_CPU = ZEN2
 #TARGET_CPU = ZEN3
+#TARGET_CPU = ZEN4
+#TARGET_CPU = ZEN5
+#TARGET_CPU = ZEN6
 #TARGET_CPU = ZEN3AVX512VNNI
 # -- ARMとか
 #TARGET_CPU = OTHER
@@ -564,6 +567,15 @@ else ifeq ($(TARGET_CPU),ZEN2)
 else ifeq ($(TARGET_CPU),ZEN3)
 	CPPFLAGS += -DUSE_AVX2 -DUSE_BMI2 -mbmi -mbmi2 -mavx2 -march=znver3
 
+else ifeq ($(TARGET_CPU),ZEN4)
+	CPPFLAGS += -DUSE_AVX512 -DUSE_BMI2 -DUSE_VNNI -march=znver4
+
+else ifeq ($(TARGET_CPU),ZEN5)
+	CPPFLAGS += -DUSE_AVX512 -DUSE_BMI2 -DUSE_VNNI -march=znver5
+
+else ifeq ($(TARGET_CPU),ZEN6)
+	CPPFLAGS += -DUSE_AVX512 -DUSE_BMI2 -DUSE_VNNI -march=znver6
+
 else ifeq ($(TARGET_CPU),ZEN3AVX512VNNI)
 	CPPFLAGS += -DUSE_AVX512 -DUSE_BMI2 -DUSE_VNNI -march=znver3 -mbmi -mbmi2 -mavx512f -mavx512bw -mavx512vl -mavx512dq -mavx512vnni -mprefer-vector-width=512
 
@@ -604,7 +616,7 @@ else ifeq ($(TARGET_CPU),SSSE3)
 	CPPFLAGS += -DUSE_SSSE3 -msse3 -march=core2
 
 else ifeq ($(TARGET_CPU),SSE2)
-	CPPFLAGS += -DUSE_SSE2 -msse2 -march=core2
+	CPPFLAGS += -DUSE_SSE2 -msse2 -march=x86-64
 
 else ifeq ($(TARGET_CPU),NO_SSE)
 	# 32bit用。-m32は、MSYS2 MinGW-64だと無視されるので、

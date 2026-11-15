@@ -98,7 +98,7 @@ void add_options_(OptionsMap& options, ThreadPool& threads) {
 #endif
 
     // NNUEのFV_SCALEの値
-    Options.add("FV_SCALE", Option(16, 1, 128, [&](const Option& o) {
+    Options.add("FV_SCALE", Option(24, 1, 128, [&](const Option& o) {
                     YaneuraOu::Eval::NNUE::FV_SCALE = int(o);
                     return std::nullopt;
                 }));
@@ -183,7 +183,7 @@ namespace YaneuraOu {
 namespace Eval {
 namespace NNUE {
 
-	int FV_SCALE = 16; // 水匠5では24がベストらしいのでエンジンオプション"FV_SCALE"で変更可能にした。
+	int FV_SCALE = 24; // エンジンオプション"FV_SCALE"で変更可能。
 
 #if defined(SFNNwoPSQT) && NNUE_SFNN_PROGRESS_BUCKETS != 1
 namespace Progress {
