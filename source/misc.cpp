@@ -271,6 +271,13 @@ std::string engine_info(const std::string& engine_name,
 #else
 			engine_name
 #endif
+            + (eval_name.empty() ? "" : std::string(" ") + eval_name)
+			+ ' ' + engine_version
+			+ ' ' + (Is64Bit ? "64" : "32")
+			+ TARGET_CPU
+#if defined(FOR_TOURNAMENT)
+			+" TOURNAMENT"
+#endif
 			;
 			engine_author_ = engine_author;
                 // やねうら王 "yaneurao";

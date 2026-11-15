@@ -48,7 +48,7 @@ def check_engine(release, target):
     try:
         send("usi")
         output = wait_for("usiok")
-        assert "id name tanuki-dr7_prd" in output, output
+        assert any(re.fullmatch(r"id name tanuki-dr7_prd .+ 9\.80git 64\S+ TOURNAMENT", line) for line in output), output
         assert "id author yanurao, nodchip" in output, output
         assert "option name FV_SCALE type spin default 24 min 1 max 128" in output, output
         send("setoption name FV_SCALE value 16")
